@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "GymHomie",
+    "slug": "gymhomie",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "gymhomie",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B0B0F"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.gymhomie.app"
+    },
+    "android": {
+      "package": "com.gymhomie.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "experiments": {
+      "tsconfigPaths": true
+    }
+  }
+}
