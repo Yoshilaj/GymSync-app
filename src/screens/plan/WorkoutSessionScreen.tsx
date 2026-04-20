@@ -13,6 +13,7 @@ import { getExerciseById } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { PlannedSet } from '@/types';
 import { PlanStackParamList } from '@/navigation/PlanStack';
+import { AIVisualizerView } from '@/components/AIVisualizer/AIVisualizerView';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
 
@@ -125,6 +126,8 @@ export function WorkoutSessionScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <AIVisualizerView height={180} />
+
         <View style={[styles.heroStrip, { backgroundColor: exerciseMeta.thumbnailColor }]}>
           <View style={{ flex: 1 }}>
             <Text style={typography.label}>Now lifting</Text>
