@@ -88,6 +88,7 @@ export function ExerciseListScreen() {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
         contentContainerStyle={styles.filterRow}
       >
         <FilterChip
@@ -224,14 +225,20 @@ const styles = StyleSheet.create({
     color: colors.text,
     padding: 0,
   },
+  filterScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
-    gap: spacing.sm,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: 6,
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -239,6 +246,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.borderSoft,
+    marginRight: spacing.sm,
   },
   chipActive: {
     backgroundColor: colors.accent,

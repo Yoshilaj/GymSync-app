@@ -49,7 +49,7 @@ export function AppTabBar({
           if (isFab) {
             if (!event.defaultPrevented) {
               (navigation as any).navigate('Plan', {
-                screen: 'WorkoutSession',
+                screen: 'LiveWorkoutStart',
                 params: { workoutId: 'w-push' },
               });
             }

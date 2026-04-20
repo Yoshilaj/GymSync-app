@@ -9,29 +9,9 @@ export const visualizerHtml = `<!DOCTYPE html>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
 canvas { display: block; }
-#btn {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  width: 30px;
-  height: 30px;
-  border-radius: 15px;
-  background: rgba(233, 242, 253, 0.55);
-  border: 1.5px solid rgba(46, 144, 234, 0.35);
-  color: #2E90EA;
-  font-size: 11px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  outline: none;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-}
 </style>
 </head>
 <body>
-<button id="btn">&#9654;</button>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
 <script>
 // ── Vertex shader: 3D Simplex noise displacement ──────────────────────────
@@ -174,40 +154,16 @@ function resumeAnimation() {
 
 // ── Audio reactivity ──────────────────────────────────────────────────────
 let audioCtx = null, analyser = null, micStream = null;
-let audioOn   = false;
 let simTimer  = null;
+let _simT = 0;
 
-const btn = document.getElementById('btn');
-btn.addEventListener('click', toggleAudio);
-
-async function toggleAudio() {
-  if (!audioOn) {
-    audioOn = true;
-    btn.innerHTML = '&#9646;&#9646;';
-    try {
-      audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
-      micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      const src = audioCtx.createMediaStreamSource(micStream);
-      analyser  = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      src.connect(analyser);
-      measureRMS();
-    } catch (_) {
-      // Mic not available — run a demo pulse
-      simulatePulse();
-    }
-  } else {
-    audioOn = false;
-    btn.innerHTML = '&#9654;';
-    if (simTimer) { clearTimeout(simTimer); simTimer = null; }
-    if (micStream) micStream.getTracks().forEach(t => t.stop());
-    if (audioCtx)  audioCtx.close();
-    analyser = null;
-  }
+// Called by React Native via injectJavaScript to drive orb from AI TTS level
+function setIntensity(v) {
+  uniforms.uIntensity.value = Math.min(Math.max(v, 0), 1);
 }
 
 function measureRMS() {
-  if (!audioOn || !analyser) return;
+  if (!analyser) return;
   const buf = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteTimeDomainData(buf);
   let sum = 0;
@@ -219,13 +175,26 @@ function measureRMS() {
   requestAnimationFrame(measureRMS);
 }
 
-let _simT = 0;
 function simulatePulse() {
-  if (!audioOn) return;
   _simT += 0.07;
   uniforms.uIntensity.value = (Math.sin(_simT) * 0.5 + 0.5) * 0.75;
   simTimer = setTimeout(simulatePulse, 40);
 }
+
+// Auto-start: try mic, fall back to simulation
+(async function startAudio() {
+  try {
+    audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    const src = audioCtx.createMediaStreamSource(micStream);
+    analyser  = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    measureRMS();
+  } catch (_) {
+    simulatePulse();
+  }
+})();
 </script>
 </body>
 </html>`;

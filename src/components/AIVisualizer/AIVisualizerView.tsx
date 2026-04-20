@@ -6,10 +6,18 @@ import { radius } from '@/theme';
 
 interface Props {
   height?: number;
+  /** 0–1 intensity driven by AI TTS output level. Injected into the WebView each render. */
+  intensity?: number;
 }
 
-export function AIVisualizerView({ height = 180 }: Props) {
+export function AIVisualizerView({ height = 180, intensity }: Props) {
   const webviewRef = useRef<WebView>(null);
+
+  useEffect(() => {
+    if (intensity !== undefined && webviewRef.current) {
+      webviewRef.current.injectJavaScript(`setIntensity(${intensity}); true;`);
+    }
+  }, [intensity]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (nextState) => {
