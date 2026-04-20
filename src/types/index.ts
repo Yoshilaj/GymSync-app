@@ -1,10 +1,19 @@
 export type MuscleGroup =
-  | 'Chest'
-  | 'Back'
-  | 'Legs'
   | 'Shoulders'
-  | 'Arms'
-  | 'Core'
+  | 'Chest'
+  | 'Biceps'
+  | 'Triceps'
+  | 'Forearms'
+  | 'Abs'
+  | 'Quads'
+  | 'Adductors'
+  | 'Traps'
+  | 'Lats'
+  | 'Lower Back'
+  | 'Glutes'
+  | 'Hamstrings'
+  | 'Abductors'
+  | 'Calves'
   | 'Full Body';
 
 export type Equipment =
@@ -24,6 +33,7 @@ export interface Exercise {
   name: string;
   muscleGroup: MuscleGroup;
   equipment: Equipment;
+  description: string;
   cues: string[];
   thumbnailColor: string;
 }
@@ -62,6 +72,22 @@ export interface CalorieGoal {
   proteinG: number;
   carbsG: number;
   fatG: number;
+}
+
+export interface FoodIntakeEntry {
+  id: string;
+  dayLabel: string;
+  time: string;
+  title: string;
+  description: string;
+  emoji: string;
+  thumbnailColor: string;
+  imageUrl?: string;
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  failed?: boolean;
 }
 
 export interface ChatMessage {

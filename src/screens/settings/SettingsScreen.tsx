@@ -4,6 +4,7 @@ import { ScreenContainer } from '@/components/ScreenContainer';
 import { Card } from '@/components/Card';
 import { SectionHeader } from '@/components/SectionHeader';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { TabHeader } from '@/components/TabHeader';
 import { colors, radius, spacing, typography } from '@/theme';
 import { useUser } from '@/context/UserContext';
 import { CoachPersonality, Units } from '@/types';
@@ -49,9 +50,10 @@ export function SettingsScreen() {
   } = useUser();
 
   return (
-    <ScreenContainer scroll>
-      <Text style={typography.heading}>Settings</Text>
+    <ScreenContainer scroll padded={false}>
+      <TabHeader title="Settings" />
 
+      <View style={styles.content}>
       <SectionHeader title="Profile" />
       <Card>
         <View style={styles.profileRow}>
@@ -178,6 +180,7 @@ export function SettingsScreen() {
           }
         />
       </View>
+      </View>
     </ScreenContainer>
   );
 }
@@ -200,6 +203,7 @@ function AboutRow({
 }
 
 const styles = StyleSheet.create({
+  content: { paddingHorizontal: spacing.lg },
   profileRow: {
     flexDirection: 'row',
     alignItems: 'center',

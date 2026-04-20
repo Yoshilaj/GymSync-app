@@ -23,7 +23,7 @@ export function PlanStack() {
       <Stack.Screen
         name="PlanHome"
         component={PlanScreen}
-        options={{ title: 'Plan' }}
+        options={{ headerShown: false }}
       />
       <Stack.Screen
         name="WorkoutSession"

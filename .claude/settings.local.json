@@ -15,7 +15,13 @@
       "Bash(git init *)",
       "Bash(git config *)",
       "Bash(git add *)",
-      "Bash(git commit -m 'Initial commit: GymHomie app setup with React Native and Expo *)"
+      "Bash(git commit -m 'Initial commit: GymHomie app setup with React Native and Expo *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(npx expo *)",
+      "Bash(npm install *)",
+      "Bash(npm uninstall *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
