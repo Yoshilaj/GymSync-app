@@ -94,7 +94,7 @@ export function WorkoutSessionScreen() {
   const endWorkout = () => {
     Alert.alert(
       'End workout?',
-      'Homie will summarize today and update your history.',
+      'Sync will summarize today and update your history.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

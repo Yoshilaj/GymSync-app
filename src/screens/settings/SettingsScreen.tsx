@@ -46,7 +46,6 @@ export function SettingsScreen() {
     setPersonality,
     setUnits,
     toggleWorkoutNotifications,
-    toggleMealNotifications,
   } = useUser();
 
   return (
@@ -70,7 +69,7 @@ export function SettingsScreen() {
         </View>
       </Card>
 
-      <SectionHeader title="Coach personality" subtitle="How Homie talks to you" />
+      <SectionHeader title="Coach personality" subtitle="How Sync talks to you" />
       <View style={{ gap: spacing.sm }}>
         {PERSONALITY_OPTIONS.map((opt) => {
           const selected = user.coachPersonality === opt.id;
@@ -134,7 +133,7 @@ export function SettingsScreen() {
 
       <SectionHeader title="Notifications" />
       <Card padded={false}>
-        <View style={[styles.listRow, styles.listRowBorder]}>
+        <View style={styles.listRow}>
           <View style={{ flex: 1 }}>
             <Text style={typography.body}>Workout reminders</Text>
             <Text style={typography.caption}>
@@ -146,20 +145,6 @@ export function SettingsScreen() {
             onValueChange={toggleWorkoutNotifications}
             trackColor={{ false: colors.border, true: colors.accentMuted }}
             thumbColor={user.notificationsWorkout ? colors.accent : '#fff'}
-          />
-        </View>
-        <View style={styles.listRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={typography.body}>Meal logging</Text>
-            <Text style={typography.caption}>
-              Ping when meals are typically skipped.
-            </Text>
-          </View>
-          <Switch
-            value={user.notificationsMeal}
-            onValueChange={toggleMealNotifications}
-            trackColor={{ false: colors.border, true: colors.accentMuted }}
-            thumbColor={user.notificationsMeal ? colors.accent : '#fff'}
           />
         </View>
       </Card>

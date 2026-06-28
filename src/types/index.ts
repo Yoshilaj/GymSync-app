@@ -67,32 +67,9 @@ export interface WeeklyPlan {
   restDays: string[];
 }
 
-export interface CalorieGoal {
-  dailyKcal: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-}
-
-export interface FoodIntakeEntry {
-  id: string;
-  dayLabel: string;
-  time: string;
-  title: string;
-  description: string;
-  emoji: string;
-  thumbnailColor: string;
-  imageUrl?: string;
-  kcal: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  failed?: boolean;
-}
-
 export interface ChatMessage {
   id: string;
-  author: 'user' | 'homie';
+  author: 'user' | 'sync';
   text: string;
   timestamp: string;
 }
@@ -105,8 +82,6 @@ export interface ProgressPoint {
 export interface ProgressData {
   weightLifted: ProgressPoint[];
   estimated1RM: ProgressPoint[];
-  dailyCalories: ProgressPoint[];
-  calorieTarget: number;
   bodyweight: ProgressPoint[];
   volumeByMuscle: { muscle: MuscleGroup; volume: number }[];
   prsThisMonth: number;
@@ -119,5 +94,4 @@ export interface UserProfile {
   coachPersonality: CoachPersonality;
   units: Units;
   notificationsWorkout: boolean;
-  notificationsMeal: boolean;
 }

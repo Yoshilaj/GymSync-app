@@ -1,11 +1,11 @@
 import { ReactNode } from 'react';
-import { View, StyleSheet, Pressable, ViewStyle } from 'react-native';
+import { View, StyleSheet, Pressable, ViewStyle, StyleProp } from 'react-native';
 import { colors, radius, spacing } from '@/theme';
 
 interface Props {
   children: ReactNode;
   onPress?: () => void;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padded?: boolean;
   elevated?: boolean;
 }

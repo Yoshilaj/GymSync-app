@@ -72,7 +72,7 @@ export function VoiceCoachScreen() {
 
       {coachLine && (
         <View style={styles.coachBox}>
-          <Text style={[typography.label, { color: colors.accent }]}>Homie</Text>
+          <Text style={[typography.label, { color: colors.accent }]}>Sync</Text>
           <Text style={[typography.title, { marginTop: spacing.xs }]}>
             {coachLine}
           </Text>

@@ -18,10 +18,10 @@ import { VoiceButton } from '@/components/VoiceButton';
 import { mockChatHistory, getScriptedReply } from '@/data/mockChatHistory';
 import { useUser } from '@/context/UserContext';
 import { ChatMessage } from '@/types';
-import { HomieStackParamList } from '@/navigation/HomieStack';
+import { SyncStackParamList } from '@/navigation/SyncStack';
 
-type Nav = NativeStackNavigationProp<HomieStackParamList, 'HomieConversation'>;
-type RouteP = RouteProp<HomieStackParamList, 'HomieConversation'>;
+type Nav = NativeStackNavigationProp<SyncStackParamList, 'SyncConversation'>;
+type RouteP = RouteProp<SyncStackParamList, 'SyncConversation'>;
 
 export function ConversationScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>(mockChatHistory);
@@ -45,7 +45,7 @@ export function ConversationScreen() {
     setTimeout(() => {
       const reply: ChatMessage = {
         id: `h-${Date.now()}`,
-        author: 'homie',
+        author: 'sync',
         text: getScriptedReply(trimmed, user.coachPersonality),
         timestamp: new Date().toTimeString().slice(0, 5),
       };
@@ -92,7 +92,7 @@ export function ConversationScreen() {
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder="Message your homie…"
+            placeholder="Message your Sync…"
             placeholderTextColor={colors.textDim}
             multiline
             onSubmitEditing={handleSend}

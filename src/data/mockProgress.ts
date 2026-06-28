@@ -22,11 +22,6 @@ export const mockProgress: ProgressData = {
     date,
     value: 8500 + i * 250 + (i % 3) * 400,
   })),
-  dailyCalories: weeklyDates.map((date, i) => ({
-    date,
-    value: 2500 + Math.round(Math.sin(i * 0.8) * 200 + (i % 2 ? 150 : -100)),
-  })),
-  calorieTarget: 2750,
   bodyweight: weeklyDates.map((date, i) => ({
     date,
     value: 178 + i * 0.08,

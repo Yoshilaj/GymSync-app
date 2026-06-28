@@ -16,9 +16,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '@/theme';
 import { AppHeader } from '@/components/AppHeader';
 import { useUser } from '@/context/UserContext';
-import { HomieStackParamList } from '@/navigation/HomieStack';
+import { SyncStackParamList } from '@/navigation/SyncStack';
 
-type Nav = NativeStackNavigationProp<HomieStackParamList, 'HomieHome'>;
+type Nav = NativeStackNavigationProp<SyncStackParamList, 'SyncHome'>;
 
 type Suggestion = {
   id: string;
@@ -27,7 +27,7 @@ type Suggestion = {
   onPress: () => void;
 };
 
-export function HomieScreen() {
+export function SyncScreen() {
   const [input, setInput] = useState('');
   const nav = useNavigation<Nav>();
   const { user } = useUser();
@@ -44,12 +44,6 @@ export function HomieScreen() {
       onPress: () => goToTab('Plan'),
     },
     {
-      id: 'meal',
-      emoji: '🍽️',
-      label: 'Log a meal',
-      onPress: () => goToTab('Plan'),
-    },
-    {
       id: 'progress',
       emoji: '📊',
       label: 'View progress',
@@ -59,7 +53,7 @@ export function HomieScreen() {
 
   const openConversation = () => {
     const draft = input.trim();
-    nav.navigate('HomieConversation', draft ? { draft } : undefined);
+    nav.navigate('SyncConversation', draft ? { draft } : undefined);
     setInput('');
   };
 
@@ -109,7 +103,7 @@ export function HomieScreen() {
               style={styles.input}
               value={input}
               onChangeText={setInput}
-              placeholder="Ask Homie"
+              placeholder="Ask Sync"
               placeholderTextColor={colors.textMuted}
               onSubmitEditing={openConversation}
               returnKeyType="send"

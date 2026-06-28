@@ -11,7 +11,7 @@ const TABS: Record<
   { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }
 > = {
   Plan: { on: 'calendar', off: 'calendar-outline' },
-  Homie: { on: 'chatbubble-ellipses', off: 'chatbubble-ellipses-outline' },
+  Sync: { on: 'chatbubble-ellipses', off: 'chatbubble-ellipses-outline' },
   Progress: { on: 'stats-chart', off: 'stats-chart-outline' },
   Settings: { on: 'settings', off: 'settings-outline' },
 };

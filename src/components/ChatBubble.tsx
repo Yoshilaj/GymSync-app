@@ -13,10 +13,10 @@ export function ChatBubble({ message }: Props) {
       <View
         style={[
           styles.bubble,
-          isUser ? styles.userBubble : styles.homieBubble,
+          isUser ? styles.userBubble : styles.syncBubble,
         ]}
       >
-        {!isUser && <Text style={styles.authorLabel}>Homie</Text>}
+        {!isUser && <Text style={styles.authorLabel}>Sync</Text>}
         <Text style={[typography.body, isUser && styles.userText]}>
           {message.text}
         </Text>
@@ -42,8 +42,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.userBubble,
     borderBottomRightRadius: spacing.xs,
   },
-  homieBubble: {
-    backgroundColor: colors.homieBubble,
+  syncBubble: {
+    backgroundColor: colors.syncBubble,
     borderBottomLeftRadius: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,

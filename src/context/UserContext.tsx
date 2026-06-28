@@ -8,7 +8,6 @@ interface UserContextValue {
   setUnits: (u: Units) => void;
   setDisplayName: (n: string) => void;
   toggleWorkoutNotifications: () => void;
-  toggleMealNotifications: () => void;
 }
 
 const UserContext = createContext<UserContextValue | undefined>(undefined);
@@ -27,11 +26,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setUser((prev) => ({
         ...prev,
         notificationsWorkout: !prev.notificationsWorkout,
-      })),
-    toggleMealNotifications: () =>
-      setUser((prev) => ({
-        ...prev,
-        notificationsMeal: !prev.notificationsMeal,
       })),
   };
 

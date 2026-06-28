@@ -3,7 +3,7 @@ import { ChatMessage, CoachPersonality } from '@/types';
 export const mockChatHistory: ChatMessage[] = [
   {
     id: 'm1',
-    author: 'homie',
+    author: 'sync',
     text: "Morning. Today's push day — bench, incline DBs, and shoulders. You've got this.",
     timestamp: '08:02',
   },
@@ -15,7 +15,7 @@ export const mockChatHistory: ChatMessage[] = [
   },
   {
     id: 'm3',
-    author: 'homie',
+    author: 'sync',
     text: "Good call. Swap overhead press for a landmine press — easier on the joint but keeps the pressing volume. Want me to update today's plan?",
     timestamp: '08:03',
   },
@@ -27,7 +27,7 @@ export const mockChatHistory: ChatMessage[] = [
   },
   {
     id: 'm5',
-    author: 'homie',
+    author: 'sync',
     text: "Done. Also warm up with band pull-aparts — 2 sets of 15. Meet me at the bench when you're ready.",
     timestamp: '08:04',
   },

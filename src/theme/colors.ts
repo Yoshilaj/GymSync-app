@@ -15,7 +15,7 @@ export const colors = {
   textMuted: '#5C708A',
   textDim: '#9AAABF',
   userBubble: '#2E90EA',
-  homieBubble: '#EEF4FC',
+  syncBubble: '#EEF4FC',
 } as const;
 
 export type ColorKey = keyof typeof colors;

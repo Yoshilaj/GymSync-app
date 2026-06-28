@@ -37,7 +37,7 @@ export function AppHeader({ variant = 'brand', onPressMenu }: Props) {
         <Pressable onPress={onPressMenu} hitSlop={10} style={styles.iconBtn}>
           <Ionicons name="menu" size={24} color={colors.text} />
         </Pressable>
-        <Text style={styles.brandCenter}>GymHomie</Text>
+        <Text style={styles.brandCenter}>GymSync</Text>
         {avatar}
       </View>
     );
@@ -45,7 +45,7 @@ export function AppHeader({ variant = 'brand', onPressMenu }: Props) {
 
   return (
     <View style={styles.row}>
-      <Text style={styles.brandLeft}>GymHomie</Text>
+      <Text style={styles.brandLeft}>GymSync</Text>
       <View style={{ flex: 1 }} />
       {avatar}
     </View>

@@ -1,4 +1,4 @@
-# GymHomie App - Claude Code Workflow
+# GymSync App - Claude Code Workflow
 
 ## GitHub Integration & Automatic Commits
 
@@ -20,7 +20,7 @@ This project uses:
 
 ### GitHub Repository URL
 
-Once created, the repo will be: `https://github.com/yoshil061111/gymhomie-app`
+Once created, the repo will be: `https://github.com/yoshil061111/gymsync-app`
 
 ### For Users
 

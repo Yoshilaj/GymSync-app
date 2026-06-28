@@ -1,18 +1,18 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { HomieScreen } from '@/screens/homie/HomieScreen';
-import { ConversationScreen } from '@/screens/homie/ConversationScreen';
-import { VoiceCoachScreen } from '@/screens/homie/VoiceCoachScreen';
+import { SyncScreen } from '@/screens/sync/SyncScreen';
+import { ConversationScreen } from '@/screens/sync/ConversationScreen';
+import { VoiceCoachScreen } from '@/screens/sync/VoiceCoachScreen';
 import { colors } from '@/theme';
 
-export type HomieStackParamList = {
-  HomieHome: undefined;
-  HomieConversation: { draft?: string } | undefined;
+export type SyncStackParamList = {
+  SyncHome: undefined;
+  SyncConversation: { draft?: string } | undefined;
   VoiceCoach: undefined;
 };
 
-const Stack = createNativeStackNavigator<HomieStackParamList>();
+const Stack = createNativeStackNavigator<SyncStackParamList>();
 
-export function HomieStack() {
+export function SyncStack() {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -23,14 +23,14 @@ export function HomieStack() {
       }}
     >
       <Stack.Screen
-        name="HomieHome"
-        component={HomieScreen}
+        name="SyncHome"
+        component={SyncScreen}
         options={{ headerShown: false }}
       />
       <Stack.Screen
-        name="HomieConversation"
+        name="SyncConversation"
         component={ConversationScreen}
-        options={{ title: 'Homie' }}
+        options={{ title: 'Sync' }}
       />
       <Stack.Screen
         name="VoiceCoach"

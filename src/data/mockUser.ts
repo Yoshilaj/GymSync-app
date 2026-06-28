@@ -5,5 +5,4 @@ export const mockUser: UserProfile = {
   coachPersonality: 'supportive',
   units: 'lbs',
   notificationsWorkout: true,
-  notificationsMeal: false,
 };

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "GymHomie",
-    "slug": "gymhomie",
+    "name": "GymSync",
+    "slug": "gymsync",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "gymhomie",
+    "scheme": "gymsync",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash.png",
@@ -15,10 +15,10 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.gymhomie.app"
+      "bundleIdentifier": "com.gymsync.app"
     },
     "android": {
-      "package": "com.gymhomie.app"
+      "package": "com.gymsync.app"
     },
     "web": {
       "bundler": "metro"
