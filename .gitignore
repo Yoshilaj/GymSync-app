@@ -50,5 +50,5 @@ yarn-error.*
 .idea/
 .vscode/
 
-# Claude Code local settings (per-machine)
-.claude/settings.local.json
+# Claude Code local settings + skills (per-machine, not part of the app)
+.claude/
