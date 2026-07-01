@@ -1,0 +1,2 @@
+# Normalize line endings to LF on checkin, prevent CRLF churn across machines
+* text=auto eol=lf

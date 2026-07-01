@@ -1,18 +1,54 @@
+# Dependencies
 node_modules/
+
+# Expo
 .expo/
 dist/
 web-build/
-npm-debug.*
-*.orig.*
-.DS_Store
-*.log
+expo-env.d.ts
+
+# Native builds
 ios/
 android/
 
 # Backend (Python / FastAPI)
-backend/.env
-.env
 __pycache__/
 *.pyc
 venv/
 .venv/
+backend/.env
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# Build artifacts
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local settings (per-machine)
+.claude/settings.local.json
