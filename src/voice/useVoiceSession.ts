@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { voiceConfig, voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import { voiceMic, ensureMicAccess } from './VoiceMic';
+import { voicePlayer } from './VoicePlayer';
 import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
 
 export interface UseVoiceSessionArgs {
@@ -91,6 +92,19 @@ export function useVoiceSession({
     }
   }, [fail]);
 
+  // Drain the coach's buffered audio for this turn, then return to listening.
+  // Awaiting playback keeps the mic muted (half-duplex) until the coach is done.
+  const finishTurn = useCallback(async () => {
+    try {
+      await voicePlayer.playTurn();
+    } finally {
+      // Don't override a deliberate stop() or an error that landed mid-playback.
+      if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') {
+        goto('listening');
+      }
+    }
+  }, [goto]);
+
   const handleMessage = useCallback(
     (msg: ServerMessage) => {
       const cb = callbacksRef.current;
@@ -116,15 +130,15 @@ export function useVoiceSession({
           cb.onText?.(msg.text);
           break;
         case 'done':
-          // Turn finished — back to listening for the next utterance.
-          goto('listening');
+          // Turn finished — play any buffered coach audio, then back to listening.
+          void finishTurn();
           break;
         case 'error':
           fail(msg.message);
           break;
       }
     },
-    [goto, fail, startMic],
+    [goto, fail, startMic, finishTurn],
   );
 
   const start = useCallback(async () => {
@@ -158,6 +172,11 @@ export function useVoiceSession({
         onOpen: () =>
           socket.send({ type: 'session_start', session_id: sid, voice: true }),
         onMessage: handleMessage,
+        onBinary: (data) => {
+          // First audio artifact of the turn → the coach is now speaking.
+          if (phaseRef.current === 'thinking') goto('coach_speaking');
+          voicePlayer.enqueue(data);
+        },
         onError: () => {
           if (phaseRef.current !== 'idle') fail('WebSocket error');
         },
@@ -188,8 +207,9 @@ export function useVoiceSession({
     // mic frame handler stops forwarding bytes.
     goto('idle');
 
-    // Stop capturing before tearing the socket down.
+    // Stop capturing and playback before tearing the socket down.
     await voiceMic.stop();
+    await voicePlayer.stop();
 
     if (socket) {
       try {
@@ -221,6 +241,7 @@ export function useVoiceSession({
     return () => {
       mountedRef.current = false;
       void voiceMic.stop();
+      void voicePlayer.stop();
       socketRef.current?.close();
       socketRef.current = null;
     };
