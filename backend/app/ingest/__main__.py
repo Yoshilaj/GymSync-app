@@ -1,17 +1,32 @@
 """
 Ingestion CLI:  python -m app.ingest <command>
 
+  fetch  --query Q [--limit N]       Search PMC OA → download JATS to data/raw/ → manifest.
   parse  <file> [--source ID]        Parse JATS → print section/chunk summary. No DB, no env.
   load   <file> [--source ID]        parse → chunk → embed → upsert into Supabase.
   verify <query> [--voice]           Round-trip: embed the query, hit the knowledge RPCs,
                                      print the top hits. Proves retrieval end-to-end.
 
-`parse` is pure (safe to run anywhere). `load` and `verify` need Supabase creds + the
-embedder, so they touch app.config / app.database.
+`fetch` and `parse` are pure (safe to run anywhere). `load` and `verify` need Supabase creds
++ the embedder, so they touch app.config / app.database.
 """
 import argparse
 import asyncio
 import sys
+
+_DEFAULT_RAW = "data/raw"
+_DEFAULT_MANIFEST = "data/sources.jsonl"
+
+
+def _cmd_fetch(args) -> int:
+    from app.ingest.fetch import run_fetch
+
+    rows = run_fetch(
+        args.query, args.limit,
+        raw_dir=args.raw_dir, manifest_path=args.manifest, force=args.force,
+    )
+    print(f"fetched {len(rows)} new doc(s)")
+    return 0
 
 
 def _cmd_parse(args) -> int:
@@ -74,6 +89,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app.ingest")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    p_fetch = sub.add_parser("fetch", help="search PMC OA, download JATS, build the manifest")
+    p_fetch.add_argument("--query", required=True, help="PMC search terms")
+    p_fetch.add_argument("--limit", type=int, default=15, help="max docs to fetch (default 15)")
+    p_fetch.add_argument("--raw-dir", default=_DEFAULT_RAW)
+    p_fetch.add_argument("--manifest", default=_DEFAULT_MANIFEST)
+    p_fetch.add_argument("--force", action="store_true", help="re-fetch even if already on disk")
+
     p_parse = sub.add_parser("parse", help="parse JATS and print a summary (no DB)")
     p_parse.add_argument("file")
     p_parse.add_argument("--source", default=None, help="override the source id (default: PMC id)")
@@ -87,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     p_verify.add_argument("--voice", action="store_true", help="use the voice (speed) params")
 
     args = parser.parse_args(argv)
+    if args.command == "fetch":
+        return _cmd_fetch(args)
     if args.command == "parse":
         return _cmd_parse(args)
     if args.command == "load":
