@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { voiceConfig, voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
+import { voiceMic, ensureMicAccess } from './VoiceMic';
 import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
 
 export interface UseVoiceSessionArgs {
@@ -69,13 +70,35 @@ export function useVoiceSession({
     [goto],
   );
 
+  // Start mic capture and stream each PCM frame to the server. Frames are only
+  // sent while Machine A is in `listening` (half-duplex: mic is "muted" during
+  // thinking / coach_speaking). No VAD yet — this is the continuous M2 loop.
+  const startMic = useCallback(async () => {
+    try {
+      const granted = await ensureMicAccess();
+      if (!granted) {
+        fail('Microphone access is required to talk to your coach.');
+        return;
+      }
+      if (!mountedRef.current || phaseRef.current === 'idle') return;
+      voiceMic.start((frame) => {
+        if (phaseRef.current !== 'listening') return;
+        const sock = socketRef.current;
+        if (sock?.isOpen) sock.sendBinary(frame);
+      });
+    } catch (e) {
+      fail(e instanceof Error ? e.message : 'Microphone failed to start');
+    }
+  }, [fail]);
+
   const handleMessage = useCallback(
     (msg: ServerMessage) => {
       const cb = callbacksRef.current;
       switch (msg.type) {
         case 'ack':
-          // Handshake complete — the user can start speaking (audio: M2+).
+          // Handshake complete — go live and start streaming mic audio.
           goto('listening');
+          void startMic();
           break;
         case 'transcript':
           // Backend heard a complete utterance; the agent is now working.
@@ -101,7 +124,7 @@ export function useVoiceSession({
           break;
       }
     },
-    [goto, fail],
+    [goto, fail, startMic],
   );
 
   const start = useCallback(async () => {
@@ -161,8 +184,12 @@ export function useVoiceSession({
     const sid = sessionIdRef.current;
     const token = tokenRef.current;
 
-    // Flip to idle first so socket.onClose treats this as intentional.
+    // Flip to idle first so socket.onClose treats this as intentional and the
+    // mic frame handler stops forwarding bytes.
     goto('idle');
+
+    // Stop capturing before tearing the socket down.
+    await voiceMic.stop();
 
     if (socket) {
       try {
@@ -193,6 +220,7 @@ export function useVoiceSession({
   useEffect(() => {
     return () => {
       mountedRef.current = false;
+      void voiceMic.stop();
       socketRef.current?.close();
       socketRef.current = null;
     };
