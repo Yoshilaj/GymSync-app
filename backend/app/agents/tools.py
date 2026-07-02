@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 
 from supabase import AsyncClient
 
+from app.monitoring import traced
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -197,6 +199,27 @@ TOOL_DEFINITIONS = [
             "properties": {"reason": {"type": "string"}},
         },
     },
+    {
+        "name": "search_knowledge",
+        "description": (
+            "Search the fitness & health research corpus for evidence to ground an answer "
+            "about training, technique, programming, nutrition, or injury/recovery. Prefer "
+            "this (usually after escalating to reasoning) over answering substantive "
+            "knowledge questions from memory. Returns cited passages."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "A focused natural-language query."},
+                "doc_type": {
+                    "type": "string",
+                    "enum": ["study", "review", "guideline"],
+                    "description": "Optional filter to a source type.",
+                },
+            },
+        },
+    },
 ]
 
 # Tools that push a JSON packet to the client UI before the audio response.
@@ -226,6 +249,7 @@ class ToolContext:
 
 # ── Tool execution ────────────────────────────────────────────────────────────
 
+@traced(name="execute_tool")
 async def execute_tool(
     name: str, args: dict, ctx: ToolContext
 ) -> tuple[dict, list[dict]]:
@@ -454,6 +478,11 @@ async def execute_tool(
         ).eq("id", ctx.session_id).execute()
         ctx.app_actions.append({"type": "app_action", "action": "modify_plan", "changes": changes})
         return {"status": "plan_modified", "applied": changes}, ctx.app_actions
+
+    if name == "search_knowledge":
+        # Knowledge RAG. Read-only, no UI action. Fault-tolerant inside pipeline.search.
+        from app.rag import pipeline
+        return await pipeline.search(args, ctx), []
 
     return {"error": f"Unknown tool: {name}"}, []
 

@@ -24,9 +24,10 @@ import json
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from app.agents.core import _agent_events
+from app.agents.core import run_agent_turn
 from app.agents.voice import VoiceSession
 from app.database import get_db
+from app.ratelimit import ws_rate_check
 
 router = APIRouter(tags=["voice"])
 
@@ -114,7 +115,14 @@ async def voice_ws(
                 text = data.get("text", "").strip()
                 if not text:
                     continue
-                async for event in _agent_events(text, session_id, user_id, db):
+                if not ws_rate_check(user_id):
+                    await websocket.send_json(
+                        {"type": "error", "message": "Rate limit exceeded. Slow down a moment."}
+                    )
+                    continue
+                async for event in run_agent_turn(
+                    text, session_id, user_id, db, channel="text"
+                ):
                     await websocket.send_json(event)
 
             else:

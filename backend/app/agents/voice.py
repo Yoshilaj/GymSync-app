@@ -14,9 +14,10 @@ from collections.abc import AsyncGenerator
 import httpx
 from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
 
-from app.agents.core import _agent_events
+from app.agents.core import run_agent_turn
 from app.agents.personalities import get_voice_id
 from app.config import settings
+from app.ratelimit import ws_rate_check
 
 # Match sentence boundaries: split after . ! ? followed by whitespace.
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -71,7 +72,7 @@ class VoiceSession:
     """
     Manages one live voice session per WebSocket connection.
 
-    Binary audio in  → Deepgram STT → agent (_agent_events) → ElevenLabs TTS → binary audio out
+    Binary audio in  → Deepgram STT → agent (run_agent_turn) → ElevenLabs TTS → binary audio out
     JSON frames out  ← app_action / transcript / done packets
     """
 
@@ -154,10 +155,19 @@ class VoiceSession:
         async with self._ws_lock:
             await self._ws.send_json({"type": "transcript", "text": transcript})
 
+        if not ws_rate_check(self._user_id):
+            async with self._ws_lock:
+                await self._ws.send_json(
+                    {"type": "error", "message": "Rate limit exceeded. Slow down a moment."}
+                )
+            return
+
         voice_id = await _get_voice_id_for_user(self._user_id, self._db)
         tts_buffer = ""
 
-        async for event in _agent_events(transcript, self._session_id, self._user_id, self._db):
+        async for event in run_agent_turn(
+            transcript, self._session_id, self._user_id, self._db, channel="voice"
+        ):
             if event["type"] == "text_delta":
                 tts_buffer += event["text"]
                 sentences, tts_buffer = _pop_sentences(tts_buffer)

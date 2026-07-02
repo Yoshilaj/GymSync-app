@@ -1,0 +1,28 @@
+# Local / staging orchestration for the GymSync API.
+#   docker compose up --build
+# Secrets come from ./.env (never baked into the image). APP_ENV overrides it to
+# production so /health reports the right environment.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      APP_ENV: production
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Redis is the multi-worker upgrade path for the cache + rate limiter.
+  # To enable: uncomment, set REDIS_URL=redis://redis:6379/0 in .env, and finish
+  # RedisCache in app/cache.py + a shared slowapi storage backend.
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"
+  #   restart: unless-stopped
