@@ -21,7 +21,7 @@ from supabase import AsyncClient
 from app.cache import Cache, make_key
 from app.config import settings
 from app.monitoring import logger, metrics, traced
-from app.rag.embedder import StubEmbedder
+from app.rag.embedder import get_embedder
 from app.rag.expand import expand_to_parents
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.models import RetrievalParams, RetrievalResult
@@ -46,7 +46,7 @@ def _try_cache() -> Cache | None:
 
 class KnowledgePipeline:
     def __init__(self, embedder: Embedder | None = None, reranker: Reranker | None = None) -> None:
-        self.embedder: Embedder = embedder or StubEmbedder()
+        self.embedder: Embedder = embedder or get_embedder()
         self.reranker: Reranker = reranker or IdentityReranker()
 
     async def _embed_query(self, query: str, cache: Cache | None) -> list[float]:

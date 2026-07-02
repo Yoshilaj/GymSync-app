@@ -17,13 +17,13 @@ the turn proceeds without augmentation rather than erroring.
 from supabase import AsyncClient
 
 from app.monitoring import logger, traced
-from app.rag.embedder import StubEmbedder
+from app.rag.embedder import get_embedder
 from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.models import RetrievalParams
 from app.rag.packing import pack
 from app.rag.search import hybrid_search
 
-_embedder = StubEmbedder()
+_embedder = get_embedder()
 
 
 @traced(name="personal_prefetch")

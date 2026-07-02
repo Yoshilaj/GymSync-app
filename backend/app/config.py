@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     # (Reasoning-tier fallback is handled by the same helper with its own model arg.)
     model_fallback: str = "claude-haiku-4-5-20251001"
 
+    # ── RAG embedding ───────────────────────────────────────────────────────────
+    # "stub" = deterministic placeholder (no model download); "nomic" = real
+    # nomic-embed-text-v1.5 via fastembed. Use "nomic-ai/nomic-embed-text-v1.5-Q"
+    # for the smaller quantized build (same 768-d embedding space).
+    embedder: str = "stub"
+    embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+
     # ── Performance / cache ───────────────────────────────────────────────────────
     # In-memory now; set redis_url to flip the Cache implementation later (multi-worker).
     redis_url: str | None = None

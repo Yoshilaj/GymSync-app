@@ -15,6 +15,9 @@ slowapi>=0.1.9          # per-user rate limiting on HTTP endpoints
 langsmith>=0.1.100      # request tracing (no-op unless LANGSMITH_API_KEY is set)
 redis>=5.0.0            # unused until settings.redis_url is set (multi-worker cache/limits)
 
+# ── RAG embedding ────────────────────────────────────────────────────────────
+fastembed>=0.8.0        # nomic-embed-text-v1.5 (768-d) via ONNX; in-process, no torch
+
 # ── Dev / test ─────────────────────────────────────────────────────────────────
 pytest>=8.0.0
 pytest-asyncio>=0.23.0

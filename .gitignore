@@ -52,3 +52,4 @@ yarn-error.*
 
 # Claude Code local settings (per-machine)
 .claude/settings.local.json
+.mcp.json
