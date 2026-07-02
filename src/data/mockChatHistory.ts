@@ -63,32 +63,3 @@ export function getScriptedReply(
       : supportiveReplies;
   return pool[Math.floor(Math.random() * pool.length)];
 }
-
-export const voiceCoachTranscriptLines = [
-  'Three...',
-  'four...',
-  'five. Nice tempo.',
-  'six...',
-  'seven — pause at the bottom.',
-  'eight. Two more.',
-  'nine...',
-  'ten. Last one — PR on the line.',
-];
-
-export const voiceCoachCoachLines: Record<CoachPersonality, string[]> = {
-  supportive: [
-    'That’s a clean rep. Breathe. One more when you’re ready.',
-    'Within 2 of your PR. You’ve got this.',
-    'Good. Rack it before the form breaks. Great set.',
-  ],
-  intense: [
-    'Lock in. One more for the PR. Move.',
-    'You had more. Don’t sell the set.',
-    'Not good enough. One more — then rack.',
-  ],
-  roast_light: [
-    'That’s it? Come on, one more.',
-    'You quit before the muscle did. One more.',
-    'Rack it. We’ll pretend that last one didn’t happen.',
-  ],
-};
