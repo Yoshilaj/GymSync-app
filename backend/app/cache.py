@@ -16,8 +16,9 @@ from typing import Any, Protocol, runtime_checkable
 
 
 def make_key(*parts: Any) -> str:
-    """Stable content-addressed key. Order matters; None/ints are stringified."""
-    joined = "␟".join("" if p is None else str(p) for p in parts)  # ␟ separator
+    """Stable content-addressed key. Order matters; ints are stringified and
+    None gets a distinct sentinel so it never collides with an empty string."""
+    joined = "␟".join("\x00None\x00" if p is None else str(p) for p in parts)  # ␟ separator
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 

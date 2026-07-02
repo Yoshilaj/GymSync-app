@@ -19,9 +19,15 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str
 
     # ── Reliability ───────────────────────────────────────────────────────────────
-    # SDK-level transient retries (429/5xx/connection) on request establishment,
-    # plus a same-tier fallback model used by resilience.stream_with_resilience.
+    # Two distinct retry windows that must not be conflated:
+    #   max_retries    — SDK-level, covers request ESTABLISHMENT (429/5xx/connection)
+    #                    on the initial POST that opens the stream.
+    #   stream_retries — resilience-level, covers transient failures AFTER the stream
+    #                    opens but BEFORE the first token (a window the SDK won't retry),
+    #                    with exponential backoff + jitter. Kept small so it doesn't
+    #                    multiply against the SDK's establishment retries.
     max_retries: int = 2
+    stream_retries: int = 1
     request_timeout_s: float = 30.0
     # Fallback for the FAST tier if the primary keeps failing pre-first-token.
     # (Reasoning-tier fallback is handled by the same helper with its own model arg.)

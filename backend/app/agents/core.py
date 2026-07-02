@@ -160,13 +160,14 @@ async def _core_agent_events(
 
     try:
         while True:
-            # SDK owns transient establishment retries; resilience adds only model
-            # fallback (max_retries=0 here avoids stacking retries on the same model).
+            # SDK owns establishment retries; resilience owns the pre-first-token
+            # stream window (a distinct failure window the SDK won't retry) with
+            # exponential backoff, plus the same-tier model fallback.
             final = None
             async for kind, payload in stream_with_resilience(
                 client,
                 models=_model_chain(model),
-                max_retries=0,
+                max_retries=settings.stream_retries,
                 system=system,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
@@ -257,6 +258,7 @@ async def run_agent_turn(
                 "injection": in_flags.injection_suspected,
                 "pattern": in_flags.injection_pattern,
                 "pii": in_flags.pii_types,
+                "sample": in_flags.masked_sample,  # PII-masked; live text is untouched
             }},
         )
 

@@ -10,9 +10,14 @@ async def init_db() -> None:
 
 
 async def close_db() -> None:
+    # supabase-py's AsyncClient exposes no public close method, so there is
+    # nothing to await; drop the reference and let its httpx sessions get GC'd.
+    # Call aclose() defensively in case a future version adds one.
     global _db
     if _db is not None:
-        await _db.aclose()
+        aclose = getattr(_db, "aclose", None)
+        if callable(aclose):
+            await aclose()
         _db = None
 
 

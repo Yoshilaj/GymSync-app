@@ -33,6 +33,21 @@ def test_pii_masking_is_for_the_sink_only():
     assert "[EMAIL]" in masked
 
 
+def test_input_pii_masked_in_sink_but_not_in_live_text():
+    clean, flags = SecurityPipeline.process_input("email me at jo@example.com", "text")
+    # The masked sample (for logs/traces) hides the raw PII...
+    assert flags.masked_sample is not None
+    assert "jo@example.com" not in flags.masked_sample
+    assert "[EMAIL]" in flags.masked_sample
+    # ...but the live text sent to the model is NOT masked (coach's own data subject).
+    assert "jo@example.com" in clean
+
+
+def test_clean_input_has_no_masked_sample():
+    _, flags = SecurityPipeline.process_input("did 5 sets of squats", "text")
+    assert flags.masked_sample is None
+
+
 def test_output_observe_flags_secret_leak_without_mutating():
     flags = SecurityPipeline.observe_output("your api_key = sk-abc123 and email a@b.com", "text")
     assert any("secret_leak" in c for c in flags.concerns)

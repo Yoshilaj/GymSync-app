@@ -110,6 +110,25 @@ async def test_midstream_failure_does_not_retry_or_double_emit():
     assert client.messages.calls == ["primary"]     # no fallback after emitting
 
 
+async def test_retries_same_model_with_backoff_before_first_token():
+    # First establishment attempt fails transiently; the retry (max_retries=1) succeeds
+    # on the SAME model, before any fallback is considered.
+    attempts = {"n": 0}
+
+    def factory():
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return FakeStream([], mode="establish_fail", exc=_RetryErr())
+        return FakeStream(["ok"])
+
+    client = FakeClient({"primary": factory, "fallback": lambda: FakeStream(["nope"])})
+    events = await _collect(
+        stream_with_resilience(client, models=["primary", "fallback"], max_retries=1)
+    )
+    assert ("delta", "ok") in events
+    assert client.messages.calls == ["primary", "primary"]  # retried same model, no fallback
+
+
 async def test_non_retryable_error_propagates_immediately():
     client = FakeClient({
         "primary": lambda: FakeStream([], mode="establish_fail", exc=_FatalErr()),

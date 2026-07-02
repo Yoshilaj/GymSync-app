@@ -130,6 +130,7 @@ class InputFlags:
     injection_suspected: bool = False
     injection_pattern: str | None = None
     pii_types: dict[str, int] = field(default_factory=dict)
+    masked_sample: str | None = None  # PII-masked preview for the log sink (never the model)
     blocked: bool = False  # text channel may set this; voice never does
 
 
@@ -146,11 +147,16 @@ class SecurityPipeline:
     @staticmethod
     def process_input(text: str, channel: Channel = "text") -> tuple[str, InputFlags]:
         ok, pattern = InputSanitizer.check(text)
+        pii = PIIDetector.detect(text)
         flags = InputFlags(
             injection_suspected=not ok,
             injection_pattern=pattern,
-            pii_types=PIIDetector.detect(text),
+            pii_types=pii,
         )
+        # Masked preview for the log/trace sink ONLY — the live text still flows to the
+        # model unmasked (the coach speaks to its own data subject; see module docstring).
+        if pii:
+            flags.masked_sample = PIIDetector.mask(text)[:280]
         # Voice never blocks mid-workout; text blocks only on a hard injection hit.
         flags.blocked = (not ok) and channel == "text"
         clean = InputSanitizer.sanitize(text)

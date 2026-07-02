@@ -9,8 +9,8 @@ Kept deliberately dependency-light and side-effect free so a probe never mutates
 """
 from fastapi import APIRouter
 
+from app import database
 from app.config import settings
-from app.database import _db
 from app.models import CacheStatsResponse, HealthResponse, MetricsResponse
 from app.monitoring import metrics
 from app.runtime import get_cache
@@ -21,7 +21,9 @@ router = APIRouter(tags=["ops"])
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     checks = {
-        "db": _db is not None,
+        # Read the live module global (not a name bound at import time, which would
+        # stay None after init_db() reassigns database._db).
+        "db": database._db is not None,
         "anthropic": bool(settings.anthropic_api_key),
         "cache": _cache_ready(),
     }
