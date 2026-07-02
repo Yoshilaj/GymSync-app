@@ -25,7 +25,9 @@
     "android": {
       "package": "com.gymsync.app",
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
@@ -42,6 +44,12 @@
           "microphonePermission": "GymSync uses your microphone so you can talk to your AI coach during a workout."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a8e353d2-40bd-41ff-8f1d-5ceca2cdd155"
+      }
+    },
+    "owner": "gymsync.app"
   }
 }
