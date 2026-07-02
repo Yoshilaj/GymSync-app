@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article article-type="review-article" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <front>
+    <journal-meta>
+      <journal-title-group><journal-title>Journal of Strength Science (Sample)</journal-title></journal-title-group>
+    </journal-meta>
+    <article-meta>
+      <article-id pub-id-type="pmc">PMC-SAMPLE-0001</article-id>
+      <article-id pub-id-type="doi">10.0000/sample.0001</article-id>
+      <title-group>
+        <article-title>Resistance Training for Strength and Hypertrophy: A Practical Review</article-title>
+      </title-group>
+      <pub-date pub-type="epub"><year>2021</year></pub-date>
+      <abstract>
+        <p>This sample article summarizes evidence on resistance training variables.</p>
+      </abstract>
+    </article-meta>
+  </front>
+  <body>
+    <sec>
+      <title>Introduction</title>
+      <p>Resistance training is the primary stimulus for increasing muscular strength and
+      size. Adaptations depend on how training variables — load, volume, frequency, and
+      proximity to failure — are manipulated over time. Progressive overload, the gradual
+      increase of mechanical demand, remains the organizing principle behind effective
+      programs. This review outlines practical recommendations for the deadlift, squat, and
+      press, and how to structure sets and repetitions for different goals.</p>
+      <p>Beginners typically respond to a wide range of loads, whereas trained individuals
+      require more deliberate progression and higher relative intensities to continue
+      adapting. Individual response varies, so programs should be adjusted based on recovery
+      and performance trends rather than followed rigidly.</p>
+    </sec>
+    <sec>
+      <title>Load and Repetition Ranges</title>
+      <p>Strength is most effectively developed with heavy loads, roughly 80 to 95 percent of
+      one repetition maximum, performed for one to five repetitions per set. Hypertrophy, or
+      muscle growth, responds to a broader spectrum of loads, commonly six to twelve
+      repetitions, provided sets are taken close to failure. The deadlift, a hip-hinge
+      movement loading the posterior chain, is typically trained in lower repetition ranges
+      because of its high systemic fatigue cost.</p>
+      <p>Repetitions in reserve — the number of additional repetitions one could perform at
+      the end of a set — is a useful gauge of effort. Working with one to three repetitions
+      in reserve balances stimulus against fatigue for most trainees.</p>
+    </sec>
+    <sec>
+      <title>Training Volume and Frequency</title>
+      <p>Weekly volume, often counted as the number of hard sets per muscle group, is a
+      primary driver of hypertrophy. Ten to twenty sets per muscle group per week suits most
+      trainees, distributed across two or more sessions. Higher frequencies allow the same
+      weekly volume to be spread into smaller, better-quality sessions.</p>
+      <p>Recovery between sessions targeting the same movement should allow performance to be
+      maintained or improved. Insufficient recovery manifests as stalled loads, reduced
+      repetition counts, and persistent soreness.</p>
+    </sec>
+    <sec>
+      <title>Deadlift Technique and Safety</title>
+      <p>The conventional deadlift begins with the bar over the mid-foot and the shins nearly
+      vertical. Bracing the trunk before the pull protects the spine by increasing intra
+      abdominal pressure. The lifter takes the slack out of the bar, then drives the floor
+      away as the hips and shoulders rise together, keeping the bar close to the body.</p>
+      <p>Rounding of the lower back under heavy load increases injury risk and should be
+      avoided. Individuals with a history of back pain may prefer trap-bar or Romanian
+      variations, which alter the loading on the lumbar spine while still training the
+      posterior chain.</p>
+    </sec>
+    <sec>
+      <title>Conclusion</title>
+      <p>Effective resistance training applies progressive overload through appropriate load,
+      volume, and frequency, individualized to recovery. Heavy compound movements such as the
+      deadlift build strength efficiently when technique is sound and fatigue is managed.</p>
+    </sec>
+  </body>
+  <back>
+    <ref-list>
+      <ref id="r1"><mixed-citation>Sample reference that should be dropped by the parser.</mixed-citation></ref>
+    </ref-list>
+  </back>
+</article>

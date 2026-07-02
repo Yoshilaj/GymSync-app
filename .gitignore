@@ -53,3 +53,7 @@ yarn-error.*
 # Claude Code local settings (per-machine)
 .claude/settings.local.json
 .mcp.json
+
+# Ingestion: fetched raw corpus (reproducible from sources.jsonl; not versioned).
+# The small hand-placed fixtures under backend/data/samples/ ARE committed.
+backend/data/raw/
