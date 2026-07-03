@@ -47,8 +47,16 @@ const initialState: SessionActionsState = {
   notices: [],
 };
 
-// Internal reducer actions: either an inbound app_action, a 1s tick, or a reset.
-type ReducerAction = AppActionMessage | { type: 'tick' } | { type: 'reset' };
+// Internal reducer actions: an inbound app_action, a 1s tick, a reset, or a
+// local timer control (screen-driven — Skip / +30s / pause / auto-rest).
+type ReducerAction =
+  | AppActionMessage
+  | { type: 'tick' }
+  | { type: 'reset' }
+  | { type: 'local_rest_start'; duration: number }
+  | { type: 'local_rest_skip' }
+  | { type: 'local_rest_extend'; by: number }
+  | { type: 'local_rest_toggle_pause' };
 
 let noticeSeq = 0;
 // Monotonic-ish id without pulling in a uuid dependency; unique within a session.
@@ -75,6 +83,47 @@ function reducer(
   }
 
   if (action.type === 'reset') return initialState;
+
+  if (action.type === 'local_rest_start') {
+    // Auto-rest on set completion must not stomp a timer the coach paused —
+    // the coach's intent wins until the user or coach resumes/stops it.
+    if (state.timer.status === 'paused') return state;
+    return {
+      ...state,
+      timer: {
+        status: 'running',
+        remaining: action.duration,
+        duration: action.duration,
+      },
+    };
+  }
+
+  if (action.type === 'local_rest_skip') {
+    return { ...state, timer: { status: 'idle', remaining: 0, duration: 0 } };
+  }
+
+  if (action.type === 'local_rest_extend') {
+    if (state.timer.status === 'idle') return state;
+    return {
+      ...state,
+      timer: {
+        ...state.timer,
+        remaining: state.timer.remaining + action.by,
+        duration: Math.max(state.timer.duration, state.timer.remaining + action.by),
+      },
+    };
+  }
+
+  if (action.type === 'local_rest_toggle_pause') {
+    if (state.timer.status === 'idle') return state;
+    return {
+      ...state,
+      timer: {
+        ...state.timer,
+        status: state.timer.status === 'paused' ? 'running' : 'paused',
+      },
+    };
+  }
 
   switch (action.action) {
     case 'start_timer':
@@ -145,6 +194,11 @@ export interface SessionActionsApi {
   apply: (action: AppActionMessage) => void;
   /** Clear everything (e.g. when the session ends). */
   reset: () => void;
+  /** Local auto-rest (set completed). No-ops while the coach has it paused. */
+  startRest: (duration: number) => void;
+  skipRest: () => void;
+  extendRest: (by?: number) => void;
+  toggleRestPause: () => void;
 }
 
 export function useSessionActions(): SessionActionsApi {
@@ -159,8 +213,21 @@ export function useSessionActions(): SessionActionsApi {
 
   const apply = useCallback((action: AppActionMessage) => dispatch(action), []);
   const reset = useCallback(() => dispatch({ type: 'reset' }), []);
+  const startRest = useCallback(
+    (duration: number) => dispatch({ type: 'local_rest_start', duration }),
+    [],
+  );
+  const skipRest = useCallback(() => dispatch({ type: 'local_rest_skip' }), []);
+  const extendRest = useCallback(
+    (by: number = 30) => dispatch({ type: 'local_rest_extend', by }),
+    [],
+  );
+  const toggleRestPause = useCallback(
+    () => dispatch({ type: 'local_rest_toggle_pause' }),
+    [],
+  );
 
-  return { state, apply, reset };
+  return { state, apply, reset, startRest, skipRest, extendRest, toggleRestPause };
 }
 
 /** Format seconds as M:SS for the timer display. */

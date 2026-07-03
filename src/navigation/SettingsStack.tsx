@@ -12,17 +12,11 @@ export function SettingsStack() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: '700' },
-        contentStyle: { backgroundColor: colors.background },
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen
-        name="SettingsHome"
-        component={SettingsScreen}
-        options={{ headerShown: false }}
-      />
+      <Stack.Screen name="SettingsHome" component={SettingsScreen} />
     </Stack.Navigator>
   );
 }

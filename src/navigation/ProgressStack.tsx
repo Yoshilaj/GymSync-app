@@ -27,7 +27,7 @@ export function ProgressStack() {
     <Stack.Navigator
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: colors.surface },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="ProgressHome" component={ProgressScreen} />

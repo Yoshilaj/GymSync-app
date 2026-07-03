@@ -1,0 +1,199 @@
+import { ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, gradients, radius, shadows, spacing } from '@/theme';
+import { AppText, Button, Chip } from '@/components/ui';
+
+export interface HeroStat {
+  label: string;
+  value: string;
+  unit?: string;
+}
+
+interface Props {
+  badge: { icon: keyof typeof Ionicons.glyphMap; label: string };
+  title: string;
+  durationMin?: number;
+  muscles: string[];
+  stats: HeroStat[];
+  action?: {
+    label: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    onPress: () => void;
+  };
+  /** upcoming = brand gradient; completed = white card with success accents. */
+  tone?: 'upcoming' | 'completed';
+}
+
+/** The one workout hero card — shared by the Plan tab and day details. */
+export function WorkoutHeroCard({
+  badge,
+  title,
+  durationMin,
+  muscles,
+  stats,
+  action,
+  tone = 'upcoming',
+}: Props) {
+  const onGradient = tone === 'upcoming';
+  const fg = onGradient ? colors.textInverse : colors.textPrimary;
+  const fgSoft = onGradient ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
+
+  const inner = (
+    <>
+      {onGradient && <View style={styles.glow} pointerEvents="none" />}
+      <View style={styles.topRow}>
+        <View style={[styles.badge, !onGradient && styles.badgeCompleted]}>
+          <Ionicons
+            name={badge.icon}
+            size={14}
+            color={onGradient ? colors.textInverse : colors.successText}
+          />
+          <AppText
+            variant="label"
+            color={onGradient ? colors.textInverse : colors.successText}
+          >
+            {badge.label}
+          </AppText>
+        </View>
+        {durationMin != null && (
+          <AppText variant="caption" color={fgSoft}>
+            {durationMin} min
+          </AppText>
+        )}
+      </View>
+
+      <AppText variant="h1" color={fg} style={styles.title}>
+        {title}
+      </AppText>
+
+      {muscles.length > 0 && (
+        <View style={styles.muscles}>
+          {muscles.map((m) => (
+            <Chip
+              key={m}
+              label={m}
+              size="sm"
+              tone={onGradient ? 'onAccent' : 'accent'}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={[styles.statsRow, !onGradient && styles.statsRowCompleted]}>
+        {stats.map((s, i) => (
+          <View key={s.label} style={styles.statCell}>
+            {i > 0 && (
+              <View
+                style={[
+                  styles.statDivider,
+                  { backgroundColor: onGradient ? 'rgba(255,255,255,0.35)' : colors.border },
+                ]}
+              />
+            )}
+            <View style={styles.statInner}>
+              <AppText variant="statSm" color={fg}>
+                {s.value}
+                {s.unit ? (
+                  <AppText variant="caption" color={fgSoft}>
+                    {' '}
+                    {s.unit}
+                  </AppText>
+                ) : null}
+              </AppText>
+              <AppText variant="label" color={fgSoft}>
+                {s.label}
+              </AppText>
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {action && (
+        <Button
+          title={action.label}
+          icon={action.icon}
+          onPress={action.onPress}
+          variant={onGradient ? 'secondary' : 'primary'}
+          style={styles.action}
+        />
+      )}
+    </>
+  );
+
+  if (onGradient) {
+    return (
+      <View style={styles.shadowWrap}>
+        <LinearGradient
+          colors={gradients.brand}
+          start={{ x: 0.1, y: 0 }}
+          end={{ x: 0.9, y: 1 }}
+          style={styles.card}
+        >
+          {inner}
+        </LinearGradient>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.shadowWrap}>
+      <View style={[styles.card, styles.cardCompleted]}>{inner}</View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  shadowWrap: { ...shadows.md, borderRadius: radius.xl },
+  card: {
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    overflow: 'hidden',
+  },
+  cardCompleted: { backgroundColor: colors.card },
+  glow: {
+    position: 'absolute',
+    top: -40,
+    right: -60,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+  },
+  badgeCompleted: { backgroundColor: colors.successSoft },
+  title: { marginTop: spacing.md },
+  muscles: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: spacing.sm,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderRadius: radius.lg,
+  },
+  statsRowCompleted: { backgroundColor: colors.bgSubtle },
+  statCell: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  statDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
+  statInner: { flex: 1, alignItems: 'center', gap: 2 },
+  action: { marginTop: spacing.lg },
+});

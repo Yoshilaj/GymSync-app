@@ -1,25 +1,36 @@
 import { useMemo, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  TextInput,
-  ScrollView,
   FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '@/theme';
-import { MuscleIcon } from '@/components/MuscleIcon';
+import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { AppText, EmptyState, Entering } from '@/components/ui';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { ExerciseImage } from '@/components/ExerciseImage';
 import { mockExercises, muscleGroups } from '@/data/mockExercises';
-import { ProgressStackParamList } from '@/navigation/ProgressStack';
+import { useTabBarClearance } from '@/hooks';
 import { Exercise, MuscleGroup } from '@/types';
 
-type Nav = NativeStackNavigationProp<ProgressStackParamList, 'ExerciseList'>;
-type Rt = RouteProp<ProgressStackParamList, 'ExerciseList'>;
+// Mounted in both PlanStack (browse) and ProgressStack (browse + picker) —
+// type against the minimal structural params this screen actually navigates.
+type ExerciseListParams = {
+  ExerciseList: { mode?: 'browse' | 'picker'; returnKey?: 'strength' | 'volume' };
+  ExerciseDetail: { exerciseId: string };
+  ProgressHome:
+    | { pickedExercise?: string; returnKey?: 'strength' | 'volume' }
+    | undefined;
+};
+
+type Nav = NativeStackNavigationProp<ExerciseListParams, 'ExerciseList'>;
+type Rt = RouteProp<ExerciseListParams, 'ExerciseList'>;
 
 const ALL: MuscleGroup | 'All' = 'All';
 
@@ -31,6 +42,7 @@ export function ExerciseListScreen() {
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<MuscleGroup | 'All'>(ALL);
+  const clearance = useTabBarClearance();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -59,28 +71,23 @@ export function ExerciseListScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => nav.goBack()} style={styles.backBtn} hitSlop={10}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
-        </Pressable>
-        <Text style={styles.headerTitle}>
-          {mode === 'picker' ? 'Select exercise' : 'Exercise library'}
-        </Text>
-        <View style={{ width: 32 }} />
-      </View>
+      <ScreenHeader
+        variant="detail"
+        title={mode === 'picker' ? 'Select exercise' : 'Exercise library'}
+      />
 
       <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={colors.textMuted} />
+        <Ionicons name="search" size={18} color={colors.textSecondary} />
         <TextInput
           value={query}
           onChangeText={setQuery}
           placeholder="Search exercise, muscle, equipment"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={colors.textTertiary}
           style={styles.searchInput}
         />
         {query.length > 0 && (
           <Pressable onPress={() => setQuery('')} hitSlop={8}>
-            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
           </Pressable>
         )}
       </View>
@@ -115,37 +122,53 @@ export function ExerciseListScreen() {
       <FlatList
         data={filtered}
         keyExtractor={(i) => i.id}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
+        contentContainerStyle={[styles.listContent, { paddingBottom: clearance.scroll }]}
+        renderItem={({ item, index }) => (
+          <Entering index={index}>
           <Pressable
-            style={({ pressed }) => [
-              styles.row,
-              pressed && { backgroundColor: colors.accentSoft },
-            ]}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             onPress={() => handlePress(item)}
           >
-            <View style={styles.iconBubble}>
-              <MuscleIcon muscle={item.muscleGroup} size={40} />
-            </View>
+            <ExerciseImage
+              exerciseId={item.id}
+              muscle={item.muscleGroup}
+              size={52}
+              radius="md"
+            />
             <View style={{ flex: 1 }}>
-              <Text style={styles.exName} numberOfLines={1}>
+              <AppText variant="h3" numberOfLines={1}>
                 {item.name}
-              </Text>
+              </AppText>
               <View style={styles.metaRow}>
-                <Text style={styles.metaMuscle}>{item.muscleGroup}</Text>
+                <AppText variant="caption" color="accentText">
+                  {item.muscleGroup}
+                </AppText>
                 <View style={styles.metaDot} />
-                <Text style={styles.metaText}>{item.equipment}</Text>
+                <AppText variant="caption">{item.equipment}</AppText>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textDim} />
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
           </Pressable>
+          </Entering>
         )}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="search" size={28} color={colors.textMuted} />
-            <Text style={styles.emptyText}>No exercises match.</Text>
-          </View>
+          <EmptyState
+            icon="search"
+            title="No matches"
+            message={
+              query
+                ? `Nothing matches "${query}". Try another term or clear your filters.`
+                : 'No exercises in this group.'
+            }
+            action={{
+              label: 'Clear filters',
+              onPress: () => {
+                setQuery('');
+                setFilter(ALL);
+              },
+            }}
+          />
         }
       />
     </SafeAreaView>
@@ -164,65 +187,39 @@ function FilterChip({
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.chip, active && styles.chipActive]}
-    >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
+      <AppText variant="caption" color={active ? 'textInverse' : 'textPrimary'}>
         {label}
-      </Text>
-      <Text
-        style={[
-          styles.chipCount,
-          active && { color: 'rgba(255,255,255,0.8)' },
-        ]}
+      </AppText>
+      <AppText
+        variant="caption"
+        color={active ? 'rgba(255,255,255,0.8)' : 'textTertiary'}
+        style={styles.chipCount}
       >
         {count}
-      </Text>
+      </AppText>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-  },
-  backBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.3,
-  },
+  safe: { flex: 1, backgroundColor: colors.bg },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: colors.card,
-    marginHorizontal: spacing.lg,
+    marginHorizontal: layout.SCREEN_H_PADDING,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    ...shadows.xs,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    color: colors.text,
+    fontSize: 16,
+    fontFamily: 'Inter_400Regular',
+    color: colors.textPrimary,
     padding: 0,
   },
   filterScroll: {
@@ -232,7 +229,7 @@ const styles = StyleSheet.create({
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingVertical: spacing.md,
   },
   chip: {
@@ -244,29 +241,13 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: radius.pill,
     backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
     marginRight: spacing.sm,
+    ...shadows.xs,
   },
-  chipActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  chipText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -0.1,
-  },
-  chipTextActive: { color: '#fff' },
-  chipCount: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
+  chipActive: { backgroundColor: colors.accent },
+  chipCount: { fontSize: 12 },
   listContent: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
   },
   row: {
     flexDirection: 'row',
@@ -275,53 +256,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     padding: spacing.md,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    ...shadows.xs,
   },
-  iconBubble: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.2,
-  },
+  rowPressed: { backgroundColor: colors.accentFaint },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginTop: 2,
   },
-  metaMuscle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.accent,
-  },
   metaDot: {
     width: 3,
     height: 3,
     borderRadius: 2,
-    backgroundColor: colors.textDim,
-  },
-  metaText: {
-    fontSize: 12,
-    color: colors.textMuted,
-    fontWeight: '500',
-  },
-  emptyState: {
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xxl,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textMuted,
-    fontWeight: '600',
+    backgroundColor: colors.textTertiary,
   },
 });

@@ -1,155 +1,212 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  StyleSheet,
-  TextInput,
-  Pressable,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  StyleSheet,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '@/theme';
+import { colors, layout, radius, spacing } from '@/theme';
+import { AppText, Chip } from '@/components/ui';
 import { ChatBubble } from '@/components/ChatBubble';
-import { VoiceButton } from '@/components/VoiceButton';
-import { mockChatHistory, getScriptedReply } from '@/data/mockChatHistory';
-import { useUser } from '@/context/UserContext';
-import { ChatMessage } from '@/types';
+import { ChatInputBar } from '@/components/ChatInputBar';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { useAuth } from '@/auth/AuthContext';
+import { useKeyboardVisible, useTabBarClearance } from '@/hooks';
+import { useTextChat, type ChatItem } from '@/voice';
 import { SyncStackParamList } from '@/navigation/SyncStack';
 
 type Nav = NativeStackNavigationProp<SyncStackParamList, 'SyncConversation'>;
 type RouteP = RouteProp<SyncStackParamList, 'SyncConversation'>;
 
+const STARTERS = [
+  "What's on today's plan?",
+  'How much rest between heavy sets?',
+  'Swap an exercise for me',
+];
+
 export function ConversationScreen() {
-  const [messages, setMessages] = useState<ChatMessage[]>(mockChatHistory);
   const [input, setInput] = useState('');
-  const listRef = useRef<FlatList<ChatMessage>>(null);
+  const listRef = useRef<FlatList<ChatItem>>(null);
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteP>();
-  const { user } = useUser();
+  const { user: authUser, getToken } = useAuth();
+  const clearance = useTabBarClearance();
+  const keyboardVisible = useKeyboardVisible();
 
-  const sendMessage = (text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
-      author: 'user',
-      text: trimmed,
-      timestamp: new Date().toTimeString().slice(0, 5),
-    };
-    setMessages((m) => [...m, userMsg]);
+  const chat = useTextChat({
+    userId: authUser?.id ?? '',
+    getToken,
+  });
 
-    setTimeout(() => {
-      const reply: ChatMessage = {
-        id: `h-${Date.now()}`,
-        author: 'sync',
-        text: getScriptedReply(trimmed, user.coachPersonality),
-        timestamp: new Date().toTimeString().slice(0, 5),
-      };
-      setMessages((m) => [...m, reply]);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-    }, 600);
-
-    setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-  };
-
+  // A draft handed over from the Sync landing input sends immediately.
   useEffect(() => {
     const draft = route.params?.draft;
     if (draft) {
-      sendMessage(draft);
+      chat.send(draft);
       nav.setParams({ draft: undefined });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.draft]);
 
   const handleSend = () => {
-    sendMessage(input);
+    chat.send(input);
     setInput('');
   };
 
+  const scrollToEnd = () =>
+    listRef.current?.scrollToEnd({ animated: true });
+
+  const renderItem = ({ item }: { item: ChatItem }) => {
+    if (item.kind === 'action') {
+      return (
+        <View style={styles.actionChipRow}>
+          <View style={styles.actionChip}>
+            <Ionicons name="checkmark-circle" size={14} color={colors.successText} />
+            <AppText variant="caption" color="textSecondary">
+              {item.text}
+            </AppText>
+          </View>
+        </View>
+      );
+    }
+    const bubble = (
+      <ChatBubble
+        message={{
+          id: item.id,
+          author: item.author,
+          text: item.text,
+          timestamp: '',
+        }}
+        streaming={item.streaming}
+      />
+    );
+    if (!item.failed) return bubble;
+    return (
+      <Pressable onPress={() => chat.retry(item.id)}>
+        {bubble}
+        <AppText variant="caption" color="dangerText" style={styles.failedHint}>
+          Message failed — tap to retry
+        </AppText>
+      </Pressable>
+    );
+  };
+
   return (
-    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
+      <ScreenHeader
+        variant="detail"
+        title="Sync"
+        subtitle={chat.busy ? 'typing…' : 'online'}
+      />
+      {chat.error && (
+        <View style={styles.errorBanner}>
+          <Ionicons name="cloud-offline-outline" size={14} color={colors.warningText} />
+          <AppText variant="caption" color="warningText">
+            {chat.error} — reconnecting on your next message
+          </AppText>
+        </View>
+      )}
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
-        keyboardVerticalOffset={86}
+        keyboardVerticalOffset={layout.HEADER_KEYBOARD_OFFSET}
       >
-        <FlatList
-          ref={listRef}
-          data={messages}
-          keyExtractor={(m) => m.id}
-          renderItem={({ item }) => <ChatBubble message={item} />}
-          contentContainerStyle={styles.listContent}
-          onContentSizeChange={() =>
-            listRef.current?.scrollToEnd({ animated: false })
-          }
-        />
-
-        <View style={styles.inputBar}>
-          <TextInput
-            style={styles.input}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Message your Sync…"
-            placeholderTextColor={colors.textDim}
-            multiline
-            onSubmitEditing={handleSend}
-          />
-          <Pressable
-            onPress={handleSend}
-            style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
-            disabled={!input.trim()}
-          >
-            <Ionicons name="arrow-up" size={18} color="#fff" />
-          </Pressable>
-          <View style={{ marginLeft: spacing.sm }}>
-            <VoiceButton size={44} onPress={() => nav.navigate('VoiceCoach')} />
+        {chat.items.length === 0 ? (
+          <View style={styles.empty}>
+            <View style={styles.emptyOrb}>
+              <Ionicons name="chatbubble-ellipses" size={26} color={colors.accent} />
+            </View>
+            <AppText variant="h3" align="center">
+              Ask me anything about training
+            </AppText>
+            <AppText variant="caption" align="center" style={styles.emptyHint}>
+              Plans, form, swaps, recovery — I know your history.
+            </AppText>
+            <View style={styles.starters}>
+              {STARTERS.map((s) => (
+                <Chip key={s} label={s} onPress={() => chat.send(s)} />
+              ))}
+            </View>
           </View>
-        </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={chat.items}
+            keyExtractor={(m) => m.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+            onContentSizeChange={scrollToEnd}
+          />
+        )}
+
+        <ChatInputBar
+          value={input}
+          onChangeText={setInput}
+          onSend={handleSend}
+          onMic={() => nav.navigate('VoiceCoach')}
+          placeholder="Message your Sync…"
+          bottomInset={keyboardVisible ? spacing.sm : clearance.pinned}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   listContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingVertical: spacing.md,
   },
-  inputBar: {
+  actionChipRow: { alignItems: 'center', marginBottom: spacing.sm },
+  actionChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    gap: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  input: {
-    flex: 1,
-    maxHeight: 120,
-    minHeight: 40,
-    color: colors.text,
-    fontSize: 16,
+    gap: spacing.xs,
+    backgroundColor: colors.successSoft,
+    borderRadius: radius.pill,
+    paddingVertical: spacing.xs + 1,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  failedHint: { alignSelf: 'flex-end', marginBottom: spacing.sm },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.warningSoft,
+    marginHorizontal: layout.SCREEN_H_PADDING,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  empty: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.xl,
+    gap: spacing.sm,
   },
-  sendBtnDisabled: { backgroundColor: colors.accentMuted, opacity: 0.6 },
+  emptyOrb: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentFaint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  emptyHint: { maxWidth: 260 },
+  starters: {
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
 });

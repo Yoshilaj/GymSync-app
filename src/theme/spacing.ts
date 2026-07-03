@@ -1,4 +1,5 @@
 export const spacing = {
+  xxs: 2,
   xs: 4,
   sm: 8,
   md: 12,
@@ -11,7 +12,8 @@ export const spacing = {
 export const radius = {
   sm: 8,
   md: 12,
-  lg: 16,
-  xl: 24,
+  lg: 16, // default card
+  xl: 24, // hero cards
+  xxl: 32, // sheets, orb
   pill: 999,
 } as const;

@@ -1,5 +1,13 @@
 export { useVoiceSession } from './useVoiceSession';
 export type { UseVoiceSessionArgs, VoiceSessionApi } from './useVoiceSession';
+export { useWorkoutSession } from './useWorkoutSession';
+export type {
+  UseWorkoutSessionArgs,
+  WorkoutSessionApi,
+  WorkoutSessionStatus,
+} from './useWorkoutSession';
+export { useTextChat } from './useTextChat';
+export type { ChatItem, TextChatApi } from './useTextChat';
 export { useSessionActions, formatClock } from './useSessionActions';
 export type {
   SessionActionsState,

@@ -1,70 +1,83 @@
 import { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '@/theme';
-import { AppHeader } from '@/components/AppHeader';
+import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { AppText } from '@/components/ui';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { ChatInputBar } from '@/components/ChatInputBar';
+import { useKeyboardVisible, useTabBarClearance } from '@/hooks';
 import { useUser } from '@/context/UserContext';
+import { getTodaysWorkout } from '@/data/mockPlan';
 import { SyncStackParamList } from '@/navigation/SyncStack';
 
 type Nav = NativeStackNavigationProp<SyncStackParamList, 'SyncHome'>;
 
-type Suggestion = {
-  id: string;
-  emoji: string;
-  label: string;
-  onPress: () => void;
-};
+function timeGreeting(): string {
+  const h = new Date().getHours();
+  if (h < 5) return 'Up late';
+  if (h < 12) return 'Morning';
+  if (h < 18) return 'Afternoon';
+  return 'Evening';
+}
 
 export function SyncScreen() {
   const [input, setInput] = useState('');
   const nav = useNavigation<Nav>();
   const { user } = useUser();
+  const todaysWorkout = getTodaysWorkout();
+  const clearance = useTabBarClearance();
+  const keyboardVisible = useKeyboardVisible();
 
-  const goToTab = (tab: 'Plan' | 'Progress' | 'Settings') => {
-    nav.getParent()?.navigate(tab as never);
-  };
-
-  const suggestions: Suggestion[] = [
-    {
-      id: 'today',
-      emoji: '📅',
-      label: "Today's plan",
-      onPress: () => goToTab('Plan'),
-    },
-    {
-      id: 'progress',
-      emoji: '📊',
-      label: 'View progress',
-      onPress: () => goToTab('Progress'),
-    },
-  ];
-
-  const openConversation = () => {
-    const draft = input.trim();
-    nav.navigate('SyncConversation', draft ? { draft } : undefined);
+  const openConversation = (draft?: string) => {
+    const text = (draft ?? input).trim();
+    nav.navigate('SyncConversation', text ? { draft: text } : undefined);
     setInput('');
   };
 
+  // Conversation starters — every pill leads into the coach, not away from it.
+  const suggestions = [
+    {
+      id: 'start',
+      icon: 'play' as const,
+      label: `Start ${todaysWorkout.title}`,
+      onPress: () =>
+        nav.getParent()?.navigate('Plan', {
+          screen: 'LiveWorkoutStart',
+          params: { workoutId: todaysWorkout.id },
+        }),
+    },
+    {
+      id: 'swap',
+      icon: 'swap-horizontal' as const,
+      label: 'Swap an exercise today',
+      onPress: () => openConversation('Can you swap an exercise in my plan today?'),
+    },
+    {
+      id: 'trend',
+      icon: 'trending-up' as const,
+      label: "How's my bench trending?",
+      onPress: () => openConversation('How is my bench press trending lately?'),
+    },
+  ];
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <AppHeader variant="brand" />
+      <ScreenHeader variant="brand" />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}
-        keyboardVerticalOffset={86}
+        keyboardVerticalOffset={layout.HEADER_KEYBOARD_OFFSET}
       >
         <ScrollView
           style={styles.flex}
@@ -72,9 +85,12 @@ export function SyncScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.greetingBlock}>
-            <Text style={styles.greetingBig}>
-              What's up {user.displayName}!
-            </Text>
+            <AppText variant="display">
+              {timeGreeting()}, {user.displayName}
+            </AppText>
+            <AppText variant="caption" style={styles.greetingSub}>
+              Your coach is ready — ask, log, or just start.
+            </AppText>
           </View>
 
           <View style={styles.suggestions}>
@@ -82,78 +98,40 @@ export function SyncScreen() {
               <Pressable
                 key={s.id}
                 onPress={s.onPress}
-                style={({ pressed }) => [
-                  styles.pill,
-                  pressed && styles.pillPressed,
-                ]}
+                style={({ pressed }) => [styles.pill, pressed && styles.pillPressed]}
               >
-                <Text style={styles.pillEmoji}>{s.emoji}</Text>
-                <Text style={styles.pillLabel}>{s.label}</Text>
+                <View style={styles.pillIcon}>
+                  <Ionicons name={s.icon} size={15} color={colors.accentText} />
+                </View>
+                <AppText variant="bodyMedium">{s.label}</AppText>
               </Pressable>
             ))}
           </View>
         </ScrollView>
 
-        <View style={styles.inputWrap}>
-          <View style={styles.inputCard}>
-            <Pressable hitSlop={8} style={styles.plusBtn}>
-              <Ionicons name="add" size={22} color={colors.text} />
-            </Pressable>
-            <TextInput
-              style={styles.input}
-              value={input}
-              onChangeText={setInput}
-              placeholder="Ask Sync"
-              placeholderTextColor={colors.textMuted}
-              onSubmitEditing={openConversation}
-              returnKeyType="send"
-            />
-            <Pressable
-              hitSlop={8}
-              style={styles.roundBtnOutline}
-              onPress={() => nav.navigate('VoiceCoach')}
-            >
-              <Ionicons name="mic" size={18} color={colors.text} />
-            </Pressable>
-            <Pressable
-              hitSlop={8}
-              style={[
-                styles.sendBtn,
-                !input.trim() && styles.sendBtnDisabled,
-              ]}
-              onPress={openConversation}
-            >
-              <Ionicons name="arrow-up" size={18} color="#fff" />
-            </Pressable>
-          </View>
-        </View>
+        <ChatInputBar
+          value={input}
+          onChangeText={setInput}
+          onSend={() => openConversation()}
+          onMic={() => nav.navigate('VoiceCoach')}
+          bottomInset={keyboardVisible ? spacing.sm : clearance.pinned}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: colors.surface,
-  },
+  safe: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scroll: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingTop: spacing.xl,
     paddingBottom: spacing.xxl,
     flexGrow: 1,
   },
-  greetingBlock: {
-    marginBottom: spacing.xl,
-  },
-  greetingBig: {
-    fontSize: 34,
-    fontWeight: '700',
-    color: colors.text,
-    letterSpacing: -0.6,
-    lineHeight: 40,
-  },
+  greetingBlock: { marginBottom: spacing.xl, gap: spacing.xs },
+  greetingSub: { marginTop: spacing.xs },
   suggestions: {
     gap: spacing.md,
     alignItems: 'flex-start',
@@ -161,80 +139,21 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingLeft: spacing.md,
+    gap: spacing.md,
+    paddingLeft: spacing.sm,
     paddingRight: spacing.lg,
-    paddingVertical: 12,
+    paddingVertical: spacing.sm,
     borderRadius: radius.pill,
     backgroundColor: colors.card,
-    shadowColor: '#0B2447',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    ...shadows.xs,
   },
-  pillPressed: {
-    backgroundColor: colors.accentSoft,
-  },
-  pillEmoji: {
-    fontSize: 18,
-  },
-  pillLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.text,
-  },
-  inputWrap: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-  },
-  inputCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.card,
+  pillPressed: { backgroundColor: colors.accentFaint },
+  pillIcon: {
+    width: 32,
+    height: 32,
     borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    gap: spacing.xs,
-    shadowColor: '#0B2447',
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
-  },
-  plusBtn: {
-    width: 36,
-    height: 36,
+    backgroundColor: colors.accentFaint,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.text,
-    paddingVertical: 8,
-    paddingHorizontal: spacing.xs,
-  },
-  roundBtnOutline: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.card,
-  },
-  sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: {
-    backgroundColor: colors.accentMuted,
   },
 });

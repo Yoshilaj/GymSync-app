@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Animated, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '@/theme';
+import { colors, shadows } from '@/theme';
 
 interface Props {
   onPress: () => void;
@@ -44,6 +44,7 @@ export function VoiceButton({ onPress, active = false, size = 64 }: Props) {
         <Animated.View
           style={[
             styles.pulse,
+            styles.pulseActive,
             {
               width: size,
               height: size,
@@ -63,7 +64,7 @@ export function VoiceButton({ onPress, active = false, size = 64 }: Props) {
             height: size,
             borderRadius: size / 2,
           },
-          active && styles.buttonActive,
+          active ? styles.buttonActive : styles.buttonIdle,
           pressed && styles.pressed,
         ]}
       >
@@ -79,15 +80,18 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: colors.accent,
   },
+  pulseActive: { backgroundColor: colors.live },
   button: {
-    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.accent,
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
   },
-  buttonActive: { backgroundColor: '#FF7A45' },
+  buttonIdle: {
+    backgroundColor: colors.accent,
+    ...shadows.glow,
+  },
+  buttonActive: {
+    backgroundColor: colors.live,
+    ...shadows.glowLive,
+  },
   pressed: { opacity: 0.85 },
 });

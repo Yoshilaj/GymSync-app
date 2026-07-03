@@ -18,32 +18,29 @@ export function SyncStack() {
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: '700' },
-        contentStyle: { backgroundColor: colors.background },
+        headerShown: false,
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen
-        name="SyncHome"
-        component={SyncScreen}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen
-        name="SyncConversation"
-        component={ConversationScreen}
-        options={{ title: 'Sync' }}
-      />
+      <Stack.Screen name="SyncHome" component={SyncScreen} />
+      <Stack.Screen name="SyncConversation" component={ConversationScreen} />
       <Stack.Screen
         name="VoiceCoach"
         component={VoiceCoachScreen}
-        options={{ title: 'Voice Coach', presentation: 'modal' }}
+        options={{ presentation: 'modal' }}
       />
-      <Stack.Screen
-        name="VoiceDev"
-        component={VoiceDevScreen}
-        options={{ title: 'Voice Dev' }}
-      />
+      {__DEV__ && (
+        <Stack.Screen
+          name="VoiceDev"
+          component={VoiceDevScreen}
+          options={{
+            headerShown: true,
+            title: 'Voice Dev',
+            headerStyle: { backgroundColor: colors.bg },
+            headerTintColor: colors.textPrimary,
+          }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

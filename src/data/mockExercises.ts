@@ -837,3 +837,17 @@ export const muscleGroups: MuscleGroup[] = [
 export function getExerciseById(id: string): Exercise | undefined {
   return mockExercises.find((e) => e.id === id);
 }
+
+/** Loose name lookup for coach-emitted exercise names ("bench press" → Bench Press). */
+export function getExerciseByName(name: string): Exercise | undefined {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return undefined;
+  return (
+    mockExercises.find((e) => e.name.toLowerCase() === needle) ??
+    mockExercises.find(
+      (e) =>
+        e.name.toLowerCase().includes(needle) ||
+        needle.includes(e.name.toLowerCase()),
+    )
+  );
+}

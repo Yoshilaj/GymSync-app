@@ -1,25 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
   Dimensions,
   FlatList,
-  NativeSyntheticEvent,
   NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
   ScrollView,
+  StyleSheet,
+  View,
 } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, radius, spacing } from '@/theme';
-import { AppHeader } from '@/components/AppHeader';
+import { colors, defaultLineChartProps, layout, radius, spacing } from '@/theme';
+import { AppText, Card, Entering, StatTile } from '@/components/ui';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { ChartCard } from '@/components/ChartCard';
 import { mockProgress } from '@/data/mockProgress';
 import { mockPlan } from '@/data/mockPlan';
 import { getExerciseById, mockExercises } from '@/data/mockExercises';
+import { useTabBarClearance } from '@/hooks';
 import { ProgressStackParamList } from '@/navigation/ProgressStack';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList, 'ProgressHome'>;
@@ -27,6 +29,7 @@ type Rt = RouteProp<ProgressStackParamList, 'ProgressHome'>;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CAL_ITEM_W = SCREEN_W - spacing.lg * 4;
+const CHART_W = SCREEN_W - spacing.lg * 4 - 28;
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -37,116 +40,81 @@ const WEEKDAY_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_RANGE = 24;
 const CENTER_INDEX = 12;
 
+type Metric = 'strength' | 'volume';
+
 function monthAtOffset(offset: number) {
   const ref = new Date();
-  const d = new Date(ref.getFullYear(), ref.getMonth() + offset - CENTER_INDEX, 1);
-  return d;
+  return new Date(ref.getFullYear(), ref.getMonth() + offset - CENTER_INDEX, 1);
 }
 
 export function ProgressScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
 
-  const [strengthExId, setStrengthExId] = useState<string>('ex-bench');
-  const [volumeExId, setVolumeExId] = useState<string>('ex-squat');
+  const [exerciseId, setExerciseId] = useState<string>('ex-bench');
+  const [metric, setMetric] = useState<Metric>('strength');
+  const clearance = useTabBarClearance();
 
   useEffect(() => {
     const params = route.params;
-    if (params?.pickedExercise && params?.returnKey) {
-      if (params.returnKey === 'strength') setStrengthExId(params.pickedExercise);
-      if (params.returnKey === 'volume') setVolumeExId(params.pickedExercise);
+    if (params?.pickedExercise) {
+      setExerciseId(params.pickedExercise);
       nav.setParams({ pickedExercise: undefined, returnKey: undefined } as never);
     }
-  }, [route.params?.pickedExercise, route.params?.returnKey]);
+  }, [route.params?.pickedExercise]);
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <AppHeader variant="brand" />
+      <ScreenHeader variant="brand" title="Progress" />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: clearance.scroll }]}
         showsVerticalScrollIndicator={false}
       >
-        <KeyMetrics />
-        <CalendarBlock />
-        <GraphBlock
-          title="Strength"
-          subtitle="Estimated 1RM"
-          exerciseId={strengthExId}
-          accent={colors.accent}
-          onPickExercise={() =>
-            nav.navigate('ExerciseList', { mode: 'picker', returnKey: 'strength' })
-          }
-          seed={0.9}
-          unit="lbs"
-        />
-        <GraphBlock
-          title="Volume"
-          subtitle="Weekly weight moved"
-          exerciseId={volumeExId}
-          accent={colors.success}
-          onPickExercise={() =>
-            nav.navigate('ExerciseList', { mode: 'picker', returnKey: 'volume' })
-          }
-          seed={40}
-          unit="k lbs"
-        />
-        <BodyWeightBlock />
+        <Entering>
+          <View style={styles.metricsRow}>
+            <StatTile
+              label="Streak"
+              value={mockProgress.currentStreak}
+              unit="days"
+              icon="flame"
+              tone="live"
+            />
+            <StatTile
+              label="PRs · month"
+              value={mockProgress.prsThisMonth}
+              icon="trophy"
+              tone="warning"
+            />
+            <StatTile
+              label="This week"
+              value={mockProgress.daysTrainedThisWeek}
+              unit="/ 4"
+              icon="barbell"
+              tone="accent"
+            />
+          </View>
+        </Entering>
+
+        <Entering index={1}>
+          <CalendarBlock />
+        </Entering>
+
+        <Entering index={2}>
+          <ExerciseTrends
+            exerciseId={exerciseId}
+            metric={metric}
+            onMetricChange={setMetric}
+            onPickExercise={() =>
+              nav.navigate('ExerciseList', { mode: 'picker', returnKey: 'strength' })
+            }
+          />
+        </Entering>
+
+        <Entering index={3}>
+          <BodyWeightBlock />
+        </Entering>
       </ScrollView>
     </SafeAreaView>
-  );
-}
-
-function KeyMetrics() {
-  return (
-    <View style={styles.metricsRow}>
-      <MetricCard
-        label="Streak"
-        value={`${mockProgress.currentStreak}`}
-        unit="days"
-        icon="flame"
-        accent="#FF7A30"
-      />
-      <MetricCard
-        label="PRs · month"
-        value={`${mockProgress.prsThisMonth}`}
-        icon="trophy"
-        accent={colors.warning}
-      />
-      <MetricCard
-        label="This week"
-        value={`${mockProgress.daysTrainedThisWeek}`}
-        unit="/ 4"
-        icon="barbell"
-        accent={colors.accent}
-      />
-    </View>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  unit,
-  icon,
-  accent,
-}: {
-  label: string;
-  value: string;
-  unit?: string;
-  icon: any;
-  accent: string;
-}) {
-  return (
-    <View style={styles.metricCard}>
-      <View style={[styles.metricIconBubble, { backgroundColor: accent + '22' }]}>
-        <Ionicons name={icon} size={18} color={accent} />
-      </View>
-      <View style={styles.metricNumRow}>
-        <Text style={styles.metricValue}>{value}</Text>
-        {unit && <Text style={styles.metricUnit}>{unit}</Text>}
-      </View>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -155,14 +123,10 @@ function CalendarBlock() {
   const listRef = useRef<FlatList<number>>(null);
   const [activeOffset, setActiveOffset] = useState(CENTER_INDEX);
 
-  const data = useMemo(
-    () => Array.from({ length: MONTH_RANGE }, (_, i) => i),
-    []
-  );
+  const data = useMemo(() => Array.from({ length: MONTH_RANGE }, (_, i) => i), []);
 
   const onMomentumEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const i = Math.round(e.nativeEvent.contentOffset.x / CAL_ITEM_W);
-    setActiveOffset(i);
+    setActiveOffset(Math.round(e.nativeEvent.contentOffset.x / CAL_ITEM_W));
   };
 
   const current = monthAtOffset(activeOffset);
@@ -175,25 +139,27 @@ function CalendarBlock() {
   };
 
   return (
-    <View style={styles.calendarCard}>
+    <Card radius="xl" style={styles.calendarCard}>
       <View style={styles.calendarHeader}>
         <Pressable onPress={() => goto(-1)} hitSlop={10} style={styles.calArrow}>
-          <Ionicons name="chevron-back" size={20} color={colors.text} />
+          <Ionicons name="chevron-back" size={18} color={colors.textPrimary} />
         </Pressable>
-        <Text style={styles.calendarTitle}>{monthLabel}</Text>
+        <AppText variant="h3">{monthLabel}</AppText>
         <Pressable onPress={() => goto(1)} hitSlop={10} style={styles.calArrow}>
-          <Ionicons name="chevron-forward" size={20} color={colors.text} />
+          <Ionicons name="chevron-forward" size={18} color={colors.textPrimary} />
         </Pressable>
       </View>
 
       <View style={styles.weekdayRow}>
         {WEEKDAY_LETTERS.map((d, i) => (
-          <Text
+          <AppText
             key={i}
-            style={[styles.weekdayText, (i === 0 || i === 6) && styles.weekdayWeekend]}
+            variant="label"
+            color={i === 0 || i === 6 ? 'textTertiary' : 'textSecondary'}
+            style={styles.weekdayText}
           >
             {d}
-          </Text>
+          </AppText>
         ))}
       </View>
 
@@ -216,7 +182,7 @@ function CalendarBlock() {
           />
         )}
       />
-    </View>
+    </Card>
   );
 }
 
@@ -246,14 +212,11 @@ function MonthView({
       {Array.from({ length: cells.length / 7 }).map((_, w) => (
         <View key={w} style={styles.weekRow}>
           {cells.slice(w * 7, w * 7 + 7).map((day, i) => {
-            if (day === null) {
-              return <View key={i} style={styles.dayCell} />;
-            }
+            if (day === null) return <View key={i} style={styles.dayCell} />;
             const dayDate = new Date(year, month, day);
             const dayLabel = WEEKDAY_LONG[dayDate.getDay()];
             const hasWorkout = mockPlan.workouts.some((w) => w.dayLabel === dayLabel);
-            const isToday =
-              isCurrent && day === today.getDate();
+            const isToday = isCurrent && day === today.getDate();
 
             return (
               <Pressable
@@ -261,27 +224,17 @@ function MonthView({
                 style={({ pressed }) => [styles.dayCell, pressed && { opacity: 0.6 }]}
                 onPress={() => onPressDate(dayDate.toDateString())}
               >
-                <View
-                  style={[
-                    styles.dayBubble,
-                    isToday && styles.dayBubbleToday,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.dayNum,
-                      isToday && styles.dayNumToday,
-                    ]}
+                <View style={[styles.dayBubble, isToday && styles.dayBubbleToday]}>
+                  <AppText
+                    variant="caption"
+                    color={isToday ? 'textInverse' : 'textPrimary'}
+                    style={styles.dayNum}
                   >
                     {day}
-                  </Text>
+                  </AppText>
                 </View>
                 <View style={styles.markRow}>
-                  {hasWorkout ? (
-                    <View style={[styles.mark, { backgroundColor: colors.accent }]} />
-                  ) : (
-                    <View style={styles.markEmpty} />
-                  )}
+                  {hasWorkout && <View style={styles.mark} />}
                 </View>
               </Pressable>
             );
@@ -292,102 +245,99 @@ function MonthView({
   );
 }
 
-function GraphBlock({
-  title,
-  subtitle,
+/** Strength and Volume merged into one block with a metric toggle. */
+function ExerciseTrends({
   exerciseId,
-  accent,
+  metric,
+  onMetricChange,
   onPickExercise,
-  seed,
-  unit,
 }: {
-  title: string;
-  subtitle: string;
   exerciseId: string;
-  accent: string;
+  metric: Metric;
+  onMetricChange: (m: Metric) => void;
   onPickExercise: () => void;
-  seed: number;
-  unit: string;
 }) {
   const ex = getExerciseById(exerciseId) ?? mockExercises[0];
+
+  // Deterministic synthetic series until a real history endpoint exists —
+  // flagged in the UI with the "Sample data" chip.
   const data = useMemo(() => {
-    // Deterministic variation per exercise id
     const hash = [...exerciseId].reduce((a, c) => a + c.charCodeAt(0), 0);
-    const base = title === 'Volume' ? 12 + (hash % 8) : 140 + (hash % 60);
+    const base = metric === 'volume' ? 12 + (hash % 8) : 140 + (hash % 60);
     return mockProgress.estimated1RM.map((p, i) => ({
       value: Math.round(
         base +
-          i * (title === 'Volume' ? 0.4 : 1.1) +
-          Math.sin(i + hash) * (title === 'Volume' ? 1.2 : 4)
+          i * (metric === 'volume' ? 0.4 : 1.1) +
+          Math.sin(i + hash) * (metric === 'volume' ? 1.2 : 4),
       ),
       label: i % 3 === 0 ? p.date.slice(3) : '',
-      dataPointText: undefined,
     }));
-  }, [exerciseId, title]);
+  }, [exerciseId, metric]);
 
-  const latest = data[data.length - 1].value;
-  const first = data[0].value;
-  const diff = latest - first;
+  const diff = data[data.length - 1].value - data[0].value;
   const up = diff >= 0;
-
-  const chartWidth = SCREEN_W - spacing.lg * 2 - spacing.lg * 2 - 28;
+  const unit = metric === 'volume' ? 'k lbs' : 'lbs';
 
   return (
-    <View style={styles.graphCard}>
-      <View style={styles.graphHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.graphTitle}>{title}</Text>
-          <Text style={styles.graphSubtitle}>{subtitle}</Text>
+    <ChartCard
+      title="Exercise trends"
+      subtitle={metric === 'strength' ? 'Estimated 1RM' : 'Weekly weight moved'}
+      chip="Sample data"
+    >
+      <View style={styles.trendControls}>
+        <View style={styles.segmented}>
+          {(['strength', 'volume'] as const).map((m) => (
+            <Pressable
+              key={m}
+              onPress={() => onMetricChange(m)}
+              style={[styles.segment, metric === m && styles.segmentActive]}
+            >
+              <AppText
+                variant="caption"
+                color={metric === m ? 'textPrimary' : 'textSecondary'}
+              >
+                {m === 'strength' ? 'Strength' : 'Volume'}
+              </AppText>
+            </Pressable>
+          ))}
         </View>
-        <View style={[styles.graphTrendBadge, { backgroundColor: (up ? colors.success : colors.danger) + '22' }]}>
+        <View
+          style={[
+            styles.trendBadge,
+            { backgroundColor: up ? colors.successSoft : colors.dangerSoft },
+          ]}
+        >
           <Ionicons
             name={up ? 'trending-up' : 'trending-down'}
             size={12}
-            color={up ? colors.success : colors.danger}
+            color={up ? colors.successText : colors.dangerText}
           />
-          <Text style={[styles.graphTrendText, { color: up ? colors.success : colors.danger }]}>
-            {up ? '+' : ''}{diff} {unit}
-          </Text>
+          <AppText variant="caption" color={up ? 'successText' : 'dangerText'}>
+            {up ? '+' : ''}
+            {diff} {unit}
+          </AppText>
         </View>
       </View>
 
       <Pressable onPress={onPickExercise} style={styles.pickerButton}>
         <View style={styles.pickerLeft}>
-          <Ionicons name="barbell-outline" size={16} color={colors.accent} />
-          <Text style={styles.pickerText}>{ex.name}</Text>
+          <Ionicons name="barbell-outline" size={16} color={colors.accentText} />
+          <AppText variant="bodyMedium">{ex.name}</AppText>
         </View>
-        <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+        <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
       </Pressable>
 
       <View style={styles.chartWrap}>
         <LineChart
+          {...defaultLineChartProps(metric === 'strength' ? 'primary' : 'secondary')}
           data={data}
-          width={chartWidth}
+          width={CHART_W}
           height={160}
-          thickness={3}
-          color={accent}
-          dataPointsColor={accent}
-          hideDataPoints={false}
-          dataPointsRadius={3}
-          yAxisColor="transparent"
-          xAxisColor={colors.borderSoft}
-          rulesColor={colors.borderSoft}
-          rulesType="dashed"
-          yAxisTextStyle={{ color: colors.textMuted, fontSize: 10 }}
-          xAxisLabelTextStyle={{ color: colors.textMuted, fontSize: 10 }}
-          curved
-          initialSpacing={10}
-          noOfSections={4}
-          areaChart
-          startFillColor={accent}
-          endFillColor={accent}
-          startOpacity={0.22}
-          endOpacity={0.02}
           maxValue={Math.max(...data.map((d) => d.value)) + 6}
           yAxisOffset={Math.max(0, Math.min(...data.map((d) => d.value)) - 6)}
         />
       </View>
-    </View>
+    </ChartCard>
   );
 }
 
@@ -398,121 +348,57 @@ function BodyWeightBlock() {
         value: p.value,
         label: i % 3 === 0 ? p.date.slice(3) : '',
       })),
-    []
+    [],
   );
 
   const latest = data[data.length - 1].value;
-  const first = data[0].value;
-  const diff = +(latest - first).toFixed(1);
+  const diff = +(latest - data[0].value).toFixed(1);
   const up = diff >= 0;
-  const chartWidth = SCREEN_W - spacing.lg * 2 - spacing.lg * 2 - 28;
 
   return (
-    <View style={styles.graphCard}>
-      <View style={styles.graphHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.graphTitle}>Body weight</Text>
-          <Text style={styles.graphSubtitle}>{latest.toFixed(1)} lbs today</Text>
-        </View>
-        <View style={[styles.graphTrendBadge, { backgroundColor: colors.warning + '22' }]}>
+    <ChartCard
+      title="Body weight"
+      subtitle={`${latest.toFixed(1)} lbs today`}
+      chip="Sample data"
+    >
+      <View style={styles.trendControls}>
+        <View />
+        <View style={[styles.trendBadge, { backgroundColor: colors.warningSoft }]}>
           <Ionicons
             name={up ? 'trending-up' : 'trending-down'}
             size={12}
-            color={colors.warning}
+            color={colors.warningText}
           />
-          <Text style={[styles.graphTrendText, { color: colors.warning }]}>
-            {up ? '+' : ''}{diff} lbs
-          </Text>
+          <AppText variant="caption" color="warningText">
+            {up ? '+' : ''}
+            {diff} lbs
+          </AppText>
         </View>
       </View>
-
       <View style={styles.chartWrap}>
         <LineChart
+          {...defaultLineChartProps('hot')}
           data={data}
-          width={chartWidth}
+          width={CHART_W}
           height={140}
-          thickness={3}
-          color={colors.warning}
-          dataPointsColor={colors.warning}
-          yAxisColor="transparent"
-          xAxisColor={colors.borderSoft}
-          rulesColor={colors.borderSoft}
-          rulesType="dashed"
-          yAxisTextStyle={{ color: colors.textMuted, fontSize: 10 }}
-          xAxisLabelTextStyle={{ color: colors.textMuted, fontSize: 10 }}
-          curved
-          initialSpacing={10}
           noOfSections={3}
-          areaChart
-          startFillColor={colors.warning}
-          endFillColor={colors.warning}
-          startOpacity={0.22}
-          endOpacity={0.02}
         />
       </View>
-    </View>
+    </ChartCard>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.surface },
+  safe: { flex: 1, backgroundColor: colors.bg },
   content: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xxxl,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
     gap: spacing.lg,
   },
   metricsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  metricCard: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    gap: spacing.xs,
-  },
-  metricIconBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metricNumRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 3,
-    marginTop: spacing.xs,
-  },
-  metricValue: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: colors.text,
-    letterSpacing: -0.8,
-  },
-  metricUnit: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
-  },
-  metricLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
-    letterSpacing: 0.2,
-    marginTop: 2,
-  },
-  calendarCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    gap: spacing.md,
-  },
+  calendarCard: { gap: spacing.md },
   calendarHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -521,38 +407,21 @@ const styles = StyleSheet.create({
   calArrow: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  calendarTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: colors.text,
-    letterSpacing: -0.3,
+    backgroundColor: colors.bgSubtle,
   },
   weekdayRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
   },
   weekdayText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: colors.textMuted,
-    letterSpacing: 1,
     width: CAL_ITEM_W / 7,
     textAlign: 'center',
   },
-  weekdayWeekend: {
-    color: colors.textDim,
-  },
-  monthView: {
-    gap: spacing.xs,
-  },
-  weekRow: {
-    flexDirection: 'row',
-  },
+  monthView: { gap: spacing.xs },
+  weekRow: { flexDirection: 'row' },
   dayCell: {
     flex: 1,
     alignItems: 'center',
@@ -561,30 +430,15 @@ const styles = StyleSheet.create({
   dayBubble: {
     width: 32,
     height: 32,
-    borderRadius: 16,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayBubbleToday: {
-    backgroundColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
-  dayNum: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  dayNumToday: {
-    color: '#fff',
-    fontWeight: '900',
-  },
+  dayBubbleToday: { backgroundColor: colors.accent },
+  dayNum: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   markRow: {
     marginTop: 3,
-    height: 4,
+    height: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -592,38 +446,29 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 3,
+    backgroundColor: colors.accent,
   },
-  markEmpty: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: 'transparent',
-  },
-  graphCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
-    gap: spacing.md,
-  },
-  graphHeader: {
+  trendControls: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
   },
-  graphTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: colors.text,
-    letterSpacing: -0.4,
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: colors.sunken,
+    borderRadius: radius.pill,
+    padding: 3,
   },
-  graphSubtitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textMuted,
-    marginTop: 2,
+  segment: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 1,
+    borderRadius: radius.pill,
   },
-  graphTrendBadge: {
+  segmentActive: {
+    backgroundColor: colors.card,
+  },
+  trendBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
@@ -631,20 +476,15 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: radius.pill,
   },
-  graphTrendText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
   pickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.bgSubtle,
     borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    marginBottom: spacing.sm,
   },
   pickerLeft: {
     flexDirection: 'row',
@@ -652,13 +492,7 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
-  pickerText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
   chartWrap: {
     marginLeft: -6,
-    marginTop: 4,
   },
 });

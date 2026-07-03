@@ -1,12 +1,20 @@
-import { View, Text, StyleSheet, Switch, Pressable, Alert } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ScreenContainer } from '@/components/ScreenContainer';
-import { Card } from '@/components/Card';
+import { colors, radius, spacing } from '@/theme';
+import {
+  AppText,
+  Button,
+  Card,
+  ListRow,
+  Screen,
+  Skeleton,
+} from '@/components/ui';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import { SectionHeader } from '@/components/SectionHeader';
-import { PrimaryButton } from '@/components/PrimaryButton';
-import { TabHeader } from '@/components/TabHeader';
-import { colors, radius, spacing, typography } from '@/theme';
 import { useUser } from '@/context/UserContext';
+import { useAuth } from '@/auth/AuthContext';
+import { fetchPersonality, updatePersonality } from '@/api/personality';
 import { CoachPersonality, Units } from '@/types';
 
 const PERSONALITY_OPTIONS: {
@@ -22,15 +30,15 @@ const PERSONALITY_OPTIONS: {
     icon: 'heart',
   },
   {
-    id: 'intense',
-    label: 'Intense',
-    hint: 'Direct, no-nonsense, pushes hard.',
-    icon: 'flame',
+    id: 'classic',
+    label: 'Classic',
+    hint: 'Calm, precise, data-driven.',
+    icon: 'analytics',
   },
   {
-    id: 'roast_light',
-    label: 'Roast-light',
-    hint: 'Sarcastic but fair. Not abusive.',
+    id: 'energetic',
+    label: 'Energetic',
+    hint: 'High-energy hype, short and punchy.',
     icon: 'flash',
   },
 ];
@@ -40,170 +48,246 @@ const UNITS_OPTIONS: { id: Units; label: string }[] = [
   { id: 'kg', label: 'Kilograms' },
 ];
 
+type PersonalityStatus = 'loading' | 'ready' | 'offline';
+
 export function SettingsScreen() {
-  const {
-    user,
-    setPersonality,
-    setUnits,
-    toggleWorkoutNotifications,
-  } = useUser();
+  const { user, setPersonality, setUnits, toggleWorkoutNotifications } =
+    useUser();
+  const { user: authUser, getToken, signOut } = useAuth();
+  const [personalityStatus, setPersonalityStatus] =
+    useState<PersonalityStatus>('loading');
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Hydrate the coach personality from the backend (source of truth).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const remote = await fetchPersonality(token);
+        if (!cancelled) {
+          setPersonality(remote.preset_id);
+          setPersonalityStatus('ready');
+        }
+      } catch {
+        if (!cancelled) setPersonalityStatus('offline');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectPersonality = useCallback(
+    async (next: CoachPersonality) => {
+      const previous = user.coachPersonality;
+      if (next === previous) return;
+      setPersonality(next); // optimistic
+      try {
+        const token = await getToken();
+        await updatePersonality(token, next);
+      } catch {
+        setPersonality(previous); // revert
+        Alert.alert(
+          "Couldn't update your coach",
+          'Check your connection and try again.',
+        );
+      }
+    },
+    [user.coachPersonality, setPersonality, getToken],
+  );
+
+  const confirmSignOut = () => {
+    Alert.alert('Sign out?', "You'll need your password to sign back in.", [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          setSigningOut(true);
+          try {
+            await signOut();
+          } finally {
+            setSigningOut(false);
+          }
+        },
+      },
+    ]);
+  };
 
   return (
-    <ScreenContainer scroll padded={false}>
-      <TabHeader title="Settings" />
+    <Screen scroll padded={false}>
+      <ScreenHeader variant="brand" title="Settings" />
 
       <View style={styles.content}>
-      <SectionHeader title="Profile" />
-      <Card>
-        <View style={styles.profileRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user.displayName.slice(0, 1).toUpperCase()}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={typography.subtitle}>{user.displayName}</Text>
-            <Text style={typography.caption}>Change name in account (coming soon)</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </View>
-      </Card>
+        <SectionHeader title="Profile" />
+        <Card padded={false}>
+          <ListRow
+            title={user.displayName}
+            subtitle={authUser?.email ?? undefined}
+            left={
+              <View style={styles.avatar}>
+                <AppText variant="h3" color="textInverse">
+                  {user.displayName.slice(0, 1).toUpperCase()}
+                </AppText>
+              </View>
+            }
+          />
+        </Card>
 
-      <SectionHeader title="Coach personality" subtitle="How Sync talks to you" />
-      <View style={{ gap: spacing.sm }}>
-        {PERSONALITY_OPTIONS.map((opt) => {
-          const selected = user.coachPersonality === opt.id;
-          return (
-            <Pressable key={opt.id} onPress={() => setPersonality(opt.id)}>
-              <Card
-                style={[
-                  styles.optionCard,
-                  selected && { borderColor: colors.accent },
-                ]}
-              >
-                <View style={styles.optionRow}>
-                  <View
-                    style={[
-                      styles.optionIcon,
-                      selected && { backgroundColor: colors.accent },
-                    ]}
-                  >
+        <SectionHeader
+          title="Coach personality"
+          subtitle="How Sync talks to you — each has its own voice"
+        />
+        {personalityStatus === 'loading' ? (
+          <Card>
+            <View style={styles.skeletonRow}>
+              <Skeleton width={36} height={36} />
+              <View style={styles.skeletonLines}>
+                <Skeleton width="60%" height={12} />
+                <Skeleton width="40%" height={12} />
+              </View>
+            </View>
+          </Card>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {personalityStatus === 'offline' && (
+              <AppText variant="caption" color="warningText">
+                Couldn't reach your coach — changes may not save.
+              </AppText>
+            )}
+            {PERSONALITY_OPTIONS.map((opt) => {
+              const selected = user.coachPersonality === opt.id;
+              return (
+                <Card
+                  key={opt.id}
+                  onPress={() => selectPersonality(opt.id)}
+                  style={[
+                    styles.optionCard,
+                    selected && styles.optionCardSelected,
+                  ]}
+                >
+                  <View style={styles.optionRow}>
+                    <View
+                      style={[
+                        styles.optionIcon,
+                        selected && { backgroundColor: colors.accent },
+                      ]}
+                    >
+                      <Ionicons
+                        name={opt.icon}
+                        size={18}
+                        color={selected ? colors.textInverse : colors.accentText}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <AppText variant="h3">{opt.label}</AppText>
+                      <AppText variant="caption">{opt.hint}</AppText>
+                    </View>
                     <Ionicons
-                      name={opt.icon}
-                      size={18}
-                      color={selected ? '#fff' : colors.accent}
+                      name={selected ? 'radio-button-on' : 'radio-button-off'}
+                      size={22}
+                      color={selected ? colors.accent : colors.textTertiary}
                     />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={typography.subtitle}>{opt.label}</Text>
-                    <Text style={typography.caption}>{opt.hint}</Text>
-                  </View>
-                  <Ionicons
-                    name={selected ? 'radio-button-on' : 'radio-button-off'}
-                    size={22}
-                    color={selected ? colors.accent : colors.textMuted}
-                  />
-                </View>
-              </Card>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <SectionHeader title="Units" />
-      <Card padded={false}>
-        {UNITS_OPTIONS.map((opt, i) => (
-          <Pressable
-            key={opt.id}
-            onPress={() => setUnits(opt.id)}
-            style={[
-              styles.listRow,
-              i < UNITS_OPTIONS.length - 1 && styles.listRowBorder,
-            ]}
-          >
-            <Text style={typography.body}>{opt.label}</Text>
-            <Ionicons
-              name={user.units === opt.id ? 'checkmark-circle' : 'ellipse-outline'}
-              size={22}
-              color={user.units === opt.id ? colors.accent : colors.textMuted}
-            />
-          </Pressable>
-        ))}
-      </Card>
-
-      <SectionHeader title="Notifications" />
-      <Card padded={false}>
-        <View style={styles.listRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={typography.body}>Workout reminders</Text>
-            <Text style={typography.caption}>
-              A nudge before your planned session.
-            </Text>
+                </Card>
+              );
+            })}
           </View>
-          <Switch
-            value={user.notificationsWorkout}
-            onValueChange={toggleWorkoutNotifications}
-            trackColor={{ false: colors.border, true: colors.accentMuted }}
-            thumbColor={user.notificationsWorkout ? colors.accent : '#fff'}
+        )}
+
+        <SectionHeader title="Units" />
+        <Card padded={false}>
+          {UNITS_OPTIONS.map((opt, i) => (
+            <View key={opt.id}>
+              <ListRow
+                title={opt.label}
+                onPress={() => setUnits(opt.id)}
+                right={
+                  <Ionicons
+                    name={
+                      user.units === opt.id
+                        ? 'checkmark-circle'
+                        : 'ellipse-outline'
+                    }
+                    size={22}
+                    color={
+                      user.units === opt.id
+                        ? colors.accent
+                        : colors.textTertiary
+                    }
+                  />
+                }
+              />
+              {i < UNITS_OPTIONS.length - 1 && <View style={styles.divider} />}
+            </View>
+          ))}
+        </Card>
+
+        <SectionHeader title="Notifications" />
+        <Card padded={false}>
+          <ListRow
+            title="Workout reminders"
+            subtitle="A nudge before your planned session."
+            right={
+              <Switch
+                value={user.notificationsWorkout}
+                onValueChange={toggleWorkoutNotifications}
+                trackColor={{ false: colors.border, true: colors.accentSoft }}
+                thumbColor={
+                  user.notificationsWorkout ? colors.accent : colors.card
+                }
+              />
+            }
+          />
+        </Card>
+
+        <SectionHeader title="About" />
+        <Card padded={false}>
+          <ListRow
+            title="Version"
+            right={<AppText variant="body" color="textSecondary">0.2.0</AppText>}
+          />
+          <View style={styles.divider} />
+          <ListRow
+            title="Privacy"
+            right={
+              <AppText variant="body" color="textSecondary">
+                Coming soon
+              </AppText>
+            }
+          />
+        </Card>
+
+        <View style={{ marginTop: spacing.xl }}>
+          <Button
+            title="Sign out"
+            variant="secondary"
+            icon="log-out"
+            loading={signingOut}
+            onPress={confirmSignOut}
           />
         </View>
-      </Card>
-
-      <SectionHeader title="About" />
-      <Card padded={false}>
-        <AboutRow label="Version" value="0.1.0 (MVP)" />
-        <AboutRow label="Privacy" value="Coming soon" withBorder={false} />
-      </Card>
-
-      <View style={{ marginTop: spacing.xl }}>
-        <PrimaryButton
-          title="Sign out"
-          variant="secondary"
-          icon="log-out"
-          onPress={() =>
-            Alert.alert('Sign out', 'Auth not wired up in MVP.')
-          }
-        />
       </View>
-      </View>
-    </ScreenContainer>
-  );
-}
-
-function AboutRow({
-  label,
-  value,
-  withBorder = true,
-}: {
-  label: string;
-  value: string;
-  withBorder?: boolean;
-}) {
-  return (
-    <View style={[styles.listRow, withBorder && styles.listRowBorder]}>
-      <Text style={typography.body}>{label}</Text>
-      <Text style={[typography.body, { color: colors.textMuted }]}>{value}</Text>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.lg },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
   avatar: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: radius.pill,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { color: '#fff', fontSize: 20, fontWeight: '800' },
   optionCard: { paddingVertical: spacing.md },
+  optionCardSelected: {
+    borderWidth: 1.5,
+    borderColor: colors.accent,
+  },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -213,18 +297,19 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.md,
-    backgroundColor: colors.accentMuted,
+    backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listRow: {
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginLeft: spacing.lg,
+  },
+  skeletonRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    gap: spacing.md,
   },
-  listRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
+  skeletonLines: { flex: 1, gap: spacing.sm },
 });

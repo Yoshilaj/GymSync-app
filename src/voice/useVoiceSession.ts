@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { voiceConfig, voiceSocketUrl } from './config';
+import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import { voiceMic, ensureMicAccess } from './VoiceMic';
 import { voicePlayer } from './VoicePlayer';
@@ -10,8 +10,6 @@ export interface UseVoiceSessionArgs {
   userId: string;
   /** Returns a fresh Supabase JWT. Injected so this hook stays auth-agnostic. */
   getToken: () => Promise<string>;
-  /** Optional plan to snapshot into the workout session. */
-  planId?: string | null;
   /** The user's utterance, as transcribed by the backend. */
   onTranscript?: (text: string) => void;
   /** A UI action (start_timer, log_set, swap_exercise, …) to apply to the screen. */
@@ -23,21 +21,29 @@ export interface UseVoiceSessionArgs {
 export interface VoiceSessionApi {
   phase: VoicePhase;
   error: string | null;
+  /** The workout session this voice connection is attached to (if any). */
   sessionId: string | null;
-  start: () => Promise<void>;
+  /**
+   * Open the socket and start streaming mic audio. Pass the id of an existing
+   * workout session to attach to it, or null/omit for a session-less chat.
+   */
+  start: (sessionId?: string | null) => Promise<void>;
+  /**
+   * Tear down mic, playback, and the socket. Does NOT touch the workout
+   * session — that belongs to useWorkoutSession (muting the mic must never
+   * end the workout).
+   */
   stop: () => Promise<void>;
 }
 
 /**
- * Drives the voice session lifecycle. Milestone 1 scope: bootstrap the workout
- * session (REST), open the WebSocket, and complete the session_start/ack handshake.
- * Audio capture, VAD, and playback arrive in later milestones — see
- * docs/voice-client-plan.md.
+ * Drives the voice *connection* lifecycle: WebSocket handshake, mic capture,
+ * and coach-audio playback. Session ownership (create/end via REST) was split
+ * out into useWorkoutSession — this hook only attaches to a session id.
  */
 export function useVoiceSession({
   userId,
   getToken,
-  planId = null,
   onTranscript,
   onAppAction,
   onText,
@@ -47,8 +53,6 @@ export function useVoiceSession({
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const socketRef = useRef<VoiceSocket | null>(null);
-  const tokenRef = useRef<string | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
   const phaseRef = useRef<VoicePhase>('idle');
   const mountedRef = useRef(true);
 
@@ -141,67 +145,58 @@ export function useVoiceSession({
     [goto, fail, startMic, finishTurn],
   );
 
-  const start = useCallback(async () => {
-    if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') return;
-    if (mountedRef.current) setError(null);
-    goto('connecting');
-
-    try {
-      const token = await getToken();
-      tokenRef.current = token;
-
-      // 1. Create a workout session (REST) — backend/app/routers/session.py.
-      const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ plan_id: planId }),
-      });
-      if (!res.ok) {
-        throw new Error(`Session create failed (HTTP ${res.status})`);
+  const start = useCallback(
+    async (attachSessionId: string | null = null) => {
+      if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') return;
+      if (mountedRef.current) {
+        setError(null);
+        setSessionId(attachSessionId);
       }
-      const data = (await res.json()) as { session: { id: string } };
-      const sid = data.session.id;
-      sessionIdRef.current = sid;
-      if (mountedRef.current) setSessionId(sid);
+      goto('connecting');
 
-      // 2. Open the voice WebSocket and perform the handshake.
-      const socket = new VoiceSocket(voiceSocketUrl(userId, token), {
-        onOpen: () =>
-          socket.send({ type: 'session_start', session_id: sid, voice: true }),
-        onMessage: handleMessage,
-        onBinary: (data) => {
-          // First audio artifact of the turn → the coach is now speaking.
-          if (phaseRef.current === 'thinking') goto('coach_speaking');
-          voicePlayer.enqueue(data);
-        },
-        onError: () => {
-          if (phaseRef.current !== 'idle') fail('WebSocket error');
-        },
-        onClose: ({ code }) => {
-          // Ignore closes after a deliberate stop() (phase already 'idle').
-          if (phaseRef.current === 'idle') return;
-          // 4001 = server rejected auth (token / user_id mismatch).
-          fail(
-            code === 4001
-              ? 'Authentication rejected (4001)'
-              : `Connection closed (${code})`,
-          );
-        },
-      });
-      socketRef.current = socket;
-      socket.connect();
-    } catch (e) {
-      fail(e instanceof Error ? e.message : String(e));
-    }
-  }, [getToken, planId, userId, handleMessage, goto, fail]);
+      try {
+        const token = await getToken();
+
+        // Open the voice WebSocket and perform the handshake against the
+        // caller-provided session (or none, for session-less text chat).
+        const socket = new VoiceSocket(voiceSocketUrl(userId, token), {
+          onOpen: () =>
+            socket.send({
+              type: 'session_start',
+              session_id: attachSessionId,
+              voice: true,
+            }),
+          onMessage: handleMessage,
+          onBinary: (data) => {
+            // First audio artifact of the turn → the coach is now speaking.
+            if (phaseRef.current === 'thinking') goto('coach_speaking');
+            voicePlayer.enqueue(data);
+          },
+          onError: () => {
+            if (phaseRef.current !== 'idle') fail('WebSocket error');
+          },
+          onClose: ({ code }) => {
+            // Ignore closes after a deliberate stop() (phase already 'idle').
+            if (phaseRef.current === 'idle') return;
+            // 4001 = server rejected auth (token / user_id mismatch).
+            fail(
+              code === 4001
+                ? 'Authentication rejected (4001)'
+                : `Connection closed (${code})`,
+            );
+          },
+        });
+        socketRef.current = socket;
+        socket.connect();
+      } catch (e) {
+        fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [getToken, userId, handleMessage, goto, fail],
+  );
 
   const stop = useCallback(async () => {
     const socket = socketRef.current;
-    const sid = sessionIdRef.current;
-    const token = tokenRef.current;
 
     // Flip to idle first so socket.onClose treats this as intentional and the
     // mic frame handler stops forwarding bytes.
@@ -220,19 +215,6 @@ export function useVoiceSession({
       socket.close();
     }
     socketRef.current = null;
-
-    // Best-effort: end the workout session server-side.
-    if (sid && token) {
-      try {
-        await fetch(`${voiceConfig.apiBaseUrl}/api/session/${sid}`, {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch {
-        /* ignore teardown errors */
-      }
-    }
-    sessionIdRef.current = null;
     if (mountedRef.current) setSessionId(null);
   }, [goto]);
 

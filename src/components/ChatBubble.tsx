@@ -1,25 +1,30 @@
-import { View, Text, StyleSheet } from 'react-native';
-import { colors, radius, spacing, typography } from '@/theme';
+import { View, StyleSheet } from 'react-native';
+import { colors, radius, shadows, spacing } from '@/theme';
+import { AppText } from '@/components/ui';
 import { ChatMessage } from '@/types';
 
 interface Props {
   message: ChatMessage;
+  /** Render a trailing cursor while the coach's reply is still streaming in. */
+  streaming?: boolean;
 }
 
-export function ChatBubble({ message }: Props) {
+export function ChatBubble({ message, streaming = false }: Props) {
   const isUser = message.author === 'user';
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
       <View
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.syncBubble,
-        ]}
+        style={[styles.bubble, isUser ? styles.userBubble : styles.syncBubble]}
       >
-        {!isUser && <Text style={styles.authorLabel}>Sync</Text>}
-        <Text style={[typography.body, isUser && styles.userText]}>
+        {!isUser && (
+          <AppText variant="label" color="accentText" style={styles.authorLabel}>
+            Sync
+          </AppText>
+        )}
+        <AppText variant="body" color={isUser ? 'textInverse' : 'textPrimary'}>
           {message.text}
-        </Text>
+          {streaming ? <AppText variant="body" color="accentText">▍</AppText> : null}
+        </AppText>
       </View>
     </View>
   );
@@ -39,19 +44,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   userBubble: {
-    backgroundColor: colors.userBubble,
+    backgroundColor: colors.accent,
     borderBottomRightRadius: spacing.xs,
   },
   syncBubble: {
-    backgroundColor: colors.syncBubble,
+    backgroundColor: colors.card,
     borderBottomLeftRadius: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
+    ...shadows.xs,
   },
-  userText: { color: '#fff' },
   authorLabel: {
-    ...typography.label,
-    color: colors.accent,
     marginBottom: 4,
   },
 });

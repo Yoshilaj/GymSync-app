@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, radius, typography } from '@/theme';
+import { colors, layout, radius, spacing } from '@/theme';
+import { AppText, Button, Card, TimerDisplay } from '@/components/ui';
 import { VoiceButton } from '@/components/VoiceButton';
-import { PrimaryButton } from '@/components/PrimaryButton';
+import { CoachOrb } from '@/components/CoachOrb';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
+import { fetchPersonality } from '@/api/personality';
+import { fetchActiveSession } from '@/api/session';
 import {
   useVoiceSession,
+  useWorkoutSession,
   useSessionActions,
-  formatClock,
   type VoicePhase,
   type AppActionMessage,
 } from '@/voice';
 
-// Phase → the big status line under the header.
+// Phase → the big status line under the orb.
 const STATUS: Record<VoicePhase, string> = {
   idle: 'Tap to start',
   connecting: 'Connecting…',
@@ -25,7 +29,7 @@ const STATUS: Record<VoicePhase, string> = {
   error: 'Something went wrong',
 };
 
-// Phase → the hint under the mic button.
+// Phase → the hint under the status.
 const HINT: Record<VoicePhase, string> = {
   idle: 'Tap the mic to start coaching',
   connecting: 'Reaching your coach…',
@@ -40,6 +44,9 @@ export function VoiceCoachScreen() {
   const { user: authUser, getToken } = useAuth();
   const { user } = useUser();
   const [transcript, setTranscript] = useState('');
+  const [personalityName, setPersonalityName] = useState<string | null>(null);
+  // null = still checking; true = a session is already live elsewhere.
+  const [blockedByActive, setBlockedByActive] = useState<boolean | null>(null);
 
   const actions = useSessionActions();
   const { state, apply, reset } = actions;
@@ -49,6 +56,10 @@ export function VoiceCoachScreen() {
     [apply],
   );
 
+  // The workout session (REST) and the voice connection (socket) are owned
+  // separately: mic-off only drops the socket, never the session.
+  const workout = useWorkoutSession({ getToken });
+
   const { phase, error, start, stop } = useVoiceSession({
     userId: authUser?.id ?? '',
     getToken,
@@ -56,106 +67,217 @@ export function VoiceCoachScreen() {
     onAppAction,
   });
 
-  // Auto-connect on open; tear down the session on close.
+  const connect = useCallback(async () => {
+    const sid = await workout.start();
+    if (sid) await start(sid);
+  }, [workout.start, start]);
+
   const canStart = !!authUser?.id;
+
+  // Guard: the backend allows one active session per user. If a workout is
+  // already live, don't silently hijack it — surface it instead.
   useEffect(() => {
     if (!canStart) return;
-    void start();
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const active = await fetchActiveSession(token);
+        if (!cancelled) setBlockedByActive(!!active);
+      } catch {
+        // Can't check (offline?) — proceed; connect() will surface real errors.
+        if (!cancelled) setBlockedByActive(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canStart, getToken]);
+
+  // Best-effort personality name for the header.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const p = await fetchPersonality(token);
+        if (!cancelled) setPersonalityName(p.name);
+      } catch {
+        /* header falls back to plain "Sync" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
+
+  // Auto-connect once the guard clears; tear everything down on close.
+  useEffect(() => {
+    if (!canStart || blockedByActive !== false) return;
+    void connect();
     return () => {
       void stop();
+      void workout.end();
       reset();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canStart]);
+  }, [canStart, blockedByActive]);
 
   const live = phase !== 'idle' && phase !== 'error';
 
   const toggleMic = useCallback(() => {
     if (!canStart) return;
-    if (live) void stop();
-    else void start();
-  }, [canStart, live, start, stop]);
+    if (live) void stop(); // mic off — the session stays active
+    else void connect();
+  }, [canStart, live, connect, stop]);
 
   const endSession = useCallback(async () => {
     await stop();
+    await workout.end();
     reset();
     nav.goBack();
-  }, [stop, reset, nav]);
+  }, [stop, workout.end, reset, nav]);
 
   const { timer, sets, notices } = state;
-  const timerVisible = timer.status !== 'idle';
+
+  // One chronological story: logged sets and notices merged, newest first.
+  const feed = [
+    ...sets.map((s) => ({
+      id: s.id,
+      icon: 'checkmark-circle' as const,
+      text:
+        s.weight != null
+          ? `${s.exercise} — ${s.reps} × ${s.weight} ${user.units}`
+          : `${s.exercise} — ${s.reps} reps`,
+    })),
+    ...notices.map((n) => ({
+      id: n.id,
+      icon: (n.kind === 'swap'
+        ? 'swap-horizontal'
+        : n.kind === 'add'
+          ? 'add-circle'
+          : 'document-text') as 'swap-horizontal' | 'add-circle' | 'document-text',
+      text: n.text,
+    })),
+  ].sort((a, b) => (a.id < b.id ? 1 : -1));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* Modal header */}
+      <View style={styles.grabber} />
       <View style={styles.header}>
-        <Text style={typography.label}>Sync</Text>
-        <Text style={styles.status}>{STATUS[phase]}</Text>
+        <View style={{ width: 34 }} />
+        <View style={styles.headerCenter}>
+          <AppText variant="h3" align="center">
+            Sync{personalityName ? ` · ${personalityName}` : ''}
+          </AppText>
+        </View>
+        <Pressable onPress={endSession} hitSlop={8} style={styles.closeBtn}>
+          <Ionicons name="close" size={18} color={colors.textPrimary} />
+        </Pressable>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.micBlock}>
-          <VoiceButton size={140} active={phase === 'listening'} onPress={toggleMic} />
-          <Text style={styles.hint}>
-            {phase === 'error' && error ? error : HINT[phase]}
-          </Text>
+      {blockedByActive ? (
+        <View style={styles.guard}>
+          <View style={styles.guardIcon}>
+            <Ionicons name="barbell" size={26} color={colors.accent} />
+          </View>
+          <AppText variant="h3" align="center">
+            You're mid-workout
+          </AppText>
+          <AppText variant="caption" align="center" style={styles.guardHint}>
+            A session is already running. Head back to it, or start fresh —
+            starting fresh ends the current one.
+          </AppText>
+          <View style={styles.guardActions}>
+            <Button
+              title="Return to my session"
+              onPress={() => nav.goBack()}
+              variant="primary"
+            />
+            <Button
+              title="Start fresh anyway"
+              onPress={() => setBlockedByActive(false)}
+              variant="ghost"
+            />
+          </View>
         </View>
+      ) : (
+        <>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Hero zone */}
+            <View style={styles.micBlock}>
+              <CoachOrb phase={phase} size={150} />
+              <AppText variant="h2" align="center">
+                {STATUS[phase]}
+              </AppText>
+              <AppText variant="caption" align="center" style={styles.hint}>
+                {phase === 'error' && error ? error : HINT[phase]}
+              </AppText>
+              <VoiceButton
+                size={72}
+                active={phase === 'listening'}
+                onPress={toggleMic}
+              />
+            </View>
 
-        {timerVisible && (
-          <View style={styles.timerCard}>
-            <Text style={typography.label}>Rest timer</Text>
-            <Text style={styles.timerClock}>{formatClock(timer.remaining)}</Text>
-            <Text style={typography.bodyMuted}>
-              {timer.status === 'paused' ? 'Paused' : 'Resting'}
-            </Text>
-          </View>
-        )}
+            {/* Live activity zone */}
+            {timer.status !== 'idle' && (
+              <Card style={styles.timerCard}>
+                <TimerDisplay
+                  seconds={timer.remaining}
+                  label="Rest timer"
+                  state={timer.status === 'paused' ? 'paused' : 'running'}
+                />
+              </Card>
+            )}
 
-        <View style={styles.card}>
-          <Text style={typography.label}>You said</Text>
-          <Text style={[typography.body, styles.transcript]} numberOfLines={3}>
-            {transcript || '—'}
-          </Text>
-        </View>
-
-        {sets.length > 0 && (
-          <View style={styles.card}>
-            <Text style={typography.label}>Logged this session</Text>
-            {sets.map((s) => (
-              <View key={s.id} style={styles.setRow}>
-                <Text style={styles.setName}>{s.exercise}</Text>
-                <Text style={styles.setDetail}>
-                  {s.weight != null
-                    ? `${s.reps} × ${s.weight} ${user.units}`
-                    : `${s.reps} reps`}
-                </Text>
+            {!!transcript && (
+              <View style={styles.quoteRow}>
+                <View style={styles.quoteBar} />
+                <AppText variant="caption" style={{ flex: 1 }} numberOfLines={3}>
+                  “{transcript}”
+                </AppText>
               </View>
-            ))}
-          </View>
-        )}
+            )}
 
-        {notices.length > 0 && (
-          <View style={styles.notices}>
-            {notices.map((n) => (
-              <View key={n.id} style={styles.noticeChip}>
-                <Text style={styles.noticeText}>{n.text}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+            {feed.length > 0 ? (
+              <Card padded={false} style={styles.feedCard}>
+                <AppText variant="label" style={styles.feedHeading}>
+                  Session activity
+                </AppText>
+                {feed.map((f) => (
+                  <View key={f.id} style={styles.feedRow}>
+                    <Ionicons name={f.icon} size={16} color={colors.successText} />
+                    <AppText variant="body" style={{ flex: 1 }}>
+                      {f.text}
+                    </AppText>
+                  </View>
+                ))}
+              </Card>
+            ) : (
+              phase === 'listening' && (
+                <AppText variant="caption" align="center">
+                  Try: “log 8 reps at 135 on bench”
+                </AppText>
+              )
+            )}
+          </ScrollView>
 
-      <View style={styles.bottom}>
-        <PrimaryButton
-          title="End voice session"
-          icon="close"
-          variant="secondary"
-          onPress={endSession}
-        />
-      </View>
+          <View style={styles.bottom}>
+            <Button
+              title="End session"
+              icon="close"
+              variant="secondary"
+              onPress={endSession}
+            />
+          </View>
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -163,62 +285,88 @@ export function VoiceCoachScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.bg,
+    paddingHorizontal: layout.SCREEN_H_PADDING,
   },
-  header: { alignItems: 'center', paddingTop: spacing.lg, gap: spacing.xs },
-  status: { ...typography.heading, fontSize: 22 },
+  grabber: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.borderStrong,
+    marginTop: spacing.sm,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  headerCenter: { flex: 1 },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   scroll: { flex: 1 },
   scrollContent: { paddingVertical: spacing.lg, gap: spacing.md },
   micBlock: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.lg,
-    paddingVertical: spacing.xl,
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
   },
-  hint: { ...typography.bodyMuted, textAlign: 'center', paddingHorizontal: spacing.lg },
-  timerCard: {
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  timerClock: {
-    ...typography.stat,
-    fontSize: 48,
-    color: colors.accent,
-    fontVariant: ['tabular-nums'],
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.xs,
-  },
-  transcript: { marginTop: spacing.xs },
-  setRow: {
+  hint: { paddingHorizontal: spacing.lg, marginBottom: spacing.sm },
+  timerCard: { alignItems: 'center' },
+  quoteRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderSoft,
+    gap: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
-  setName: { ...typography.body },
-  setDetail: { ...typography.bodyMuted },
-  notices: { gap: spacing.sm },
-  noticeChip: {
+  quoteBar: {
+    width: 3,
+    borderRadius: 2,
     backgroundColor: colors.accentSoft,
-    borderRadius: radius.pill,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    alignSelf: 'flex-start',
   },
-  noticeText: { ...typography.caption, color: colors.accent },
+  feedCard: { paddingVertical: spacing.sm },
+  feedHeading: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  feedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
   bottom: { paddingBottom: spacing.md, paddingTop: spacing.sm },
+  guard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  guardIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentFaint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  guardHint: { maxWidth: 280 },
+  guardActions: {
+    alignSelf: 'stretch',
+    marginTop: spacing.lg,
+    gap: spacing.sm,
+  },
 });

@@ -1,6 +1,16 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  ReactNode,
+} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile, CoachPersonality, Units } from '@/types';
 import { mockUser } from '@/data/mockUser';
+
+const PREFS_KEY = '@gymsync/prefs';
 
 interface UserContextValue {
   user: UserProfile;
@@ -14,6 +24,31 @@ const UserContext = createContext<UserContextValue | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile>(mockUser);
+  const hydratedRef = useRef(false);
+
+  // Restore locally-persisted preferences (units, notifications, personality).
+  useEffect(() => {
+    AsyncStorage.getItem(PREFS_KEY)
+      .then((raw) => {
+        if (raw) {
+          const saved = JSON.parse(raw) as Partial<UserProfile>;
+          setUser((prev) => ({ ...prev, ...saved }));
+        }
+      })
+      .catch(() => {
+        /* corrupt or missing prefs — fall back to defaults */
+      })
+      .finally(() => {
+        hydratedRef.current = true;
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    AsyncStorage.setItem(PREFS_KEY, JSON.stringify(user)).catch(() => {
+      /* best-effort persistence */
+    });
+  }, [user]);
 
   const value: UserContextValue = {
     user,

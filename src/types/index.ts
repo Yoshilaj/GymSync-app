@@ -24,7 +24,8 @@ export type Equipment =
   | 'Bodyweight'
   | 'Kettlebell';
 
-export type CoachPersonality = 'supportive' | 'intense' | 'roast_light';
+/** Coach personality presets — mirrors the backend enum (app/agents/personalities.py). */
+export type CoachPersonality = 'classic' | 'supportive' | 'energetic';
 
 export type Units = 'lbs' | 'kg';
 

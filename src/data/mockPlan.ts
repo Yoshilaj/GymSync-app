@@ -157,3 +157,7 @@ export const mockPlan: WeeklyPlan = {
 export function getTodaysWorkout(): PlannedWorkout {
   return push;
 }
+
+export function getWorkoutById(id: string): PlannedWorkout | undefined {
+  return mockPlan.workouts.find((w) => w.id === id);
+}

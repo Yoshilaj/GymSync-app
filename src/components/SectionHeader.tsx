@@ -1,5 +1,6 @@
-import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { colors, spacing, typography } from '@/theme';
+import { View, StyleSheet, Pressable } from 'react-native';
+import { spacing } from '@/theme';
+import { AppText } from '@/components/ui';
 
 interface Props {
   title: string;
@@ -12,12 +13,18 @@ export function SectionHeader({ title, subtitle, actionLabel, onAction }: Props)
   return (
     <View style={styles.row}>
       <View style={styles.textCol}>
-        <Text style={typography.title}>{title}</Text>
-        {subtitle && <Text style={[typography.caption, styles.subtitle]}>{subtitle}</Text>}
+        <AppText variant="h2">{title}</AppText>
+        {subtitle && (
+          <AppText variant="caption" style={styles.subtitle}>
+            {subtitle}
+          </AppText>
+        )}
       </View>
       {actionLabel && onAction && (
-        <Pressable onPress={onAction}>
-          <Text style={styles.action}>{actionLabel}</Text>
+        <Pressable onPress={onAction} hitSlop={8}>
+          <AppText variant="bodyMedium" color="accentText">
+            {actionLabel}
+          </AppText>
         </Pressable>
       )}
     </View>
@@ -34,9 +41,4 @@ const styles = StyleSheet.create({
   },
   textCol: { flex: 1 },
   subtitle: { marginTop: 2 },
-  action: {
-    ...typography.subtitle,
-    color: colors.accent,
-    fontSize: 15,
-  },
 });

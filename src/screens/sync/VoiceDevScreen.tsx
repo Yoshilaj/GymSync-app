@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, radius, typography } from '@/theme';
-import { PrimaryButton } from '@/components/PrimaryButton';
+import { colors, spacing, radius, shadows } from '@/theme';
+import { AppText, Button } from '@/components/ui';
 import { useVoiceSession } from '@/voice';
 import type { VoicePhase, ServerMessage } from '@/voice';
 
@@ -13,7 +13,7 @@ import type { VoicePhase, ServerMessage } from '@/voice';
  *   node tools/mock-voice-server.mjs
  */
 const PHASE_COLOR: Record<VoicePhase, string> = {
-  idle: colors.textDim,
+  idle: colors.textTertiary,
   connecting: colors.warning,
   listening: colors.accent,
   thinking: colors.warning,
@@ -46,28 +46,42 @@ export function VoiceDevScreen() {
 
   // Auto-start on mount so opening the screen exercises the flow.
   useEffect(() => {
-    start();
+    void start();
     return () => {
-      stop();
+      void stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <SafeAreaView style={styles.root} edges={['bottom']}>
-      <Text style={styles.label}>Voice dev harness</Text>
+      <AppText variant="label" style={styles.label}>
+        Voice dev harness
+      </AppText>
 
       <View style={styles.phaseBox}>
-        <Text style={styles.phaseLabel}>PHASE</Text>
-        <Text style={[styles.phase, { color: PHASE_COLOR[phase] }]}>{phase}</Text>
-        <Text style={styles.meta}>session: {sessionId ?? '—'}</Text>
-        {error ? <Text style={styles.error}>error: {error}</Text> : null}
+        <AppText variant="label">Phase</AppText>
+        <AppText variant="stat" color={PHASE_COLOR[phase]} style={styles.phase}>
+          {phase}
+        </AppText>
+        <AppText variant="caption" style={styles.meta}>
+          session: {sessionId ?? '—'}
+        </AppText>
+        {error ? (
+          <AppText variant="caption" color="dangerText" style={styles.metaTight}>
+            error: {error}
+          </AppText>
+        ) : null}
       </View>
 
-      <Text style={styles.label}>Event log</Text>
+      <AppText variant="label" style={styles.label}>
+        Event log
+      </AppText>
       <ScrollView style={styles.logBox} contentContainerStyle={styles.logContent}>
         {log.length === 0 ? (
-          <Text style={styles.logDim}>waiting…</Text>
+          <AppText variant="caption" color="textTertiary">
+            waiting…
+          </AppText>
         ) : (
           log.map((line, i) => (
             <Text key={i} style={styles.logLine}>
@@ -78,12 +92,12 @@ export function VoiceDevScreen() {
       </ScrollView>
 
       <View style={styles.buttons}>
-        <PrimaryButton title="Start" icon="play" onPress={start} />
-        <PrimaryButton
+        <Button title="Start" icon="play" onPress={() => void start()} />
+        <Button
           title="Stop"
           icon="stop"
           variant="secondary"
-          onPress={stop}
+          onPress={() => void stop()}
         />
       </View>
     </SafeAreaView>
@@ -91,33 +105,29 @@ export function VoiceDevScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background, padding: spacing.lg },
-  label: { ...typography.label, marginTop: spacing.md, marginBottom: spacing.sm },
+  root: { flex: 1, backgroundColor: colors.bg, padding: spacing.lg },
+  label: { marginTop: spacing.md, marginBottom: spacing.sm },
   phaseBox: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
     padding: spacing.lg,
+    ...shadows.sm,
   },
-  phaseLabel: { ...typography.label },
-  phase: { ...typography.stat, marginTop: spacing.xs },
-  meta: { ...typography.caption, marginTop: spacing.sm },
-  error: { ...typography.caption, color: colors.danger, marginTop: spacing.xs },
+  phase: { marginTop: spacing.xs },
+  meta: { marginTop: spacing.sm },
+  metaTight: { marginTop: spacing.xs },
   logBox: {
     flex: 1,
     backgroundColor: colors.card,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSoft,
+    ...shadows.sm,
   },
   logContent: { padding: spacing.md },
   logLine: {
     fontFamily: 'Courier',
     fontSize: 13,
-    color: colors.text,
+    color: colors.textPrimary,
     marginBottom: 2,
   },
-  logDim: { ...typography.caption, color: colors.textDim },
   buttons: { gap: spacing.sm, marginTop: spacing.md },
 });
