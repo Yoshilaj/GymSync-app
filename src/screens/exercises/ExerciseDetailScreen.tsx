@@ -53,7 +53,6 @@ export function ExerciseDetailScreen() {
   const nav = useNavigation<Nav>();
   const clearance = useTabBarClearance();
   const [scrolledPastHero, setScrolledPastHero] = useState(false);
-  const [frame, setFrame] = useState<0 | 1>(0);
   const [section, setSection] = useState<Section>('howto');
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -97,21 +96,15 @@ export function ExerciseDetailScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        {/* Hero: the movement itself, breathing between start & end */}
+        {/* Hero: the exercise's body-part-highlight illustration */}
         <Card variant="floating" radius="xl" padded={false} style={styles.heroCard}>
           <ExerciseImage
             exerciseId={ex.id}
             muscle={ex.muscleGroup}
-            animate
             aspectRatio={3 / 2}
             radius={0}
-            onFrameChange={setFrame}
             style={styles.heroImage}
           />
-          <View style={styles.frameDots}>
-            <View style={[styles.dot, frame === 0 && styles.dotActive]} />
-            <View style={[styles.dot, frame === 1 && styles.dotActive]} />
-          </View>
         </Card>
 
         {/* Title block */}
@@ -280,20 +273,6 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderRadius: 0,
   },
-  frameDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm + 2,
-    backgroundColor: colors.card,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.border,
-  },
-  dotActive: { backgroundColor: colors.accent },
   titleBlock: {
     marginTop: spacing.lg,
     gap: spacing.sm,

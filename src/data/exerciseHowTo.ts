@@ -58,23 +58,11 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Finish with your hands beside your ears',
     'Let the rope back slowly and repeat',
   ],
-  'ex-arnold': [
-    'Sit holding dumbbells in front of your shoulders, palms facing you',
-    'Press up while turning your palms to face forward',
-    'Finish with arms straight overhead',
-    'Reverse the turn on the way back down',
-  ],
   'ex-db-shoulder-press': [
     'Sit upright with a dumbbell at each shoulder',
     'Press both straight up until your arms lock out',
     'Don’t let your lower back arch off the seat',
     'Lower back to your shoulders under control',
-  ],
-  'ex-rear-fly': [
-    'Sit on a bench and lean your chest toward your knees',
-    'Hold light dumbbells hanging below you',
-    'Raise both arms out to the sides like wings',
-    'Pause briefly at the top, then lower slowly',
   ],
   'ex-curl': [
     'Stand with a dumbbell in each hand, palms facing forward',
@@ -124,23 +112,11 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Press back up until your arms are straight',
     'Keep your wrists straight throughout',
   ],
-  'ex-wrist-curl': [
-    'Sit with your forearms resting on your thighs, palms up',
-    'Let the dumbbells roll toward your fingers',
-    'Curl your wrists up as far as they go',
-    'Lower slowly and repeat',
-  ],
   'ex-reverse-curl': [
     'Hold the bar with your palms facing down',
     'Curl it up toward your shoulders',
     'Keep your elbows at your sides',
     'Lower slowly — this one works the forearms hard',
-  ],
-  'ex-farmer': [
-    'Pick up a heavy dumbbell or kettlebell in each hand',
-    'Stand tall — shoulders back, chest up',
-    'Walk with short, steady steps',
-    'Keep your grip tight and don’t lean to either side',
   ],
   'ex-plank': [
     'Rest on your forearms and toes',
@@ -184,12 +160,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Press back up without locking your knees hard',
     'Keep your lower back against the seat',
   ],
-  'ex-goblet': [
-    'Hold one dumbbell or kettlebell against your chest with both hands',
-    'Squat down between your knees, chest up',
-    'Get as deep as comfortable',
-    'Stand back up and squeeze your glutes',
-  ],
   'ex-lunge': [
     'Stand with a dumbbell in each hand',
     'Step forward and lower until both knees are bent at 90°',
@@ -214,12 +184,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Squeeze at the bottom',
     'Let your legs straighten slowly',
   ],
-  'ex-nordic': [
-    'Kneel with your ankles anchored behind you',
-    'Lower your body forward as slowly as you can',
-    'Catch yourself with your hands at the bottom',
-    'Push back up and pull with your hamstrings',
-  ],
   'ex-hip-thrust': [
     'Sit with your upper back against a bench, bar over your hips',
     'Plant your feet flat, shoulder-width apart',
@@ -232,12 +196,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Lower straight down until your front thigh is parallel',
     'Push through the front foot to stand — then switch legs',
   ],
-  'ex-glute-bridge': [
-    'Lie on your back with knees bent, feet flat',
-    'Drive your hips up toward the ceiling',
-    'Squeeze your glutes at the top for a second',
-    'Lower down slowly and repeat',
-  ],
   'ex-adductor': [
     'Sit in the machine with the pads inside your knees',
     'Squeeze your legs together smoothly',
@@ -249,12 +207,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Push your legs apart as far as comfortable',
     'Pause at the widest point',
     'Bring them back together slowly',
-  ],
-  'ex-cossack': [
-    'Stand with your feet very wide apart',
-    'Shift your weight and sit down over one leg',
-    'Keep the other leg straight, toes up',
-    'Push back to the middle and switch sides',
   ],
   'ex-calf-raise': [
     'Stand with the balls of your feet on the edge of a step',
@@ -279,12 +231,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Pull the bar down to the top of your chest',
     'Squeeze your shoulder blades together',
     'Let the bar rise slowly until your arms are straight',
-  ],
-  'ex-straight-arm': [
-    'Stand at the high cable holding the bar with straight arms',
-    'Pull the bar down to your thighs in one smooth arc',
-    'Keep your arms straight the whole time',
-    'Let it rise back slowly overhead',
   ],
   'ex-shrug': [
     'Hold the bar in front of your thighs',
@@ -327,18 +273,6 @@ export const exerciseHowTo: Record<string, string[]> = {
     'Lower your upper body toward the floor',
     'Lift back up until your body forms a straight line',
     'Don’t swing or over-arch at the top',
-  ],
-  'ex-clean': [
-    'Start with the bar on the floor, hands just outside your legs',
-    'Pull the bar up fast, keeping it close to your body',
-    'Shrug and catch it on the front of your shoulders',
-    'Stand tall, then lower it back down with control',
-  ],
-  'ex-kb-swing': [
-    'Stand with feet wide, kettlebell on the floor in front of you',
-    'Hike it back between your legs like a football snap',
-    'Snap your hips forward to swing it up to chest height',
-    'Let it swing back down and repeat in rhythm',
   ],
 };
 

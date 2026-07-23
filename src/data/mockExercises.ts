@@ -86,11 +86,53 @@ export const mockExercises: Exercise[] = [
       'Press back up without locking completely at the top if training hypertrophy.',
     ],
   },
+  {
+    id: 'ex-incline-barbell',
+    name: 'Incline Barbell Press',
+    muscleGroup: 'Chest',
+    equipment: 'Barbell',
+    thumbnailColor: '#B0432A',
+    description:
+      'A barbell press on an incline bench that emphasizes the upper chest and front delts under heavy load.',
+    cues: [
+      'Bench at ~30°, retract the shoulder blades.',
+      'Lower the bar to the upper chest.',
+      'Press up and slightly back over the shoulders.',
+    ],
+  },
+  {
+    id: 'ex-pec-fly',
+    name: 'Pec Fly Machine',
+    muscleGroup: 'Chest',
+    equipment: 'Machine',
+    thumbnailColor: '#9E3520',
+    description:
+      'A machine isolation for the pecs with a fixed arc. Constant tension and easy to overload safely.',
+    cues: [
+      'Back flat on the pad, elbows slightly bent.',
+      'Bring the handles together in front of the chest.',
+      'Squeeze at the mid-line, control the return.',
+    ],
+  },
+  {
+    id: 'ex-chest-press',
+    name: 'Chest Press (Machine)',
+    muscleGroup: 'Chest',
+    equipment: 'Machine',
+    thumbnailColor: '#C0502F',
+    description:
+      'A seated machine press that trains the chest through a fixed path. Great for volume without a spotter.',
+    cues: [
+      'Handles at mid-chest height, back on the pad.',
+      'Press until arms are nearly straight.',
+      'Control the negative — don’t let the stack drop.',
+    ],
+  },
 
   // ----- Shoulders -----
   {
     id: 'ex-ohp',
-    name: 'Overhead Press',
+    name: 'Barbell Overhead Press',
     muscleGroup: 'Shoulders',
     equipment: 'Barbell',
     thumbnailColor: '#6E3CBC',
@@ -104,7 +146,7 @@ export const mockExercises: Exercise[] = [
   },
   {
     id: 'ex-lateral',
-    name: 'Dumbbell Lateral Raise',
+    name: 'Lateral Raises',
     muscleGroup: 'Shoulders',
     equipment: 'Dumbbell',
     thumbnailColor: '#5C3C99',
@@ -131,20 +173,6 @@ export const mockExercises: Exercise[] = [
     ],
   },
   {
-    id: 'ex-arnold',
-    name: 'Arnold Press',
-    muscleGroup: 'Shoulders',
-    equipment: 'Dumbbell',
-    thumbnailColor: '#5E3EA7',
-    description:
-      'A rotating dumbbell press that lengthens the time under tension for the front and side delts.',
-    cues: [
-      'Start with palms facing you at chin height.',
-      'Rotate and press overhead simultaneously.',
-      'Reverse the motion on the way down.',
-    ],
-  },
-  {
     id: 'ex-db-shoulder-press',
     name: 'Seated Dumbbell Press',
     muscleGroup: 'Shoulders',
@@ -158,25 +186,11 @@ export const mockExercises: Exercise[] = [
       'Control the descent to ear level.',
     ],
   },
-  {
-    id: 'ex-rear-fly',
-    name: 'Rear Delt Fly',
-    muscleGroup: 'Shoulders',
-    equipment: 'Dumbbell',
-    thumbnailColor: '#8263C6',
-    description:
-      'Isolation for the posterior deltoid. Critical for pulling balance and shoulder posture.',
-    cues: [
-      'Hinge at hips, flat back.',
-      'Lead with elbows outward and back.',
-      'Squeeze the rear delts at the top, don\u2019t swing.',
-    ],
-  },
 
   // ----- Biceps -----
   {
     id: 'ex-curl',
-    name: 'Dumbbell Biceps Curl',
+    name: 'Dumbbell Curl',
     muscleGroup: 'Biceps',
     equipment: 'Dumbbell',
     thumbnailColor: '#8A5A2B',
@@ -234,7 +248,7 @@ export const mockExercises: Exercise[] = [
   // ----- Triceps -----
   {
     id: 'ex-tricep',
-    name: 'Triceps Pushdown',
+    name: 'Tricep Pushdown',
     muscleGroup: 'Triceps',
     equipment: 'Cable',
     thumbnailColor: '#6E4B22',
@@ -276,7 +290,7 @@ export const mockExercises: Exercise[] = [
   },
   {
     id: 'ex-close-grip',
-    name: 'Close-Grip Bench Press',
+    name: 'Narrow Bench Press',
     muscleGroup: 'Triceps',
     equipment: 'Barbell',
     thumbnailColor: '#6F4E24',
@@ -291,17 +305,17 @@ export const mockExercises: Exercise[] = [
 
   // ----- Forearms -----
   {
-    id: 'ex-wrist-curl',
-    name: 'Wrist Curl',
+    id: 'ex-barbell-curl',
+    name: 'Underhand Barbell Curl',
     muscleGroup: 'Forearms',
-    equipment: 'Dumbbell',
-    thumbnailColor: '#776348',
+    equipment: 'Barbell',
+    thumbnailColor: '#8F5E2E',
     description:
-      'Isolation for the forearm flexors. Small ROM, high reps.',
+      'A supinated-grip barbell curl that loads the inner forearm (wrist flexors) alongside the biceps. Palms face up throughout.',
     cues: [
-      'Forearm on a bench, wrist off the edge.',
-      'Let the weight roll to the fingertips on the way down.',
-      'Curl up with only the wrist.',
+      'Underhand grip, palms facing up, shoulder-width.',
+      'Elbows pinned at the sides, curl the bar up.',
+      'Lower under control — feel the inner forearm work.',
     ],
   },
   {
@@ -311,25 +325,39 @@ export const mockExercises: Exercise[] = [
     equipment: 'Barbell',
     thumbnailColor: '#7B5640',
     description:
-      'A pronated-grip curl that hammers the brachioradialis and wrist extensors.',
+      'A pronated (overhand) grip curl that hammers the outer forearm — the brachioradialis and wrist extensors.',
     cues: [
-      'Overhand grip, shoulder-width.',
+      'Overhand grip, palms facing down, shoulder-width.',
       'Elbows pinned, forearms do the work.',
       'Go lighter than a regular curl.',
     ],
   },
   {
-    id: 'ex-farmer',
-    name: 'Farmer Carry',
+    id: 'ex-cable-wrist-curl',
+    name: 'Cable Wrist Curl',
     muscleGroup: 'Forearms',
-    equipment: 'Dumbbell',
-    thumbnailColor: '#575757',
+    equipment: 'Cable',
+    thumbnailColor: '#7C6749',
     description:
-      'Loaded carry for grip, traps, and full-body stability. Pick heavy weights and walk.',
+      'Constant-tension curl for the wrist flexors — the front/inner forearm. Palms face up as the wrist curls the handle.',
     cues: [
-      'Tall posture, shoulders packed.',
-      'Short, steady strides.',
-      'Breathe behind the brace.',
+      'Kneel or sit at a low pulley, forearms braced on the thighs.',
+      'Palms up, let the handle roll to the fingertips.',
+      'Curl up with the wrist only — full squeeze at the top.',
+    ],
+  },
+  {
+    id: 'ex-cable-reverse-wrist-curl',
+    name: 'Cable Reverse Wrist Curl',
+    muscleGroup: 'Forearms',
+    equipment: 'Cable',
+    thumbnailColor: '#83654B',
+    description:
+      'Constant-tension curl for the wrist extensors — the back/outer forearm. Palms face down as the wrist lifts the handle.',
+    cues: [
+      'Forearms braced, palms facing down over a low pulley.',
+      'Lift the back of the hand toward you.',
+      'Lower slowly — keep the forearms still throughout.',
     ],
   },
 
@@ -350,7 +378,7 @@ export const mockExercises: Exercise[] = [
   },
   {
     id: 'ex-hanging',
-    name: 'Hanging Leg Raise',
+    name: 'Hanging Leg Raises',
     muscleGroup: 'Abs',
     equipment: 'Bodyweight',
     thumbnailColor: '#4C5E40',
@@ -390,6 +418,34 @@ export const mockExercises: Exercise[] = [
       'Contract the abs to return — no hip pulling.',
     ],
   },
+  {
+    id: 'ex-leg-raise',
+    name: 'Lying Leg Raises',
+    muscleGroup: 'Abs',
+    equipment: 'Bodyweight',
+    thumbnailColor: '#505E44',
+    description:
+      'A floor-based lower-ab movement. Raising the legs against gravity trains the rectus abdominis.',
+    cues: [
+      'Lie flat, hands under the lower back or by the sides.',
+      'Raise straight legs toward vertical.',
+      'Lower slowly without arching the lower back.',
+    ],
+  },
+  {
+    id: 'ex-crunch',
+    name: 'Crunches',
+    muscleGroup: 'Abs',
+    equipment: 'Bodyweight',
+    thumbnailColor: '#55584A',
+    description:
+      'The classic ab flexion movement. A short-range curl-up that targets the upper abs.',
+    cues: [
+      'Knees bent, feet flat, hands by the head.',
+      'Curl the shoulder blades off the floor.',
+      'Squeeze the abs at the top, lower with control.',
+    ],
+  },
 
   // ----- Quads -----
   {
@@ -421,6 +477,20 @@ export const mockExercises: Exercise[] = [
     ],
   },
   {
+    id: 'ex-hack-squat',
+    name: 'Hack Squat',
+    muscleGroup: 'Quads',
+    equipment: 'Machine',
+    thumbnailColor: '#2C5A86',
+    description:
+      'A machine squat with the back braced against an angled sled. Quad-dominant with a stable, fixed path for heavy loading.',
+    cues: [
+      'Shoulders under the pads, back flat on the sled.',
+      'Feet shoulder-width, descend to at least parallel.',
+      'Drive through mid-foot; keep the knees soft at the top.',
+    ],
+  },
+  {
     id: 'ex-leg-press',
     name: 'Leg Press',
     muscleGroup: 'Quads',
@@ -432,20 +502,6 @@ export const mockExercises: Exercise[] = [
       'Feet shoulder-width, toes slightly out.',
       'Lower until knees near chest — no lower back rounding.',
       'Don\u2019t lock knees at the top.',
-    ],
-  },
-  {
-    id: 'ex-goblet',
-    name: 'Goblet Squat',
-    muscleGroup: 'Quads',
-    equipment: 'Kettlebell',
-    thumbnailColor: '#2F6374',
-    description:
-      'Single-load squat great for learning the pattern and warming up the quads.',
-    cues: [
-      'Hold weight at chest, elbows inside knees.',
-      'Sit straight down between your feet.',
-      'Drive up through heels.',
     ],
   },
   {
@@ -506,20 +562,6 @@ export const mockExercises: Exercise[] = [
       'Control the eccentric for 3 seconds.',
     ],
   },
-  {
-    id: 'ex-nordic',
-    name: 'Nordic Curl',
-    muscleGroup: 'Hamstrings',
-    equipment: 'Bodyweight',
-    thumbnailColor: '#3C556F',
-    description:
-      'Eccentric-focused hamstring exercise. Brutal for strength and injury prevention.',
-    cues: [
-      'Anchor feet, start kneeling tall.',
-      'Lower forward as slowly as possible.',
-      'Catch with hands, push back up to start.',
-    ],
-  },
 
   // ----- Glutes -----
   {
@@ -550,20 +592,6 @@ export const mockExercises: Exercise[] = [
       'Drive through the front heel to return.',
     ],
   },
-  {
-    id: 'ex-glute-bridge',
-    name: 'Glute Bridge',
-    muscleGroup: 'Glutes',
-    equipment: 'Bodyweight',
-    thumbnailColor: '#2F5A3F',
-    description:
-      'Floor-based glute activation. Great warm-up before thrusts and lower-body days.',
-    cues: [
-      'Feet flat, heels close to the glutes.',
-      'Tuck pelvis, drive hips up.',
-      'Squeeze glutes at the top — no over-extending the lower back.',
-    ],
-  },
 
   // ----- Adductors / Abductors -----
   {
@@ -592,20 +620,6 @@ export const mockExercises: Exercise[] = [
       'Seat upright, knees against outer pads.',
       'Push pads apart with the outer hips.',
       'Hold for a beat at end-range.',
-    ],
-  },
-  {
-    id: 'ex-cossack',
-    name: 'Cossack Squat',
-    muscleGroup: 'Adductors',
-    equipment: 'Bodyweight',
-    thumbnailColor: '#566B9E',
-    description:
-      'Lateral squat that trains the adductors, glutes, and hip mobility.',
-    cues: [
-      'Very wide stance, toes slightly out.',
-      'Shift weight into one leg, squat to that side.',
-      'Keep the straight leg\u2019s heel down and toes up.',
     ],
   },
 
@@ -669,17 +683,17 @@ export const mockExercises: Exercise[] = [
     ],
   },
   {
-    id: 'ex-straight-arm',
-    name: 'Straight-Arm Pulldown',
+    id: 'ex-cable-pullover',
+    name: 'Cable Pullover',
     muscleGroup: 'Lats',
     equipment: 'Cable',
-    thumbnailColor: '#357C63',
+    thumbnailColor: '#2C7368',
     description:
-      'Elbows-locked lat isolation. Reinforces the lat contraction without biceps involvement.',
+      'A straight-arm cable pullover that isolates the lats through a long overhead stretch.',
     cues: [
-      'Hinge slightly, arms long and locked.',
-      'Pull the bar to the thighs with the lats.',
-      'Resist the eccentric back to the top.',
+      'Face the high pulley, arms long and locked.',
+      'Pull the bar down in an arc to the thighs.',
+      'Feel the lats stretch at the top, resist the return.',
     ],
   },
 
@@ -782,36 +796,6 @@ export const mockExercises: Exercise[] = [
       'Hips on the pad, body aligned at the top.',
       'Lower by hinging at the hips, not rounding.',
       'Return to a tall, neutral position.',
-    ],
-  },
-
-  // ----- Full Body -----
-  {
-    id: 'ex-clean',
-    name: 'Power Clean',
-    muscleGroup: 'Full Body',
-    equipment: 'Barbell',
-    thumbnailColor: '#54494C',
-    description:
-      'Explosive full-body pull. Builds power across the hips, traps, and upper back.',
-    cues: [
-      'Set up like a deadlift, bar over mid-foot.',
-      'Explode at the top of the pull, shrug hard.',
-      'Drop under the bar and catch in a quarter squat.',
-    ],
-  },
-  {
-    id: 'ex-kb-swing',
-    name: 'Kettlebell Swing',
-    muscleGroup: 'Full Body',
-    equipment: 'Kettlebell',
-    thumbnailColor: '#3F3F3F',
-    description:
-      'Hip-hinge power movement. Conditions the glutes, hamstrings, and cardiovascular system.',
-    cues: [
-      'Hinge back, bell between legs.',
-      'Drive hips forward powerfully.',
-      'Let the bell float to shoulder height; it\u2019s a hinge, not a squat.',
     ],
   },
 ];

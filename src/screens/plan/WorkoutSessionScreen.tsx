@@ -561,7 +561,6 @@ export function WorkoutSessionScreen() {
             <ExerciseImage
               exerciseId={meta?.id ?? ''}
               muscle={meta?.muscleGroup ?? 'Full Body'}
-              animate
               aspectRatio={16 / 10}
               radius={0}
               style={styles.heroImage}
