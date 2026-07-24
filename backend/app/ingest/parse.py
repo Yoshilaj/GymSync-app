@@ -33,6 +33,7 @@ class ParsedDoc:
     title: str
     year: int | None
     license: str | None = None    # detected license type/url (for the manifest audit trail)
+    journal: str | None = None    # source journal (audit + relevance gate)
     sections: list[Section] = field(default_factory=list)
 
 
@@ -167,6 +168,7 @@ def parse_jats(xml_bytes: bytes, *, source: str | None = None) -> ParsedDoc:
     year = _extract_year(article)
     doc_type = _infer_doc_type(article)
     license = _extract_license(article)
+    journal = _first_text(article, ".//journal-meta//journal-title", ".//journal-title")
 
     body = article.find(".//body")
     sections = _extract_sections(body) if body is not None else []
@@ -182,6 +184,7 @@ def parse_jats(xml_bytes: bytes, *, source: str | None = None) -> ParsedDoc:
         title=title,
         year=year,
         license=license,
+        journal=journal,
         sections=sections,
     )
 

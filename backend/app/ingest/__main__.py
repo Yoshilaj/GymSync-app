@@ -29,6 +29,27 @@ def _cmd_fetch(args) -> int:
     return 0
 
 
+def _cmd_fetch_corpus(args) -> int:
+    from app.ingest.fetch import run_corpus_fetch
+
+    rows = run_corpus_fetch(
+        args.per_domain,
+        raw_dir=args.raw_dir, manifest_path=args.manifest, force=args.force,
+    )
+    kept = sum(1 for r in rows if r.status == "relevant")
+    print(f"fetched {len(rows)} new doc(s), {kept} relevant")
+    return 0
+
+
+async def _cmd_load_all(args) -> int:
+    from app.ingest.load import load_manifest
+
+    reports = await load_manifest(args.manifest, args.raw_dir)
+    total_children = sum(r.children for r in reports)
+    print(f"loaded {len(reports)} doc(s), {total_children} chunks total")
+    return 0
+
+
 def _cmd_parse(args) -> int:
     # Pure path — import lazily so a missing app env never blocks `parse`.
     from app.ingest.chunk import chunk_doc
@@ -96,6 +117,16 @@ def main(argv: list[str] | None = None) -> int:
     p_fetch.add_argument("--manifest", default=_DEFAULT_MANIFEST)
     p_fetch.add_argument("--force", action="store_true", help="re-fetch even if already on disk")
 
+    p_fc = sub.add_parser("fetch-corpus", help="fetch the curated 5-domain corpus (M3)")
+    p_fc.add_argument("--per-domain", type=int, default=12, help="max docs per domain (default 12)")
+    p_fc.add_argument("--raw-dir", default=_DEFAULT_RAW)
+    p_fc.add_argument("--manifest", default=_DEFAULT_MANIFEST)
+    p_fc.add_argument("--force", action="store_true", help="re-fetch even if already on disk")
+
+    p_la = sub.add_parser("load-all", help="embed + upsert every 'relevant' manifest doc (resumable)")
+    p_la.add_argument("--raw-dir", default=_DEFAULT_RAW)
+    p_la.add_argument("--manifest", default=_DEFAULT_MANIFEST)
+
     p_parse = sub.add_parser("parse", help="parse JATS and print a summary (no DB)")
     p_parse.add_argument("file")
     p_parse.add_argument("--source", default=None, help="override the source id (default: PMC id)")
@@ -111,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "fetch":
         return _cmd_fetch(args)
+    if args.command == "fetch-corpus":
+        return _cmd_fetch_corpus(args)
+    if args.command == "load-all":
+        return asyncio.run(_cmd_load_all(args))
     if args.command == "parse":
         return _cmd_parse(args)
     if args.command == "load":

@@ -17,11 +17,14 @@ Reuses app.rag.embedder.get_embedder() (settings-selected: stub | nomic) — no 
 lives here — and app.database for the AsyncClient.
 """
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 from supabase import AsyncClient, acreate_client
 
 from app.config import settings
-from app.ingest.chunk import ChunkedDoc
+from app.ingest.chunk import ChunkedDoc, chunk_doc
+from app.ingest.parse import parse_file
 from app.rag.embedder import get_embedder
 
 _EMBED_BATCH = 256  # cap peak memory; fastembed also batches internally
@@ -106,3 +109,38 @@ async def load_doc(doc: ChunkedDoc, *, db: AsyncClient | None = None) -> LoadRep
         children=len(child_rows),
         embedding_model=embedder.model_name,
     )
+
+
+async def load_manifest(manifest_path: str, raw_dir: str, *, log=print) -> list[LoadReport]:
+    """Batch-load every 'relevant', not-yet-loaded doc in the manifest into Supabase.
+
+    Resumable: `loaded_at` is stamped back into the manifest after EACH doc, so a crash
+    resumes where it left off. Reuses one AsyncClient across all docs.
+    """
+    # Imported here to avoid a hard fetch↔load import cycle at module load.
+    from app.ingest.fetch import _load_manifest, _write_manifest
+
+    manifest = Path(manifest_path)
+    raw = Path(raw_dir)
+    rows = _load_manifest(manifest)
+    todo = [r for r in rows.values() if r.get("status") == "relevant" and not r.get("loaded_at")]
+    log(f"{len(todo)} relevant doc(s) to load (of {len(rows)} in manifest)")
+    if not todo:
+        return []
+
+    db = await _connect()
+    reports: list[LoadReport] = []
+    for r in todo:
+        xml = raw / f"{r['source_id']}.xml"
+        if not xml.exists():
+            log(f"  ! {r['source_id']}: raw XML missing, skipping")
+            continue
+        doc = chunk_doc(parse_file(str(xml), source=r["source_id"]))
+        report = await load_doc(doc, db=db)
+        r["loaded_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        rows[r["source_id"]] = r
+        _write_manifest(manifest, rows)   # persist after each → crash-safe resume
+        reports.append(report)
+        log(f"  ✓ {report.source}: {report.parents} parents, {report.children} children")
+    log(f"loaded {len(reports)} doc(s)")
+    return reports
