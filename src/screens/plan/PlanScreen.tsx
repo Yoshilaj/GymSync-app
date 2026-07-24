@@ -85,7 +85,7 @@ export function PlanScreen() {
           </Entering>
         ) : (
           <EmptyState
-            mascot
+            icon="leaf-outline"
             title="Nothing scheduled"
             message={`No workout on ${selectedDay}. Ask Sync to add one if you're feeling up for it.`}
             action={{

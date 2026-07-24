@@ -1,4 +1,4 @@
-import { Image, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing } from '@/theme';
 import { AppText } from './AppText';
@@ -8,21 +8,13 @@ interface Props {
   title: string;
   message?: string;
   icon?: keyof typeof Ionicons.glyphMap;
-  /** Render the GymSync mascot instead of an icon. */
-  mascot?: boolean;
   action?: { label: string; onPress: () => void };
 }
 
-export function EmptyState({ title, message, icon, mascot = false, action }: Props) {
+export function EmptyState({ title, message, icon, action }: Props) {
   return (
     <View style={styles.wrap}>
-      {mascot ? (
-        <Image
-          source={require('../../../assets/homie.png')}
-          style={styles.mascot}
-          resizeMode="contain"
-        />
-      ) : icon ? (
+      {icon ? (
         <View style={styles.iconWell}>
           <Ionicons name={icon} size={26} color={colors.textTertiary} />
         </View>
@@ -56,7 +48,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     gap: spacing.sm,
   },
-  mascot: { width: 120, height: 120, marginBottom: spacing.sm },
   iconWell: {
     width: 56,
     height: 56,
