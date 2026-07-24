@@ -12,9 +12,9 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
 import { RootNavigator } from '@/navigation/RootNavigator';
+import { AuthNavigator } from '@/navigation/AuthNavigator';
 import { UserProvider } from '@/context/UserContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
-import { SignInScreen } from '@/screens/auth/SignInScreen';
 import { colors } from '@/theme';
 
 const navTheme = {
@@ -39,7 +39,7 @@ function Splash() {
   );
 }
 
-/** Auth gate: splash while loading, sign-in when logged out, the app when logged in. */
+/** Auth gate: splash while loading, auth flow when logged out, the app when logged in. */
 function RootGate() {
   const { loading, session } = useAuth();
 
@@ -47,13 +47,9 @@ function RootGate() {
     return <Splash />;
   }
 
-  if (!session) {
-    return <SignInScreen />;
-  }
-
   return (
     <NavigationContainer theme={navTheme}>
-      <RootNavigator />
+      {session ? <RootNavigator /> : <AuthNavigator />}
     </NavigationContainer>
   );
 }

@@ -5,6 +5,7 @@ export { Skeleton } from './Skeleton';
 export { Screen } from './Screen';
 export { Button } from './Button';
 export { Card } from './Card';
+export { Input } from './Input';
 export { Chip } from './Chip';
 export { StatTile } from './StatTile';
 export { ListRow } from './ListRow';
