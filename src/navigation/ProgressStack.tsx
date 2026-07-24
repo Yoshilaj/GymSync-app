@@ -3,6 +3,7 @@ import { ProgressScreen } from '@/screens/progress/ProgressScreen';
 import { DayDetailScreen } from '@/screens/progress/DayDetailScreen';
 import { ExerciseListScreen } from '@/screens/exercises/ExerciseListScreen';
 import { ExerciseDetailScreen } from '@/screens/exercises/ExerciseDetailScreen';
+import { SettingsScreen } from '@/screens/settings/SettingsScreen';
 import { colors } from '@/theme';
 
 export type ProgressStackParamList = {
@@ -18,6 +19,7 @@ export type ProgressStackParamList = {
     returnKey?: 'strength' | 'volume';
   };
   ExerciseDetail: { exerciseId: string };
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProgressStackParamList>();
@@ -34,6 +36,7 @@ export function ProgressStack() {
       <Stack.Screen name="DayDetail" component={DayDetailScreen} />
       <Stack.Screen name="ExerciseList" component={ExerciseListScreen} />
       <Stack.Screen name="ExerciseDetail" component={ExerciseDetailScreen} />
+      <Stack.Screen name="Settings" component={SettingsScreen} />
     </Stack.Navigator>
   );
 }

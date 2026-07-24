@@ -220,7 +220,8 @@ export const mockExercises: Exercise[] = [
     id: 'ex-preacher',
     name: 'Preacher Curl',
     muscleGroup: 'Biceps',
-    equipment: 'Machine',
+    // The artwork shows an EZ bar on a preacher bench, not a machine.
+    equipment: 'Barbell',
     thumbnailColor: '#A06B2D',
     description:
       'Biceps isolation with the upper arm locked. Emphasizes the short head through a long stretch.',
@@ -628,12 +629,13 @@ export const mockExercises: Exercise[] = [
     id: 'ex-calf-raise',
     name: 'Standing Calf Raise',
     muscleGroup: 'Calves',
-    equipment: 'Machine',
+    // The artwork shows a bodyweight raise on a step, no machine.
+    equipment: 'Bodyweight',
     thumbnailColor: '#6B4A36',
     description:
       'Straight-leg calf raise for the gastrocnemius. Go full stretch, full squeeze.',
     cues: [
-      'Shoulders under pads, balls of feet on platform.',
+      'Balls of feet on the step edge, stand tall.',
       'Drop heels deep under the step.',
       'Rise to tip-toes and pause 1 count.',
     ],
@@ -817,6 +819,45 @@ export const muscleGroups: MuscleGroup[] = [
   'Abductors',
   'Calves',
 ];
+
+/**
+ * Broad display categories for the library filter. Fine-grained muscle groups
+ * stay on the data (they feed icons, primary-muscle display, alternatives);
+ * these are just the six buckets people actually browse by.
+ */
+export const categories = [
+  'Chest',
+  'Back',
+  'Legs',
+  'Shoulders',
+  'Arms',
+  'Abs',
+] as const;
+
+export type Category = (typeof categories)[number];
+
+const CATEGORY_MAP: Record<MuscleGroup, Category> = {
+  Chest: 'Chest',
+  Lats: 'Back',
+  Traps: 'Back',
+  'Lower Back': 'Back',
+  Quads: 'Legs',
+  Hamstrings: 'Legs',
+  Glutes: 'Legs',
+  Calves: 'Legs',
+  Adductors: 'Legs',
+  Abductors: 'Legs',
+  Shoulders: 'Shoulders',
+  Biceps: 'Arms',
+  Triceps: 'Arms',
+  Forearms: 'Arms',
+  Abs: 'Abs',
+  'Full Body': 'Legs', // unused by current data; mapped for exhaustiveness
+};
+
+export function getCategory(group: MuscleGroup): Category {
+  return CATEGORY_MAP[group];
+}
 
 export function getExerciseById(id: string): Exercise | undefined {
   return mockExercises.find((e) => e.id === id);

@@ -117,7 +117,8 @@ export function SettingsScreen() {
 
   return (
     <Screen scroll padded={false}>
-      <ScreenHeader variant="brand" title="Settings" />
+      {/* Pushed from the profile page — back affordance only, no title. */}
+      <ScreenHeader variant="detail" />
 
       <View style={styles.content}>
         <SectionHeader title="Profile" />

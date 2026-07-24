@@ -15,9 +15,14 @@ import { colors, layout, radius, shadows, spacing } from '@/theme';
 import { AppText, EmptyState, Entering } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ExerciseImage } from '@/components/ExerciseImage';
-import { mockExercises, muscleGroups } from '@/data/mockExercises';
+import {
+  mockExercises,
+  categories,
+  getCategory,
+  Category,
+} from '@/data/mockExercises';
 import { useTabBarClearance } from '@/hooks';
-import { Exercise, MuscleGroup } from '@/types';
+import { Exercise } from '@/types';
 
 // Mounted in both PlanStack (browse) and ProgressStack (browse + picker) —
 // type against the minimal structural params this screen actually navigates.
@@ -32,7 +37,7 @@ type ExerciseListParams = {
 type Nav = NativeStackNavigationProp<ExerciseListParams, 'ExerciseList'>;
 type Rt = RouteProp<ExerciseListParams, 'ExerciseList'>;
 
-const ALL: MuscleGroup | 'All' = 'All';
+const ALL: Category | 'All' = 'All';
 
 export function ExerciseListScreen() {
   const nav = useNavigation<Nav>();
@@ -41,7 +46,7 @@ export function ExerciseListScreen() {
   const returnKey = route.params?.returnKey;
 
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<MuscleGroup | 'All'>(ALL);
+  const [filter, setFilter] = useState<Category | 'All'>(ALL);
   const clearance = useTabBarClearance();
 
   const filtered = useMemo(() => {
@@ -52,7 +57,7 @@ export function ExerciseListScreen() {
         e.name.toLowerCase().includes(q) ||
         e.muscleGroup.toLowerCase().includes(q) ||
         e.equipment.toLowerCase().includes(q);
-      const matchesF = filter === ALL || e.muscleGroup === filter;
+      const matchesF = filter === ALL || getCategory(e.muscleGroup) === filter;
       return matchesQ && matchesF;
     });
   }, [query, filter]);
@@ -104,22 +109,27 @@ export function ExerciseListScreen() {
           active={filter === ALL}
           onPress={() => setFilter(ALL)}
         />
-        {muscleGroups.map((m) => {
-          const count = mockExercises.filter((e) => e.muscleGroup === m).length;
+        {categories.map((c) => {
+          const count = mockExercises.filter(
+            (e) => getCategory(e.muscleGroup) === c,
+          ).length;
           if (count === 0) return null;
           return (
             <FilterChip
-              key={m}
-              label={m}
+              key={c}
+              label={c}
               count={count}
-              active={filter === m}
-              onPress={() => setFilter(m)}
+              active={filter === c}
+              onPress={() => setFilter(c)}
             />
           );
         })}
       </ScrollView>
 
       <FlatList
+        // Remount on category change so the rows' mount animation (Entering)
+        // replays — FlatList otherwise recycles cells and never re-triggers it.
+        key={filter}
         data={filtered}
         keyExtractor={(i) => i.id}
         contentContainerStyle={[styles.listContent, { paddingBottom: clearance.scroll }]}

@@ -3,7 +3,6 @@ import { View } from 'react-native';
 import { SyncStack } from './SyncStack';
 import { PlanStack } from './PlanStack';
 import { ProgressStack } from './ProgressStack';
-import { SettingsStack } from './SettingsStack';
 import { AppTabBar } from '@/components/AppTabBar';
 
 const Tab = createBottomTabNavigator();
@@ -21,9 +20,8 @@ export function RootNavigator() {
     >
       <Tab.Screen name="Plan" component={PlanStack} />
       <Tab.Screen name="Sync" component={SyncStack} />
-      <Tab.Screen name="LiveWorkout" component={FabPlaceholder} />
       <Tab.Screen name="Progress" component={ProgressStack} />
-      <Tab.Screen name="Settings" component={SettingsStack} />
+      <Tab.Screen name="LiveWorkout" component={FabPlaceholder} />
     </Tab.Navigator>
   );
 }

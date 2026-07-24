@@ -20,11 +20,19 @@ interface Props {
   duration: number;
   paused?: boolean;
   size?: number;
+  /** Hide the center clock — for tiny rings whose time renders beside them. */
+  showClock?: boolean;
 }
 
 /** Circular rest countdown — the ring drains smoothly as time runs out. */
-export function RestRing({ remaining, duration, paused = false, size = 64 }: Props) {
-  const strokeWidth = 4;
+export function RestRing({
+  remaining,
+  duration,
+  paused = false,
+  size = 64,
+  showClock = true,
+}: Props) {
+  const strokeWidth = size < 40 ? 3 : 4;
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
 
@@ -68,15 +76,17 @@ export function RestRing({ remaining, duration, paused = false, size = 64 }: Pro
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
       </Svg>
-      <View style={styles.center}>
-        <AppText
-          variant="bodyMedium"
-          color={paused ? 'textTertiary' : 'textPrimary'}
-          style={styles.clock}
-        >
-          {formatClock(remaining)}
-        </AppText>
-      </View>
+      {showClock && (
+        <View style={styles.center}>
+          <AppText
+            variant="bodyMedium"
+            color={paused ? 'textTertiary' : 'textPrimary'}
+            style={styles.clock}
+          >
+            {formatClock(remaining)}
+          </AppText>
+        </View>
+      )}
     </View>
   );
 }

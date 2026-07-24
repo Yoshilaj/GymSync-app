@@ -15,4 +15,10 @@ export const gradients = {
   screenWash: ['#E9F4FF', '#EEF3FA', '#EEF3FA'] as const,
   /** Area fill under line charts. */
   chartFill: ['rgba(46,144,234,0.18)', 'rgba(46,144,234,0.0)'] as const,
+  /** RestDayCard — deep twilight blue, the calm counterpart to `brand`. */
+  rest: ['#1D77CE', '#14528F', '#0B2447'] as const,
+  /** Milestone/PR post tiles on the Profile grid. */
+  navyDeep: ['#22405F', '#0B2447'] as const,
+  /** Bottom scrim for legible text over imagery (post tiles). */
+  scrim: ['rgba(11,36,71,0)', 'rgba(11,36,71,0.62)'] as const,
 };

@@ -3,9 +3,9 @@ import { StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppText, Card, EmptyState, Entering, ListRow, Screen } from '@/components/ui';
-import { ScreenHeader } from '@/components/ScreenHeader';
 import { DayStrip, getWeekDates } from '@/components/DayStrip';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
+import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { layout, spacing } from '@/theme';
 import { mockPlan } from '@/data/mockPlan';
@@ -31,10 +31,27 @@ export function PlanScreen() {
   const isRest = mockPlan.restDays.includes(selectedDay);
   const markedDays = mockPlan.workouts.map((w) => w.dayLabel);
 
+  // The first scheduled workout after the selected day, walking the week cyclically.
+  const nextWorkout = useMemo<NextWorkoutPreview | undefined>(() => {
+    const start = WEEK_LONG.indexOf(selectedDay);
+    for (let i = 1; i <= 7; i += 1) {
+      const day = WEEK_LONG[(start + i) % 7];
+      const w = mockPlan.workouts.find((x) => x.dayLabel === day);
+      if (w) {
+        return {
+          title: w.title,
+          dayLabel: w.dayLabel,
+          estMinutes: w.estMinutes,
+          exerciseCount: w.exercises.length,
+        };
+      }
+    }
+    return undefined;
+  }, [selectedDay]);
+
   return (
     <Screen scroll padded={false}>
-      <ScreenHeader variant="brand" />
-
+      <View style={styles.headerGap} />
       <DayStrip
         week={weekDates}
         selected={selectedDay}
@@ -55,15 +72,22 @@ export function PlanScreen() {
               nav.navigate('ExerciseDetail', { exerciseId })
             }
           />
+        ) : isRest ? (
+          <Entering>
+            <RestDayCard
+              nextWorkout={nextWorkout}
+              onPressNextWorkout={
+                nextWorkout
+                  ? () => setSelectedDay(nextWorkout.dayLabel)
+                  : undefined
+              }
+            />
+          </Entering>
         ) : (
           <EmptyState
             mascot
-            title={isRest ? 'Rest day' : 'Nothing scheduled'}
-            message={
-              isRest
-                ? `Recovery is part of the plan. Sync kept ${selectedDay} light on purpose.`
-                : `No workout on ${selectedDay}. Ask Sync to add one if you're feeling up for it.`
-            }
+            title="Nothing scheduled"
+            message={`No workout on ${selectedDay}. Ask Sync to add one if you're feeling up for it.`}
             action={{
               label: 'Ask Sync',
               onPress: () => (nav.getParent() as any)?.navigate('Sync'),
@@ -173,4 +197,5 @@ const styles = StyleSheet.create({
   },
   listHeading: { marginLeft: spacing.xs, marginBottom: spacing.sm },
   librarySection: { marginTop: spacing.lg },
+  headerGap: { height: spacing.sm },
 });

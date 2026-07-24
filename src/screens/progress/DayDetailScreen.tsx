@@ -4,6 +4,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, layout, spacing } from '@/theme';
 import { AppText, EmptyState } from '@/components/ui';
+import { RestDayCard } from '@/components/RestDayCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
@@ -72,15 +73,13 @@ export function DayDetailScreen() {
               nav.navigate('ExerciseDetail', { exerciseId })
             }
           />
+        ) : isRest ? (
+          <RestDayCard />
         ) : (
           <EmptyState
-            icon={isRest ? 'bed-outline' : 'leaf-outline'}
-            title={isRest ? 'Rest day' : 'No workout'}
-            message={
-              isRest
-                ? 'Recovery was on the plan.'
-                : 'No workout logged for this day.'
-            }
+            icon="leaf-outline"
+            title="No workout"
+            message="No workout logged for this day."
           />
         )}
       </ScrollView>

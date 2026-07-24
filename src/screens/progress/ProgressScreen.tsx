@@ -11,16 +11,26 @@ import {
 } from 'react-native';
 import { LineChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import Svg, { Circle, Ellipse } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  useIsFocused,
+  useNavigation,
+  useRoute,
+  RouteProp,
+} from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, defaultLineChartProps, layout, radius, spacing } from '@/theme';
-import { AppText, Card, Entering, StatTile } from '@/components/ui';
-import { ScreenHeader } from '@/components/ScreenHeader';
+import { colors, defaultLineChartProps, gradients, layout, radius, spacing } from '@/theme';
+import { AppText, Card, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
+import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { mockProgress } from '@/data/mockProgress';
 import { mockPlan } from '@/data/mockPlan';
+import { mockProfile } from '@/data/mockProfile';
 import { getExerciseById, mockExercises } from '@/data/mockExercises';
+import { useUser } from '@/context/UserContext';
 import { useTabBarClearance } from '@/hooks';
 import { ProgressStackParamList } from '@/navigation/ProgressStack';
 
@@ -63,37 +73,18 @@ export function ProgressScreen() {
     }
   }, [route.params?.pickedExercise]);
 
+  const focused = useIsFocused();
+
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScreenHeader variant="brand" title="Progress" />
+    <SafeAreaView style={styles.safe} edges={['left', 'right']}>
+      {/* The header gradient owns the status-bar area — flip to light while
+          this screen is front-most, revert everywhere else. */}
+      {focused && <StatusBar style="light" />}
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: clearance.scroll }]}
         showsVerticalScrollIndicator={false}
       >
-        <Entering>
-          <View style={styles.metricsRow}>
-            <StatTile
-              label="Streak"
-              value={mockProgress.currentStreak}
-              unit="days"
-              icon="flame"
-              tone="live"
-            />
-            <StatTile
-              label="PRs · month"
-              value={mockProgress.prsThisMonth}
-              icon="trophy"
-              tone="warning"
-            />
-            <StatTile
-              label="This week"
-              value={mockProgress.daysTrainedThisWeek}
-              unit="/ 4"
-              icon="barbell"
-              tone="accent"
-            />
-          </View>
-        </Entering>
+        <ProfileHeader onOpenSettings={() => nav.navigate('Settings')} />
 
         <Entering index={1}>
           <CalendarBlock />
@@ -115,6 +106,131 @@ export function ProgressScreen() {
         </Entering>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+const RING_SIZE = 84;
+const RING_STROKE = 5;
+const AVATAR_SIZE = 68;
+
+/**
+ * Card-free profile header: a full-bleed twilight sky that flows under the
+ * status bar and melts into the page through a concave curve. Identity is a
+ * centered composition — avatar wrapped in a live weekly-training ring,
+ * display-type name, and bare typographic stats. No boxes, no bands.
+ */
+function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { user } = useUser();
+  const insets = useSafeAreaInsets();
+
+  // The ring is data: how much of this week's plan is already trained.
+  const weekProgress = Math.min(1, mockProgress.daysTrainedThisWeek / 4);
+  const ringR = (RING_SIZE - RING_STROKE) / 2;
+  const ringC = 2 * Math.PI * ringR;
+
+  const stats: [string, string][] = [
+    [`${mockProgress.currentStreak}`, 'day streak'],
+    [`${mockProgress.prsThisMonth}`, 'PRs · month'],
+    [`${mockProgress.daysTrainedThisWeek}/4`, 'this week'],
+  ];
+
+  return (
+    <View style={styles.header}>
+      <LinearGradient
+        // Deepest navy at the top, lifting toward blue as it meets the page —
+        // the rest gradient read upside down.
+        colors={[gradients.rest[2], gradients.rest[1], gradients.rest[0]]}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+        style={[styles.headerGradient, { paddingTop: insets.top + spacing.sm }]}
+      >
+        {/* Night sky drifting across the full width */}
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <Svg width="100%" height="100%">
+            <Circle cx="88%" cy={40} r={52} fill="none" strokeWidth={1.5} stroke="rgba(255,255,255,0.10)" />
+            <Circle cx="88%" cy={40} r={86} fill="none" strokeWidth={1.5} stroke="rgba(255,255,255,0.06)" />
+            <Circle cx="6%" cy={120} r={40} fill="none" strokeWidth={1.5} stroke="rgba(255,255,255,0.08)" />
+            <Circle cx="8%" cy={44} r={2} fill="rgba(255,255,255,0.45)" />
+            <Circle cx="22%" cy={90} r={1.5} fill="rgba(255,255,255,0.4)" />
+            <Circle cx="72%" cy={130} r={2.5} fill="rgba(255,255,255,0.4)" />
+            <Circle cx="93%" cy={150} r={1.5} fill="rgba(255,255,255,0.45)" />
+            <Circle cx="38%" cy={30} r={1.5} fill="rgba(255,255,255,0.35)" />
+          </Svg>
+        </View>
+
+        <Pressable
+          onPress={onOpenSettings}
+          hitSlop={12}
+          style={styles.menuBtn}
+        >
+          <Ionicons name="menu" size={26} color={colors.textInverse} />
+        </Pressable>
+
+        {/* Avatar inside its weekly-training ring */}
+        <View style={styles.ringWrap}>
+          <Svg width={RING_SIZE} height={RING_SIZE} style={StyleSheet.absoluteFill}>
+            <Circle
+              cx={RING_SIZE / 2}
+              cy={RING_SIZE / 2}
+              r={ringR}
+              stroke="rgba(255,255,255,0.18)"
+              strokeWidth={RING_STROKE}
+              fill="none"
+            />
+            <Circle
+              cx={RING_SIZE / 2}
+              cy={RING_SIZE / 2}
+              r={ringR}
+              stroke={gradients.brand[0]}
+              strokeWidth={RING_STROKE}
+              strokeLinecap="round"
+              fill="none"
+              strokeDasharray={ringC}
+              strokeDashoffset={ringC * (1 - weekProgress)}
+              transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+            />
+          </Svg>
+          <ProfileAvatar name={user.displayName} size={AVATAR_SIZE} />
+        </View>
+
+        <AppText variant="display" color="textInverse" align="center">
+          {user.displayName}
+        </AppText>
+        <AppText
+          variant="caption"
+          color="rgba(255,255,255,0.8)"
+          align="center"
+          style={styles.handle}
+        >
+          @{mockProfile.handle} · Joined {mockProfile.joined}
+        </AppText>
+
+        {/* Bare typographic stats — whitespace instead of boxes */}
+        <View style={styles.statsRow}>
+          {stats.map(([value, label]) => (
+            <View key={label} style={styles.statCol}>
+              <AppText variant="statLg" color="textInverse">
+                {value}
+              </AppText>
+              <AppText variant="label" color="rgba(255,255,255,0.7)">
+                {label}
+              </AppText>
+            </View>
+          ))}
+        </View>
+      </LinearGradient>
+
+      {/* The page scoops up into the sky — an organic seam, not a box edge. */}
+      <Svg
+        width="100%"
+        height={44}
+        viewBox="0 0 100 44"
+        preserveAspectRatio="none"
+        style={styles.curve}
+      >
+        <Ellipse cx={50} cy={112} rx={82} ry={86} fill={colors.bg} />
+      </Svg>
+    </View>
   );
 }
 
@@ -394,9 +510,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.SCREEN_H_PADDING,
     gap: spacing.lg,
   },
-  metricsRow: {
+  // Full-bleed: escape the scroll content's gutter on both sides.
+  header: {
+    marginHorizontal: -layout.SCREEN_H_PADDING,
+  },
+  headerGradient: {
+    alignItems: 'center',
+    paddingHorizontal: layout.SCREEN_H_PADDING,
+    // Room for the concave curve to scoop into.
+    paddingBottom: spacing.xxxl + spacing.lg,
+  },
+  menuBtn: {
+    alignSelf: 'flex-end',
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ringWrap: {
+    width: RING_SIZE,
+    height: RING_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  handle: { marginTop: spacing.xxs },
+  statsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    alignSelf: 'stretch',
+    justifyContent: 'space-evenly',
+    marginTop: spacing.xl,
+  },
+  statCol: { alignItems: 'center', gap: spacing.xs },
+  curve: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   calendarCard: { gap: spacing.md },
   calendarHeader: {

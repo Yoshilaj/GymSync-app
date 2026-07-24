@@ -3,7 +3,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, layout, radius, spacing } from '@/theme';
-import { useUser } from '@/context/UserContext';
 import { AppText } from '@/components/ui/AppText';
 
 interface Props {
@@ -60,26 +59,7 @@ export function ScreenHeader({
         {subtitle ? <AppText variant="caption">{subtitle}</AppText> : null}
       </View>
       {right}
-      <Avatar />
     </View>
-  );
-}
-
-function Avatar() {
-  const nav = useNavigation<any>();
-  const { user } = useUser();
-  const initial = (user.displayName?.[0] ?? 'Y').toUpperCase();
-
-  return (
-    <Pressable
-      onPress={() => nav.getParent()?.navigate('Settings') ?? nav.navigate('Settings')}
-      hitSlop={10}
-      style={styles.avatar}
-    >
-      <AppText variant="caption" color="accentText" style={styles.avatarText}>
-        {initial}
-      </AppText>
-    </Pressable>
   );
 }
 
@@ -106,15 +86,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   rightSlot: { width: 34, alignItems: 'flex-end' },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentFaint,
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { fontSize: 14 },
 });

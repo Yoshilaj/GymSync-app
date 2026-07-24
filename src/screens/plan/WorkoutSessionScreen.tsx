@@ -6,8 +6,9 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
+import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -103,17 +104,24 @@ export function WorkoutSessionScreen() {
   const [planChanges, setPlanChanges] = useState<PlanChange[] | null>(null);
   const [planBannerOpen, setPlanBannerOpen] = useState(false);
   const [restExpanded, setRestExpanded] = useState(false);
+  // Bottom edge of the header in the popover's coordinate space. Absolute
+  // children position against the parent's border box, which ignores the
+  // safe-area padding the header flows below — so track y + height, not height.
+  const [headerBottom, setHeaderBottom] = useState(0);
   const [transcript, setTranscript] = useState('');
-  const [elapsed, setElapsed] = useState(0);
 
   const actions = useSessionActions();
   const { timer } = actions.state;
 
-  // Elapsed session clock.
+  // A gentle nudge when the rest countdown runs out on its own (not on skip).
+  const prevTimerRef = useRef(timer);
   useEffect(() => {
-    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+    const prev = prevTimerRef.current;
+    prevTimerRef.current = timer;
+    if (prev.status === 'running' && timer.status === 'idle' && prev.remaining <= 1) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [timer]);
 
   const pushToast = useCallback(
     (text: string, icon?: SessionToast['icon']) => {
@@ -369,7 +377,6 @@ export function WorkoutSessionScreen() {
 
   const current = exercises[exerciseIdx];
   const currentSets = current?.sets ?? [];
-  const completedCount = currentSets.filter((s) => s.completed).length;
   const currentSetIdx = currentSets.findIndex((s) => !s.completed);
   const nextExercise = exercises[exerciseIdx + 1];
 
@@ -408,7 +415,10 @@ export function WorkoutSessionScreen() {
           : ex,
       ),
     );
-    if (!wasCompleted) actions.startRest(DEFAULT_REST_SECONDS);
+    if (!wasCompleted) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      actions.startRest(DEFAULT_REST_SECONDS);
+    }
   };
 
   const addSet = () => {
@@ -464,34 +474,61 @@ export function WorkoutSessionScreen() {
 
   if (!current) return null;
   const meta = current.meta;
-  const cue =
-    meta && meta.cues.length > 0
-      ? meta.cues[completedCount % meta.cues.length]
-      : undefined;
   const voiceError = voice.phase === 'error';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
-      {/* Header: end (X) · title + position · elapsed */}
-      <View style={styles.header}>
-        <Pressable onPress={endWorkout} hitSlop={8} style={styles.closeBtn}>
-          <Ionicons name="close" size={20} color={colors.textPrimary} />
-        </Pressable>
-        <View style={styles.headerCenter}>
+      {/* Header: end (X) · centered title · rest timer */}
+      <View
+        style={styles.header}
+        onLayout={(e) =>
+          setHeaderBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)
+        }
+      >
+        {/* Absolutely centered so uneven side widths can't skew the title. */}
+        <View style={styles.headerTitleWrap} pointerEvents="none">
           <AppText variant="h3" align="center" numberOfLines={1}>
             {workout.title}
           </AppText>
-          <AppText variant="caption" align="center">
-            Exercise {exerciseIdx + 1} of {exercises.length}
-          </AppText>
         </View>
-        <View style={styles.elapsedChip}>
-          <Ionicons name="time-outline" size={13} color={colors.textSecondary} />
-          <AppText variant="caption" style={styles.tabular}>
-            {formatClock(elapsed)}
-          </AppText>
-        </View>
+        <Pressable onPress={endWorkout} hitSlop={8} style={styles.closeBtn}>
+          <Ionicons name="close" size={20} color={colors.textPrimary} />
+        </Pressable>
+        <View style={styles.headerSpacer} />
+        {timer.status === 'idle' ? (
+          <Pressable
+            hitSlop={6}
+            style={styles.restChip}
+            onPress={() => {
+              actions.startRest(DEFAULT_REST_SECONDS);
+              setRestExpanded(true);
+            }}
+          >
+            <Ionicons name="timer-outline" size={14} color={colors.accentText} />
+            <AppText variant="caption" color="accentText">
+              Rest
+            </AppText>
+          </Pressable>
+        ) : (
+          <Pressable
+            hitSlop={6}
+            style={[styles.restChip, styles.restChipLive]}
+            onPress={() => setRestExpanded((e) => !e)}
+          >
+            <RestRing
+              remaining={timer.remaining}
+              duration={timer.duration}
+              paused={timer.status === 'paused'}
+              size={22}
+              showClock={false}
+            />
+            <AppText variant="caption" style={styles.tabular}>
+              {formatClock(timer.remaining)}
+            </AppText>
+          </Pressable>
+        )}
       </View>
+
 
       {/* Per-exercise progress — one segment per exercise, like story dots */}
       <View style={styles.segmentsRow}>
@@ -570,14 +607,17 @@ export function WorkoutSessionScreen() {
               style={styles.heroScrim}
             />
             {current.addedBySync && (
-              <View style={styles.heroBadge}>
+              <View style={styles.heroBadgeLeft}>
                 <Chip label="Added by Sync" size="sm" tone="onAccent" />
               </View>
             )}
-            <View style={styles.heroText}>
-              <AppText variant="label" color="rgba(255,255,255,0.8)">
-                Now lifting
+            {/* Position in the workout, on the photo */}
+            <View style={styles.countPill}>
+              <AppText variant="caption" color="textInverse" style={styles.tabular}>
+                {exerciseIdx + 1} / {exercises.length}
               </AppText>
+            </View>
+            <View style={styles.heroText}>
               <AppText variant="h2" color="textInverse" numberOfLines={2}>
                 {current.name}
               </AppText>
@@ -588,21 +628,10 @@ export function WorkoutSessionScreen() {
               )}
             </View>
           </View>
-          {(cue || current.note) && (
-            <View style={styles.cueStrip}>
-              <Ionicons name="bulb-outline" size={15} color={colors.warningText} />
-              <AppText variant="caption" color="textSecondary" style={{ flex: 1 }}>
-                {cue ?? current.note}
-              </AppText>
-            </View>
-          )}
         </Card>
 
         {/* Sets */}
-        <AppText variant="label" style={styles.setsHeading}>
-          Sets
-        </AppText>
-        <View>
+        <View style={styles.setsBlock}>
           {currentSets.map((s, i) => (
             <SetRow
               key={s.id}
@@ -659,64 +688,6 @@ export function WorkoutSessionScreen() {
         />
       </ScrollView>
 
-      {/* Floating rest card */}
-      {timer.status !== 'idle' && (
-        <Animated.View
-          entering={SlideInDown.duration(250)}
-          exiting={SlideOutDown.duration(200)}
-          style={styles.restWrap}
-          pointerEvents="box-none"
-        >
-          <Pressable
-            style={styles.restCard}
-            onPress={() => setRestExpanded((e) => !e)}
-          >
-            <View style={styles.restMain}>
-              <RestRing
-                remaining={timer.remaining}
-                duration={timer.duration}
-                paused={timer.status === 'paused'}
-                size={56}
-              />
-              <View style={styles.restTextCol}>
-                <AppText variant="label">Rest</AppText>
-                <AppText variant="caption" color="textTertiary">
-                  {timer.status === 'paused' ? 'Paused' : 'Tap for options'}
-                </AppText>
-              </View>
-            </View>
-            {restExpanded && (
-              <View style={styles.restControls}>
-                <Button
-                  title="Skip"
-                  variant="ghost"
-                  size="sm"
-                  full={false}
-                  onPress={() => {
-                    actions.skipRest();
-                    setRestExpanded(false);
-                  }}
-                />
-                <Button
-                  title="+30s"
-                  variant="ghost"
-                  size="sm"
-                  full={false}
-                  onPress={() => actions.extendRest(30)}
-                />
-                <Button
-                  title={timer.status === 'paused' ? 'Resume' : 'Pause'}
-                  variant="ghost"
-                  size="sm"
-                  full={false}
-                  onPress={actions.toggleRestPause}
-                />
-              </View>
-            )}
-          </Pressable>
-        </Animated.View>
-      )}
-
       {/* Coach dock */}
       <View style={styles.dock}>
         {voiceError ? (
@@ -769,6 +740,47 @@ export function WorkoutSessionScreen() {
         )}
       </View>
 
+      {/* Rest controls — a popover just below the header chip; overlays
+          content, never shifts the layout. Tapping anywhere else closes it. */}
+      {restExpanded && timer.status !== 'idle' && (
+        <Pressable
+          style={styles.restScrim}
+          onPress={() => setRestExpanded(false)}
+        />
+      )}
+      {restExpanded && timer.status !== 'idle' && (
+        <Animated.View
+          entering={FadeInDown.duration(180)}
+          exiting={FadeOutUp.duration(150)}
+          style={[styles.restPopover, { top: headerBottom + spacing.xs }]}
+        >
+          <Button
+            title="+30s"
+            variant="ghost"
+            size="sm"
+            full={false}
+            onPress={() => actions.extendRest(30)}
+          />
+          <Button
+            title={timer.status === 'paused' ? 'Resume' : 'Pause'}
+            variant="ghost"
+            size="sm"
+            full={false}
+            onPress={actions.toggleRestPause}
+          />
+          <Button
+            title="Skip"
+            variant="ghost"
+            size="sm"
+            full={false}
+            onPress={() => {
+              actions.skipRest();
+              setRestExpanded(false);
+            }}
+          />
+        </Animated.View>
+      )}
+
       <SessionToasts toasts={toasts} onDismiss={dismissToast} />
     </SafeAreaView>
   );
@@ -796,17 +808,45 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  headerCenter: { flex: 1, gap: 1 },
-  elapsedChip: {
+  headerTitleWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 64,
+  },
+  headerSpacer: { flex: 1 },
+  restChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: colors.card,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.xs + 1,
     borderWidth: 1,
     borderColor: colors.border,
+    minHeight: 30,
+  },
+  restChipLive: {
+    backgroundColor: colors.accentFaint,
+    borderColor: colors.accentSoft,
+  },
+  restScrim: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 29,
+  },
+  restPopover: {
+    position: 'absolute',
+    right: layout.SCREEN_H_PADDING,
+    zIndex: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.card,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    ...shadows.lg,
   },
   segmentsRow: {
     flexDirection: 'row',
@@ -854,10 +894,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: '60%',
   },
-  heroBadge: {
+  heroBadgeLeft: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+  },
+  countPill: {
     position: 'absolute',
     top: spacing.md,
     right: spacing.md,
+    backgroundColor: 'rgba(11,36,71,0.45)',
+    borderRadius: radius.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   heroText: {
     position: 'absolute',
@@ -866,15 +915,7 @@ const styles = StyleSheet.create({
     bottom: spacing.md,
     gap: 2,
   },
-  cueStrip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.card,
-  },
-  setsHeading: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  setsBlock: { marginTop: spacing.lg },
   addSetRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -900,32 +941,6 @@ const styles = StyleSheet.create({
     ...shadows.xs,
   },
   nextBtn: { marginTop: spacing.lg },
-  restWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 96,
-    alignItems: 'center',
-  },
-  restCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.xl,
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.lg,
-    gap: spacing.sm,
-    ...shadows.md,
-  },
-  restMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  restTextCol: { gap: 2 },
-  restControls: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
   dock: {
     backgroundColor: colors.card,
     paddingHorizontal: layout.SCREEN_H_PADDING,

@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import {
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -19,7 +18,6 @@ import { ExerciseImage } from '@/components/ExerciseImage';
 import { getExerciseById, mockExercises } from '@/data/mockExercises';
 import { getExerciseDetails } from '@/data/exerciseDetails.gen';
 import { getExerciseHowTo } from '@/data/exerciseHowTo';
-import { mockPlan } from '@/data/mockPlan';
 import { useTabBarClearance } from '@/hooks';
 
 // Registered in both PlanStack and ProgressStack — keep the typing local.
@@ -38,14 +36,11 @@ const EQUIPMENT_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   Kettlebell: 'fitness-outline',
 };
 
-/** Where this exercise appears in the weekly plan, e.g. "Tue · 4 sets". */
-function planAppearances(exerciseId: string): string[] {
-  const out: string[] = [];
-  for (const workout of mockPlan.workouts) {
-    const pe = workout.exercises.find((e) => e.exerciseId === exerciseId);
-    if (pe) out.push(`${workout.dayLabel} · ${pe.sets.length} sets`);
-  }
-  return out;
+/** "Calves · Forearms · Glutes +5" — always fits one quiet line. */
+function formatSupporting(muscles: string[]): string {
+  const shown = muscles.slice(0, 3).join(' · ');
+  const extra = muscles.length - 3;
+  return extra > 0 ? `${shown} +${extra}` : shown;
 }
 
 export function ExerciseDetailScreen() {
@@ -77,7 +72,6 @@ export function ExerciseDetailScreen() {
   const details = getExerciseDetails(ex.id);
   const howTo =
     getExerciseHowTo(ex.id) ?? details?.instructions ?? ex.cues;
-  const appearances = planAppearances(ex.id);
   const alternatives = mockExercises
     .filter((e) => e.muscleGroup === ex.muscleGroup && e.id !== ex.id)
     .slice(0, 5);
@@ -117,11 +111,6 @@ export function ExerciseDetailScreen() {
               tone="accent"
               icon={EQUIPMENT_ICON[ex.equipment]}
             />
-            {details?.level ? (
-              <Chip
-                label={details.level.charAt(0).toUpperCase() + details.level.slice(1)}
-              />
-            ) : null}
           </View>
           {/* Target muscles — primary large, supporting quiet */}
           <View style={styles.targetBlock}>
@@ -134,8 +123,8 @@ export function ExerciseDetailScreen() {
                 <View style={styles.targetDivider} />
                 <View style={styles.targetColWide}>
                   <AppText variant="label">Supporting</AppText>
-                  <AppText variant="body" color="textSecondary" numberOfLines={2}>
-                    {details.secondaryMuscles.join(' · ')}
+                  <AppText variant="caption" numberOfLines={1}>
+                    {formatSupporting(details.secondaryMuscles)}
                   </AppText>
                 </View>
               </>
@@ -168,59 +157,19 @@ export function ExerciseDetailScreen() {
 
         {section === 'howto' ? (
           <>
-            {/* Short, plain-language steps */}
+            {/* Short, plain-language steps — written to fit one line each */}
             <Card style={styles.sectionCard}>
               <View style={styles.steps}>
                 {howTo.map((step, i) => (
                   <View key={i} style={styles.stepRow}>
                     <View style={styles.bullet} />
-                    <AppText variant="body" style={{ flex: 1 }}>
+                    <AppText variant="body" style={styles.stepText}>
                       {step}
                     </AppText>
                   </View>
                 ))}
               </View>
             </Card>
-
-            {/* Coach cues: the app's own voice */}
-            <Card style={[styles.sectionCard, styles.cuesCard]}>
-              <View style={styles.cuesHeader}>
-                <Image
-                  source={require('../../../assets/homie.png')}
-                  style={styles.mascot}
-                  resizeMode="contain"
-                />
-                <AppText variant="caption" color="accentText">
-                  Sync says
-                </AppText>
-              </View>
-              {ex.cues.map((cue, i) => (
-                <View key={i} style={styles.cueRow}>
-                  <Ionicons
-                    name="chatbubble-ellipses-outline"
-                    size={14}
-                    color={colors.accentText}
-                    style={styles.cueIcon}
-                  />
-                  <AppText variant="body" style={{ flex: 1 }}>
-                    {cue}
-                  </AppText>
-                </View>
-              ))}
-            </Card>
-
-            {appearances.length > 0 && (
-              <View style={styles.planSection}>
-                <AppText variant="label" style={styles.sectionLabel}>
-                  In your plan
-                </AppText>
-                <View style={styles.chipRow}>
-                  {appearances.map((a) => (
-                    <Chip key={a} label={a} icon="barbell" tone="accent" />
-                  ))}
-                </View>
-              </View>
-            )}
           </>
         ) : (
           <View style={styles.alternatives}>
@@ -319,7 +268,7 @@ const styles = StyleSheet.create({
   steps: { gap: spacing.md },
   stepRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.md,
   },
   bullet: {
@@ -327,27 +276,12 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.accent,
-    marginTop: 9,
   },
-  cuesCard: { backgroundColor: colors.accentFaint },
-  cuesHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  mascot: { width: 28, height: 28 },
-  cueRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  cueIcon: { marginTop: 4 },
-  planSection: { marginTop: spacing.lg },
-  sectionLabel: {
-    marginBottom: spacing.sm,
-    marginLeft: spacing.xs,
+  // One notch under `body` so a full step fits a single line on small phones.
+  stepText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
   },
   alternatives: { marginTop: spacing.md, gap: spacing.sm },
   altCard: {},

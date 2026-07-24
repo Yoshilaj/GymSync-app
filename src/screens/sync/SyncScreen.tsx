@@ -13,7 +13,6 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, layout, radius, shadows, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
-import { ScreenHeader } from '@/components/ScreenHeader';
 import { ChatInputBar } from '@/components/ChatInputBar';
 import { useKeyboardVisible, useTabBarClearance } from '@/hooks';
 import { useUser } from '@/context/UserContext';
@@ -72,8 +71,6 @@ export function SyncScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      <ScreenHeader variant="brand" />
-
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.flex}

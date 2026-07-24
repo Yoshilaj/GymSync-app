@@ -69,11 +69,12 @@ export const textVariants = {
     lineHeight: 19,
     color: colors.textSecondary,
   },
+  // Eyebrow labels: lighter weight + wider tracking reads precise, not shouty.
   label: {
-    fontFamily: font.bold,
-    fontSize: 12,
-    lineHeight: 16,
-    letterSpacing: 0.8,
+    fontFamily: font.semibold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.textSecondary,
   },

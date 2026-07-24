@@ -1,5 +1,11 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  StyleProp,
+  ViewStyle,
+} from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -8,11 +14,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BottomTabBarHeightCallbackContext } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, gradients, layout, shadows } from '@/theme';
-import { AppText } from '@/components/ui/AppText';
 import { GlassLozenge, TabBarSurface } from '@/components/TabBarSurface';
 import { getTodaysWorkout } from '@/data/mockPlan';
 
@@ -24,8 +30,8 @@ const TABS: Record<
 > = {
   Plan: { on: 'calendar', off: 'calendar-outline' },
   Sync: { on: 'chatbubble-ellipses', off: 'chatbubble-ellipses-outline' },
-  Progress: { on: 'stats-chart', off: 'stats-chart-outline' },
-  Settings: { on: 'settings', off: 'settings-outline' },
+  // Progress doubles as the profile surface — person icon, not a chart.
+  Progress: { on: 'person-circle', off: 'person-circle-outline' },
 };
 
 const FAB_ROUTE = 'LiveWorkout';
@@ -119,7 +125,6 @@ export function AppTabBar({
 
             const icons = TABS[route.name];
             const iconColor = focused ? colors.accent : colors.textSecondary;
-            const labelColor = focused ? colors.accentText : colors.textSecondary;
             return (
               <Pressable
                 key={route.key}
@@ -131,16 +136,9 @@ export function AppTabBar({
               >
                 <Ionicons
                   name={focused ? icons.on : icons.off}
-                  size={22}
+                  size={25}
                   color={iconColor}
                 />
-                <AppText
-                  variant="caption"
-                  color={labelColor}
-                  style={focused ? styles.labelFocused : styles.label}
-                >
-                  {route.name}
-                </AppText>
               </Pressable>
             );
           })}
@@ -148,7 +146,14 @@ export function AppTabBar({
       </TabBarSurface>
 
       <FabButton
+        // Center the FAB over the last of the equal-width slots.
+        style={
+          rowWidth > 0
+            ? { right: rowWidth / (2 * state.routes.length) - layout.TAB_FAB_SIZE / 2 }
+            : undefined
+        }
         onPress={() => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           const route = state.routes.find((r) => r.name === FAB_ROUTE);
           const event = route
             ? navigation.emit({
@@ -169,9 +174,15 @@ export function AppTabBar({
   );
 }
 
-function FabButton({ onPress }: { onPress: () => void }) {
+function FabButton({
+  onPress,
+  style,
+}: {
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
-    <Pressable onPress={onPress} style={styles.fabSlot} hitSlop={6}>
+    <Pressable onPress={onPress} style={[styles.fabSlot, style]} hitSlop={6}>
       <View style={styles.fabShadow}>
         <LinearGradient
           colors={gradients.brand}
@@ -264,19 +275,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
   },
-  label: { fontSize: 11, lineHeight: 13 },
-  labelFocused: {
-    fontSize: 11,
-    lineHeight: 13,
-    fontFamily: 'Inter_700Bold',
-  },
-  // The FAB floats over the pill's center, outside the clipped surface.
+  // The FAB floats over the pill's last slot, outside the clipped surface,
+  // vertically centered so it sits level with the other tabs.
   fabSlot: {
     position: 'absolute',
-    top: -layout.TAB_FAB_OVERLAP,
-    alignSelf: 'center',
+    top: (layout.TAB_BAR_BASE_HEIGHT - layout.TAB_FAB_SIZE) / 2,
+    right: 0,
   },
   fabShadow: {
     ...shadows.glow,
