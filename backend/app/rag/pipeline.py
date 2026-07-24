@@ -27,7 +27,7 @@ from app.rag.fusion import reciprocal_rank_fusion
 from app.rag.models import RetrievalParams, RetrievalResult
 from app.rag.packing import pack
 from app.rag.protocols import Embedder, Reranker
-from app.rag.rerank import IdentityReranker
+from app.rag.rerank import get_reranker
 from app.rag.search import hybrid_search
 
 
@@ -47,7 +47,7 @@ def _try_cache() -> Cache | None:
 class KnowledgePipeline:
     def __init__(self, embedder: Embedder | None = None, reranker: Reranker | None = None) -> None:
         self.embedder: Embedder = embedder or get_embedder()
-        self.reranker: Reranker = reranker or IdentityReranker()
+        self.reranker: Reranker = reranker or get_reranker()
 
     async def _embed_query(self, query: str, cache: Cache | None) -> list[float]:
         if cache is None:

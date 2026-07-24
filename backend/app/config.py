@@ -37,8 +37,16 @@ class Settings(BaseSettings):
     # "stub" = deterministic placeholder (no model download); "nomic" = real
     # nomic-embed-text-v1.5 via fastembed. Use "nomic-ai/nomic-embed-text-v1.5-Q"
     # for the smaller quantized build (same 768-d embedding space).
+    # NOTE: must match the model the corpus was embedded with — the live corpus is
+    # nomic, so serving must run embedder="nomic" or query vectors won't match.
     embedder: str = "stub"
     embedding_model: str = "nomic-ai/nomic-embed-text-v1.5"
+
+    # ── RAG reranking ─────────────────────────────────────────────────────────────
+    # "identity" = no-op (fused order, default for tests); "cross_encoder" = real
+    # query×chunk relevance scoring via fastembed's ms-marco cross-encoder (~80 MB).
+    reranker: str = "identity"
+    reranker_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
 
     # ── Performance / cache ───────────────────────────────────────────────────────
     # In-memory now; set redis_url to flip the Cache implementation later (multi-worker).
@@ -46,7 +54,8 @@ class Settings(BaseSettings):
     cache_ttl_s: int = 300                 # generic short-lived entries
     knowledge_cache_ttl_s: int = 86_400    # static corpus → long TTL, bumped by corpus_version
     # Bump on re-ingest to invalidate all cached knowledge retrievals at once.
-    knowledge_corpus_version: str = "v1"
+    # v2: corpus scaled to 222 curated papers (~3.5k chunks), nomic embeddings.
+    knowledge_corpus_version: str = "v2"
 
     # ── Security ──────────────────────────────────────────────────────────────────
     # slowapi limit string, applied per user_id on HTTP endpoints.
