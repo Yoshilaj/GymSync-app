@@ -17,9 +17,10 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.gymsync.app",
+      "bundleIdentifier": "com.yoshinishikawahara.gymsync",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "GymSync uses your microphone so you can talk to your AI coach during a workout."
+        "NSMicrophoneUsageDescription": "GymSync uses your microphone so you can talk to your AI coach during a workout.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
