@@ -13,8 +13,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   FadeIn,
@@ -37,12 +35,9 @@ import { useConversations, useDictation, useTabBarClearance } from '@/hooks';
 import { useUser } from '@/context/UserContext';
 import { useTextChat, type ChatItem } from '@/voice';
 import { ConversationSummary, fetchConversationThread } from '@/api/conversations';
-import { SyncStackParamList } from '@/navigation/SyncStack';
 import { HistoryPanel } from './components/HistoryPanel';
 import { SyncEmptyState } from './components/SyncEmptyState';
 import { Starter } from './starters';
-
-type Nav = NativeStackNavigationProp<SyncStackParamList, 'SyncHome'>;
 
 function timeGreeting(): string {
   const h = new Date().getHours();
@@ -73,7 +68,6 @@ export function SyncChatScreen() {
   const [input, setInput] = useState('');
   const listRef = useRef<FlatList<ListRow>>(null);
   const inputRef = useRef<TextInput>(null);
-  const nav = useNavigation<Nav>();
   const { user } = useUser();
   const { user: authUser, getToken } = useAuth();
   const clearance = useTabBarClearance();
@@ -259,7 +253,7 @@ export function SyncChatScreen() {
       ? 'online'
       : chat.connectionState === 'connecting'
         ? 'connecting…'
-        : 'ready';
+        : '';
 
   const renderItem = ({ item }: { item: ListRow }) => {
     if (item.kind === 'day') {
@@ -336,21 +330,13 @@ export function SyncChatScreen() {
           <AppText variant="h3" align="center" numberOfLines={1}>
             Sync
           </AppText>
-          <AppText variant="caption" align="center" numberOfLines={1}>
-            {status}
-          </AppText>
+          {status ? (
+            <AppText variant="caption" align="center" numberOfLines={1}>
+              {status}
+            </AppText>
+          ) : null}
         </View>
-        <View style={[styles.headerSlot, styles.headerSlotRight]}>
-          <Pressable
-            hitSlop={8}
-            style={styles.headerBtn}
-            onPress={() => nav.navigate('VoiceCoach')}
-            accessibilityRole="button"
-            accessibilityLabel="Start a voice session"
-          >
-            <Ionicons name="pulse" size={18} color={colors.accent} />
-          </Pressable>
-        </View>
+        <View style={[styles.headerSlot, styles.headerSlotRight]} />
       </View>
 
       {chat.error && (

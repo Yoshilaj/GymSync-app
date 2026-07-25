@@ -13,11 +13,11 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { colors, radius, spacing } from '@/theme';
@@ -86,10 +86,12 @@ export function HistoryPanel({
   // translate: -panelWidth (hidden) → 0 (open); the pan gesture drags it.
   const translate = useSharedValue(-panelWidth);
 
+  // A calm, bounce-free glide in and out — no spring overshoot.
   useEffect(() => {
-    translate.value = open
-      ? withSpring(0, { damping: 26, stiffness: 260 })
-      : withTiming(-panelWidth, { duration: 220 });
+    translate.value = withTiming(open ? 0 : -panelWidth, {
+      duration: open ? 260 : 220,
+      easing: Easing.out(Easing.cubic),
+    });
   }, [open, panelWidth, translate]);
 
   const panelStyle = useAnimatedStyle(() => ({
@@ -109,7 +111,10 @@ export function HistoryPanel({
       if (translate.value < -panelWidth / 3) {
         runOnJS(onClose)();
       } else {
-        translate.value = withSpring(0, { damping: 26, stiffness: 260 });
+        translate.value = withTiming(0, {
+          duration: 220,
+          easing: Easing.out(Easing.cubic),
+        });
       }
     });
 
