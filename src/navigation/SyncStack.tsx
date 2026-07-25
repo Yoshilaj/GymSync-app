@@ -1,13 +1,11 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SyncScreen } from '@/screens/sync/SyncScreen';
-import { ConversationScreen } from '@/screens/sync/ConversationScreen';
+import { SyncChatScreen } from '@/screens/sync/SyncChatScreen';
 import { VoiceCoachScreen } from '@/screens/sync/VoiceCoachScreen';
 import { VoiceDevScreen } from '@/screens/sync/VoiceDevScreen';
 import { colors } from '@/theme';
 
 export type SyncStackParamList = {
   SyncHome: undefined;
-  SyncConversation: { draft?: string } | undefined;
   VoiceCoach: undefined;
   VoiceDev: undefined;
 };
@@ -22,8 +20,7 @@ export function SyncStack() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="SyncHome" component={SyncScreen} />
-      <Stack.Screen name="SyncConversation" component={ConversationScreen} />
+      <Stack.Screen name="SyncHome" component={SyncChatScreen} />
       <Stack.Screen
         name="VoiceCoach"
         component={VoiceCoachScreen}

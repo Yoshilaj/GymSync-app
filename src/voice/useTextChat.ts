@@ -1,9 +1,18 @@
 /**
  * Text chat with the coach over the voice WebSocket in text mode
  * (session_start with voice:false, session_id:null — no workout session, no
- * mic). Replaces the scripted mock replies with the real agent: user messages
- * go up as {type:'message'}, replies stream back as text_delta and finalize on
- * done; app_action packets surface as inline system chips in the transcript.
+ * mic). User messages go up as {type:'message'}, replies stream back as
+ * text_delta and finalize on done; app_action packets surface as inline
+ * system chips in the transcript.
+ *
+ * Conversation persistence: the hook opts the socket into conversation mode
+ * by always sending a `conversation_id` key (null = create lazily on first
+ * message). The backend answers with `conversation_created`, whose id is
+ * re-sent on every reconnect so context survives socket drops. Quick-action
+ * pills inject a local assistant opener; its text rides up as
+ * `starter_message` with the next handshake so the server can persist it as
+ * the conversation's first turn. Against an older backend all of this
+ * degrades to today's ephemeral behavior.
  *
  * The socket connects lazily on first send and reconnects on the next send
  * after a background disconnect, so a stale connection never makes chat look
@@ -20,10 +29,22 @@ export type ChatItem =
       id: string;
       author: 'user' | 'sync';
       text: string;
+      /** Epoch ms — locally stamped, or the server timestamp for hydrated turns. */
+      createdAt: number;
       streaming?: boolean;
       failed?: boolean;
     }
-  | { kind: 'action'; id: string; text: string };
+  | { kind: 'action'; id: string; text: string; createdAt: number };
+
+/** A conversation_messages row as returned by GET /api/conversations/{id}. */
+export interface ConversationMessageRow {
+  id: number | string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+export type ChatConnectionState = 'idle' | 'connecting' | 'open';
 
 let seq = 0;
 function uid(prefix: string): string {
@@ -55,34 +76,50 @@ export interface TextChatApi {
   busy: boolean;
   /** Connection-level problem (auth, network) — shown as a banner. */
   error: string | null;
+  /** Socket lifecycle, for a truthful header status. */
+  connectionState: ChatConnectionState;
+  /** Server id of the conversation on screen; null until the first reply lands. */
+  conversationId: string | null;
+  /** Server-derived title, once known (conversation_created / hydrate). */
+  conversationTitle: string | null;
   send: (text: string) => void;
   /** Re-send a failed user message. */
   retry: (id: string) => void;
+  /**
+   * Quick-action pill: show a bot opener locally without touching the
+   * network. Replaces any previous un-replied-to opener.
+   */
+  injectStarter: (text: string) => void;
+  /** Load a past conversation fetched over REST onto the screen. */
+  hydrate: (conversationId: string, title: string | null, rows: ConversationMessageRow[]) => void;
+  /** "New chat": clear the thread and detach from the current conversation. */
+  reset: () => void;
 }
 
 export function useTextChat({
   userId,
   getToken,
-  greeting,
 }: {
   userId: string;
   getToken: () => Promise<string>;
-  /** Optional single opening coach message. */
-  greeting?: string;
 }): TextChatApi {
-  const [items, setItems] = useState<ChatItem[]>(
-    greeting
-      ? [{ kind: 'message', id: uid('g'), author: 'sync', text: greeting }]
-      : [],
-  );
+  const [items, setItems] = useState<ChatItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionState, setConnectionState] = useState<ChatConnectionState>('idle');
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationTitle, setConversationTitle] = useState<string | null>(null);
 
   const socketRef = useRef<VoiceSocket | null>(null);
   const readyRef = useRef<Promise<void> | null>(null);
   const streamIdRef = useRef<string | null>(null);
   const pendingUserIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  // Read at handshake time (never closure-captured) so a mid-conversation
+  // reconnect resumes the same server conversation instead of forking one.
+  const conversationIdRef = useRef<string | null>(null);
+  const pendingStarterRef = useRef<string | null>(null);
+  const starterItemIdRef = useRef<string | null>(null);
 
   const finalizeStream = useCallback(() => {
     const sid = streamIdRef.current;
@@ -116,15 +153,35 @@ export function useTextChat({
             streamIdRef.current = id;
             return [
               ...prev,
-              { kind: 'message', id, author: 'sync', text: msg.text, streaming: true },
+              {
+                kind: 'message',
+                id,
+                author: 'sync',
+                text: msg.text,
+                createdAt: Date.now(),
+                streaming: true,
+              },
             ];
           });
+          break;
+        }
+        case 'conversation_created': {
+          conversationIdRef.current = msg.conversation_id;
+          pendingStarterRef.current = null;
+          starterItemIdRef.current = null;
+          if (mountedRef.current) {
+            setConversationId(msg.conversation_id);
+            setConversationTitle(msg.title);
+          }
           break;
         }
         case 'app_action': {
           const text = actionText(msg);
           if (text) {
-            setItems((prev) => [...prev, { kind: 'action', id: uid('a'), text }]);
+            setItems((prev) => [
+              ...prev,
+              { kind: 'action', id: uid('a'), text, createdAt: Date.now() },
+            ]);
           }
           break;
         }
@@ -146,6 +203,7 @@ export function useTextChat({
     socketRef.current?.close();
     socketRef.current = null;
     readyRef.current = null;
+    if (mountedRef.current) setConnectionState('idle');
   }, []);
 
   /** Connect + handshake once; reuse the open socket between turns. */
@@ -156,6 +214,7 @@ export function useTextChat({
       return existing;
     }
     dropSocket();
+    setConnectionState('connecting');
 
     const token = await getToken();
     let resolveReady!: () => void;
@@ -167,9 +226,22 @@ export function useTextChat({
 
     const socket = new VoiceSocket(voiceSocketUrl(userId, token), {
       onOpen: () =>
-        socket.send({ type: 'session_start', session_id: null, voice: false }),
+        socket.send({
+          type: 'session_start',
+          session_id: null,
+          voice: false,
+          conversation_id: conversationIdRef.current,
+          ...(pendingStarterRef.current
+            ? { starter_message: pendingStarterRef.current }
+            : null),
+        }),
       onMessage: (msg) => {
         if (msg.type === 'ack') {
+          if (msg.conversation_id) {
+            conversationIdRef.current = msg.conversation_id;
+            if (mountedRef.current) setConversationId(msg.conversation_id);
+          }
+          if (mountedRef.current) setConnectionState('open');
           resolveReady();
           return;
         }
@@ -186,6 +258,7 @@ export function useTextChat({
         finalizeStream();
         socketRef.current = null;
         readyRef.current = null;
+        if (mountedRef.current) setConnectionState('idle');
       },
     });
     socketRef.current = socket;
@@ -228,7 +301,7 @@ export function useTextChat({
       const id = uid('u');
       setItems((prev) => [
         ...prev,
-        { kind: 'message', id, author: 'user', text: trimmed },
+        { kind: 'message', id, author: 'user', text: trimmed, createdAt: Date.now() },
       ]);
       void deliver(id, trimmed);
     },
@@ -249,6 +322,61 @@ export function useTextChat({
     [items, deliver],
   );
 
+  const injectStarter = useCallback((text: string) => {
+    const id = uid('st');
+    pendingStarterRef.current = text;
+    setItems((prev) => {
+      // Only one un-replied opener at a time — tapping another pill swaps it.
+      const withoutOld = starterItemIdRef.current
+        ? prev.filter((it) => it.id !== starterItemIdRef.current)
+        : prev;
+      return [
+        ...withoutOld,
+        { kind: 'message', id, author: 'sync', text, createdAt: Date.now() },
+      ];
+    });
+    starterItemIdRef.current = id;
+  }, []);
+
+  const hydrate = useCallback(
+    (id: string, title: string | null, rows: ConversationMessageRow[]) => {
+      // Detach from whatever socket/conversation was live; the next send
+      // re-handshakes with the hydrated conversation's id.
+      dropSocket();
+      streamIdRef.current = null;
+      pendingStarterRef.current = null;
+      starterItemIdRef.current = null;
+      conversationIdRef.current = id;
+      setConversationId(id);
+      setConversationTitle(title);
+      setBusy(false);
+      setError(null);
+      setItems(
+        rows.map((row) => ({
+          kind: 'message',
+          id: `h-${row.id}`,
+          author: row.role === 'user' ? 'user' : 'sync',
+          text: row.content,
+          createdAt: Date.parse(row.created_at) || Date.now(),
+        })),
+      );
+    },
+    [dropSocket],
+  );
+
+  const reset = useCallback(() => {
+    dropSocket();
+    streamIdRef.current = null;
+    pendingStarterRef.current = null;
+    starterItemIdRef.current = null;
+    conversationIdRef.current = null;
+    setConversationId(null);
+    setConversationTitle(null);
+    setBusy(false);
+    setError(null);
+    setItems([]);
+  }, [dropSocket]);
+
   useEffect(() => {
     return () => {
       mountedRef.current = false;
@@ -257,5 +385,17 @@ export function useTextChat({
     };
   }, []);
 
-  return { items, busy, error, send, retry };
+  return {
+    items,
+    busy,
+    error,
+    connectionState,
+    conversationId,
+    conversationTitle,
+    send,
+    retry,
+    injectStarter,
+    hydrate,
+    reset,
+  };
 }

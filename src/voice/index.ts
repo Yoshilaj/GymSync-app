@@ -7,7 +7,12 @@ export type {
   WorkoutSessionStatus,
 } from './useWorkoutSession';
 export { useTextChat } from './useTextChat';
-export type { ChatItem, TextChatApi } from './useTextChat';
+export type {
+  ChatItem,
+  TextChatApi,
+  ChatConnectionState,
+  ConversationMessageRow,
+} from './useTextChat';
 export { useSessionActions, formatClock } from './useSessionActions';
 export type {
   SessionActionsState,

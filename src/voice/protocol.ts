@@ -5,7 +5,19 @@
 
 /** Client → Server control messages (JSON). Binary PCM frames are sent separately. */
 export type ClientMessage =
-  | { type: 'session_start'; session_id: string | null; voice: boolean }
+  | {
+      type: 'session_start';
+      session_id: string | null;
+      voice: boolean;
+      /**
+       * Chat-tab conversation to resume, or null to lazily create one on the
+       * first message. Omitted entirely by workout/voice sessions — presence
+       * of the key is what opts a socket into conversation persistence.
+       */
+      conversation_id?: string | null;
+      /** Bot-initiated opener (quick-action pill) to persist as the first assistant turn. */
+      starter_message?: string;
+    }
   | { type: 'session_end' }
   | { type: 'message'; text: string };
 
@@ -45,9 +57,21 @@ export type AppActionMessage =
 
 /** Server → Client messages (JSON). Binary MP3 frames arrive separately. */
 export type ServerMessage =
-  | { type: 'ack'; session_id: string | null; voice: boolean }
+  | {
+      type: 'ack';
+      session_id: string | null;
+      voice: boolean;
+      /** Echoed for conversation-mode sockets; may be null before the first message. */
+      conversation_id?: string | null;
+    }
   | { type: 'transcript'; text: string }
   | { type: 'text_delta'; text: string }
+  | {
+      /** Sent once, before the first text_delta, when a conversation is lazily created. */
+      type: 'conversation_created';
+      conversation_id: string;
+      title: string;
+    }
   | AppActionMessage
   | { type: 'done' }
   | { type: 'error'; message: string };
