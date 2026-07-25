@@ -1,22 +1,32 @@
 """
-Voice pipeline: Deepgram Nova-3 STT → agent → ElevenLabs Flash TTS
+Voice pipeline: Deepgram Nova-3 STT → agent → TTS (Aura / ElevenLabs, see tts.py)
 
 Audio format contract (must match mobile client):
   Input  (client → server): Linear16 PCM, 16 kHz, mono, binary WebSocket frames
-  Output (server → client): MP3 128kbps binary WebSocket frames (easy to play in React Native)
+  Output (server → client): MP3 binary WebSocket frames (easy to play in React Native)
 
 Latency target: ~1 s from speech_final to first audio byte back.
+
+Degradation contract: if every TTS provider fails, the turn does not die —
+the client gets one non-fatal {"type": "error"} and the rest of the reply as
+text_delta frames, and the turn still ends with {"type": "done"}.
 """
 import asyncio
+import logging
 import re
-from collections.abc import AsyncGenerator
 
-import httpx
-from deepgram import DeepgramClient, LiveOptions, LiveTranscriptionEvents
+from deepgram import (
+    DeepgramClient,
+    DeepgramClientOptions,
+    LiveOptions,
+    LiveTranscriptionEvents,
+)
 
 from app.agents.core import _agent_events
-from app.agents.personalities import get_voice_id
+from app.agents.tts import TTSError, synthesize
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Match sentence boundaries: split after . ! ? followed by whitespace.
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
@@ -34,45 +44,12 @@ def _pop_sentences(text: str) -> tuple[list[str], str]:
     return [], text
 
 
-async def elevenlabs_tts_stream(text: str, voice_id: str) -> AsyncGenerator[bytes, None]:
-    """Stream MP3 audio from ElevenLabs Flash for a given text snippet."""
-    async with httpx.AsyncClient(timeout=30.0) as http:
-        async with http.stream(
-            "POST",
-            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream",
-            headers={
-                "xi-api-key": settings.elevenlabs_api_key,
-                "Content-Type": "application/json",
-            },
-            json={
-                "text": text,
-                "model_id": "eleven_flash_v2_5",
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                    "use_speaker_boost": True,
-                },
-                "output_format": "mp3_44100_128",
-            },
-        ) as response:
-            response.raise_for_status()
-            async for chunk in response.aiter_bytes(chunk_size=4096):
-                if chunk:
-                    yield chunk
-
-
-async def _get_voice_id_for_user(user_id: str, db) -> str:
-    res = await db.table("personalities").select("preset_id").eq("user_id", user_id).execute()
-    preset_id = res.data[0]["preset_id"] if res.data else "supportive"
-    return get_voice_id(preset_id)
-
-
 class VoiceSession:
     """
     Manages one live voice session per WebSocket connection.
 
-    Binary audio in  → Deepgram STT → agent (_agent_events) → ElevenLabs TTS → binary audio out
-    JSON frames out  ← app_action / transcript / done packets
+    Binary audio in  → Deepgram STT → agent (_agent_events) → TTS → binary audio out
+    JSON frames out  ← app_action / transcript / error / done packets
     """
 
     def __init__(self, websocket, user_id: str, session_id: str | None, db):
@@ -87,10 +64,51 @@ class VoiceSession:
         self._ws_lock = asyncio.Lock()
         # Drop incoming transcripts while the agent is already responding.
         self._busy = False
+        # Deepgram lifecycle: _stopping silences the Close handler during a
+        # deliberate teardown; the other two bound recovery to one restart.
+        self._stopping = False
+        self._dg_recovering = False
+        self._dg_restarted = False
 
     async def start(self) -> None:
         """Open Deepgram connection and start the transcript processor."""
-        dg_client = DeepgramClient(api_key=settings.deepgram_api_key)
+        await self._open_deepgram()
+        self._processor_task = asyncio.create_task(self._process_transcripts())
+
+    async def feed_audio(self, chunk: bytes) -> None:
+        """Forward a raw PCM chunk from the client to Deepgram."""
+        if self._dg is None or self._stopping:
+            return
+        # send() returns False (never raises) once the socket is closed;
+        # the Close handler owns recovery, so a dropped chunk here is fine.
+        await self._dg.send(chunk)
+
+    async def keepalive(self) -> None:
+        """Client-side VAD gate is closed — keep the idle Deepgram socket warm."""
+        if self._dg and not self._stopping:
+            await self._dg.keep_alive()
+
+    async def stop(self) -> None:
+        """Tear down the Deepgram connection and wait for the processor to finish."""
+        self._stopping = True
+        await self._transcript_q.put(None)   # sentinel to stop processor loop
+        if self._dg:
+            await self._dg.finish()
+        if self._processor_task:
+            try:
+                await asyncio.wait_for(self._processor_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                self._processor_task.cancel()
+
+    # ── Deepgram connection ──────────────────────────────────────────────────
+
+    async def _open_deepgram(self) -> None:
+        # keepalive: the SDK sends {"type":"KeepAlive"} every 5s so Deepgram
+        # doesn't close the socket (1011 net0001) while the user is silent.
+        dg_client = DeepgramClient(
+            api_key=settings.deepgram_api_key,
+            config=DeepgramClientOptions(options={"keepalive": "true"}),
+        )
         self._dg = dg_client.listen.asyncwebsocket.v("1")
 
         # Capture outer self via closure — self_dg is the Deepgram client arg.
@@ -103,8 +121,21 @@ class VoiceSession:
                 if text:
                     await outer._transcript_q.put(text)
 
-        self._dg.on(LiveTranscriptionEvents.Transcript, _on_transcript)
+        async def _on_error(self_dg, error, **kwargs):
+            logger.warning("Deepgram error: %s", error)
+            await outer._on_dg_dead()
 
+        async def _on_close(self_dg, close, **kwargs):
+            await outer._on_dg_dead()
+
+        self._dg.on(LiveTranscriptionEvents.Transcript, _on_transcript)
+        self._dg.on(LiveTranscriptionEvents.Error, _on_error)
+        self._dg.on(LiveTranscriptionEvents.Close, _on_close)
+
+        # Optional hardening (not needed yet): interim_results=True +
+        # utterance_end_ms=1000 + an UtteranceEnd handler would catch utterances
+        # Deepgram never marks speech_final. The client gate's ≥700ms hangover
+        # guarantees ≥300ms trailing silence, so endpointing=300 always fires.
         options = LiveOptions(
             model="nova-3",
             encoding="linear16",
@@ -113,26 +144,50 @@ class VoiceSession:
             endpointing=300,   # ms of silence → speech_final
             smart_format=True,
         )
-        await self._dg.start(options)
-        self._processor_task = asyncio.create_task(self._process_transcripts())
+        if not await self._dg.start(options):
+            raise ConnectionError("Deepgram live connection failed to start")
 
-    async def feed_audio(self, chunk: bytes) -> None:
-        """Forward a raw PCM chunk from the client to Deepgram."""
-        if self._dg:
-            await self._dg.send(chunk)
-
-    async def stop(self) -> None:
-        """Tear down the Deepgram connection and wait for the processor to finish."""
-        await self._transcript_q.put(None)   # sentinel to stop processor loop
-        if self._dg:
-            await self._dg.finish()
-        if self._processor_task:
+    async def _on_dg_dead(self) -> None:
+        """Deepgram closed/errored underneath us: one transparent restart, then fatal."""
+        if self._stopping or self._dg_recovering:
+            return
+        self._dg_recovering = True
+        try:
+            if self._dg_restarted:
+                await self._fail_fatal("Speech recognition dropped.")
+                return
+            self._dg_restarted = True
+            logger.info("Deepgram connection died — restarting")
             try:
-                await asyncio.wait_for(self._processor_task, timeout=5.0)
-            except asyncio.TimeoutError:
-                self._processor_task.cancel()
+                await self._open_deepgram()
+                logger.info("Deepgram restarted transparently")
+            except Exception as exc:
+                logger.error("Deepgram restart failed: %s", exc)
+                await self._fail_fatal("Speech recognition dropped.")
+        finally:
+            self._dg_recovering = False
 
-    # ── Internal ──────────────────────────────────────────────────────────────
+    async def _fail_fatal(self, message: str) -> None:
+        """Tell the client the session is dead and close; it reconnects fresh."""
+        try:
+            async with self._ws_lock:
+                await self._ws.send_json(
+                    {"type": "error", "message": message, "fatal": True}
+                )
+            await self._ws.close(code=1011)
+        except Exception:
+            pass  # client may already be gone
+
+    # ── Turn processing ──────────────────────────────────────────────────────
+
+    async def _get_preset_id(self) -> str:
+        res = (
+            await self._db.table("personalities")
+            .select("preset_id")
+            .eq("user_id", self._user_id)
+            .execute()
+        )
+        return res.data[0]["preset_id"] if res.data else "supportive"
 
     async def _process_transcripts(self) -> None:
         while True:
@@ -145,8 +200,18 @@ class VoiceSession:
             try:
                 await self._handle_utterance(transcript)
             except Exception as exc:
+                logger.exception("Voice turn failed")
+                # Non-fatal error + done so the client returns to listening
+                # instead of hanging in `thinking` forever.
                 async with self._ws_lock:
-                    await self._ws.send_json({"type": "error", "message": str(exc)})
+                    await self._ws.send_json(
+                        {
+                            "type": "error",
+                            "message": f"That one didn't go through — try again. ({exc})",
+                            "fatal": False,
+                        }
+                    )
+                    await self._ws.send_json({"type": "done"})
             finally:
                 self._busy = False
 
@@ -154,28 +219,52 @@ class VoiceSession:
         async with self._ws_lock:
             await self._ws.send_json({"type": "transcript", "text": transcript})
 
-        voice_id = await _get_voice_id_for_user(self._user_id, self._db)
+        preset_id = await self._get_preset_id()
         tts_buffer = ""
+        tts_failed = False
+
+        async def _speak(sentence: str) -> None:
+            """TTS a sentence; after the first TTSError, degrade the turn to text."""
+            nonlocal tts_failed
+            if not sentence.strip():
+                return
+            if not tts_failed:
+                try:
+                    await self._tts_and_send(sentence, preset_id)
+                    return
+                except TTSError as exc:
+                    tts_failed = True
+                    logger.warning("TTS unavailable, degrading turn to text: %s", exc)
+                    async with self._ws_lock:
+                        await self._ws.send_json(
+                            {
+                                "type": "error",
+                                "message": "Coach voice is unavailable right now — showing text instead.",
+                                "fatal": False,
+                            }
+                        )
+            async with self._ws_lock:
+                await self._ws.send_json(
+                    {"type": "text_delta", "text": sentence.rstrip() + " "}
+                )
 
         async for event in _agent_events(transcript, self._session_id, self._user_id, self._db):
             if event["type"] == "text_delta":
                 tts_buffer += event["text"]
                 sentences, tts_buffer = _pop_sentences(tts_buffer)
                 for sentence in sentences:
-                    if sentence.strip():
-                        await self._tts_and_send(sentence, voice_id)
+                    await _speak(sentence)
 
             elif event["type"] in ("app_action", "error"):
                 async with self._ws_lock:
                     await self._ws.send_json(event)
 
             elif event["type"] == "done":
-                if tts_buffer.strip():
-                    await self._tts_and_send(tts_buffer, voice_id)
+                await _speak(tts_buffer)
                 async with self._ws_lock:
                     await self._ws.send_json({"type": "done"})
 
-    async def _tts_and_send(self, text: str, voice_id: str) -> None:
-        async for chunk in elevenlabs_tts_stream(text, voice_id):
+    async def _tts_and_send(self, text: str, preset_id: str) -> None:
+        async for chunk in synthesize(text, preset_id):
             async with self._ws_lock:
                 await self._ws.send_bytes(chunk)

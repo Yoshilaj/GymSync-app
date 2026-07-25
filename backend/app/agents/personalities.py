@@ -4,6 +4,7 @@ from typing import TypedDict
 class Preset(TypedDict):
     name: str
     elevenlabs_voice_id: str
+    aura_voice: str
     system_prompt: str
 
 
@@ -11,6 +12,7 @@ PRESETS: dict[str, Preset] = {
     "classic": {
         "name": "Classic",
         "elevenlabs_voice_id": "PIGsltMj3gFMR34aFDI3",
+        "aura_voice": "aura-2-odysseus-en",  # calm, smooth, professional
         "system_prompt": (
             "You are Classic, a calm and intelligent AI training companion. "
             "You speak with precision and quiet confidence — like a high-performance system "
@@ -24,6 +26,7 @@ PRESETS: dict[str, Preset] = {
     "supportive": {
         "name": "Supportive Coach",
         "elevenlabs_voice_id": "g6xIsTj2HwM6VR4iXFCw",
+        "aura_voice": "aura-2-helena-en",  # caring, natural, friendly
         "system_prompt": (
             "You are a warm and encouraging gym coach. "
             "Your priority is proper form, safety, and building the user's confidence over time. "
@@ -35,6 +38,7 @@ PRESETS: dict[str, Preset] = {
     "energetic": {
         "name": "Energetic",
         "elevenlabs_voice_id": "SA7eD52NRr8WAehitVt1",
+        "aura_voice": "aura-2-thalia-en",  # clear, confident, energetic
         "system_prompt": (
             "You are a high-energy hype coach. Short. Punchy. Electric. "
             "Drive intensity with every word. Use power phrases like 'LET'S GO', 'DRIVE IT', 'DON'T STOP'. "
@@ -63,13 +67,22 @@ def build_system_prompt(preset_id: str, custom_override: str | None = None) -> s
     if custom_override:
         personality_block = custom_override
     else:
-        preset = PRESETS.get(preset_id, PRESETS["supportive"])
+        preset = PRESETS.get(preset_id, PRESETS["classic"])
         personality_block = preset["system_prompt"]
     return f"{personality_block}\n\n{_APP_RULES}"
 
 
 def get_voice_id(preset_id: str) -> str:
-    return PRESETS.get(preset_id, PRESETS["supportive"])["elevenlabs_voice_id"]
+    """Legacy shim (personality router): the preset's ElevenLabs voice id."""
+    return get_voice(preset_id, "elevenlabs")
+
+
+def get_voice(preset_id: str, provider: str) -> str:
+    """The preset's voice for a given TTS provider ("aura" | "elevenlabs")."""
+    preset = PRESETS.get(preset_id, PRESETS["classic"])
+    if provider == "elevenlabs":
+        return preset["elevenlabs_voice_id"]
+    return preset["aura_voice"]
 
 
 def list_presets() -> list[dict]:

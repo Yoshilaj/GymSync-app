@@ -14,6 +14,8 @@ Client → Server:
                                               as the conversation's first assistant turn
   {"type": "session_end"}
   {"type": "message", "text": "..."}        ← text chat (voice=false or no session)
+  {"type": "keepalive"}                     ← client VAD gate closed; keeps the idle
+                                              Deepgram socket warm (voice mode)
   <binary>                                  ← Linear16 PCM 16kHz audio (voice=true)
 
 Server → Client:
@@ -22,10 +24,14 @@ Server → Client:
                                             ← once, before the first text_delta, when a
                                               conversation is lazily created
   {"type": "transcript",  "text": "..."}   ← STT result (voice mode)
-  {"type": "text_delta",  "text": "..."}   ← LLM streaming (text mode)
+  {"type": "text_delta",  "text": "..."}   ← LLM streaming (text mode); in voice mode
+                                              only as the TTS-failure text fallback
   {"type": "app_action",  "action": "..."}
   {"type": "done"}
-  {"type": "error",       "message": "..."}
+  {"type": "error", "message": "...", "fatal": bool}
+                                            ← fatal:false = per-turn failure, always
+                                              followed by "done" (session continues);
+                                              fatal:true = session dead, socket closes
   <binary>                                  ← MP3 audio chunks (voice mode)
 
 Auth: ?token=<supabase_jwt> query param.
@@ -142,6 +148,11 @@ async def voice_ws(
                     "voice": voice_enabled,
                     "conversation_id": conversation_id,
                 })
+
+            # ── keepalive (client VAD gate closed, no audio flowing) ──────────
+            elif msg_type == "keepalive":
+                if voice_session:
+                    await voice_session.keepalive()
 
             # ── session_end ───────────────────────────────────────────────────
             elif msg_type == "session_end":

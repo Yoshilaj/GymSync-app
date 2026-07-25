@@ -14,5 +14,10 @@ class Settings(BaseSettings):
     deepgram_api_key: str
     elevenlabs_api_key: str
 
+    # TTS provider selection ("aura" | "elevenlabs"). The fallback is tried
+    # when the primary fails; empty string = no fallback.
+    tts_provider: str = "aura"
+    tts_fallback_provider: str = ""
+
 
 settings = Settings()
