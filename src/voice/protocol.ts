@@ -19,7 +19,9 @@ export type ClientMessage =
       starter_message?: string;
     }
   | { type: 'session_end' }
-  | { type: 'message'; text: string };
+  | { type: 'message'; text: string }
+  /** VAD gate is closed (user silent) — keeps the server's Deepgram socket warm. */
+  | { type: 'keepalive' };
 
 /** A single change within a modify_plan action (backend tools.py: modify_plan). */
 export interface PlanChange {
@@ -65,6 +67,7 @@ export type ServerMessage =
       conversation_id?: string | null;
     }
   | { type: 'transcript'; text: string }
+  /** LLM streaming (text mode); in voice mode only as the TTS-failure text fallback. */
   | { type: 'text_delta'; text: string }
   | {
       /** Sent once, before the first text_delta, when a conversation is lazily created. */
@@ -74,7 +77,13 @@ export type ServerMessage =
     }
   | AppActionMessage
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  /**
+   * fatal:false = per-turn failure (e.g. TTS down), always followed by `done` —
+   * the session continues. fatal:true = session dead, the socket closes after.
+   * A missing `fatal` key (older server) is treated as non-fatal while the
+   * socket stays open.
+   */
+  | { type: 'error'; message: string; fatal?: boolean };
 
 /**
  * Conversation phase — "Machine A" from docs/voice-client-plan.md §5.

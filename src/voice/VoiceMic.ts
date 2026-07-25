@@ -21,7 +21,9 @@ const CAPTURE_OPTIONS = {
   channels: 1,
   bitsPerSample: 16,
   audioSource: 6, // Android VOICE_RECOGNITION (noise-suppressed); ignored on iOS
-  bufferSize: 4096, // ~128ms per frame @ 16kHz mono 16-bit
+  // 2048 bytes = 1024 samples = 64ms/frame: exactly 2 Silero VAD windows, and
+  // half the gate-open latency of the old 4096. (M5)
+  bufferSize: 2048,
   wavFile: 'gymsync-capture.wav', // required by the lib; unused (we stream, not save)
 };
 

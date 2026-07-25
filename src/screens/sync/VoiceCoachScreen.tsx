@@ -44,6 +44,8 @@ export function VoiceCoachScreen() {
   const { user: authUser, getToken } = useAuth();
   const { user } = useUser();
   const [transcript, setTranscript] = useState('');
+  // Coach reply as text — only populated when TTS is down (voice fallback).
+  const [coachText, setCoachText] = useState('');
   const [personalityName, setPersonalityName] = useState<string | null>(null);
   // null = still checking; true = a session is already live elsewhere.
   const [blockedByActive, setBlockedByActive] = useState<boolean | null>(null);
@@ -60,12 +62,25 @@ export function VoiceCoachScreen() {
   // separately: mic-off only drops the socket, never the session.
   const workout = useWorkoutSession({ getToken });
 
-  const { phase, error, start, stop } = useVoiceSession({
-    userId: authUser?.id ?? '',
-    getToken,
-    onTranscript: setTranscript,
-    onAppAction,
-  });
+  // New utterance = new turn: clear any fallback text from the previous one.
+  const onTranscript = useCallback((text: string) => {
+    setTranscript(text);
+    setCoachText('');
+  }, []);
+
+  const onText = useCallback(
+    (delta: string) => setCoachText((prev) => prev + delta),
+    [],
+  );
+
+  const { phase, error, notice, speaking, micLevel, start, stop } =
+    useVoiceSession({
+      userId: authUser?.id ?? '',
+      getToken,
+      onTranscript,
+      onAppAction,
+      onText,
+    });
 
   const connect = useCallback(async () => {
     const sid = await workout.start();
@@ -211,9 +226,11 @@ export function VoiceCoachScreen() {
           >
             {/* Hero zone */}
             <View style={styles.micBlock}>
-              <CoachOrb phase={phase} size={150} />
+              <CoachOrb phase={phase} size={150} level={micLevel} />
               <AppText variant="h2" align="center">
-                {STATUS[phase]}
+                {phase === 'listening' && speaking
+                  ? 'Hearing you…'
+                  : STATUS[phase]}
               </AppText>
               <AppText variant="caption" align="center" style={styles.hint}>
                 {phase === 'error' && error ? error : HINT[phase]}
@@ -224,6 +241,24 @@ export function VoiceCoachScreen() {
                 onPress={toggleMic}
               />
             </View>
+
+            {/* Non-fatal problem (e.g. coach voice down) — auto-clears. */}
+            {!!notice && (
+              <View style={styles.noticeRow}>
+                <Ionicons
+                  name="information-circle"
+                  size={16}
+                  color={colors.warningText}
+                />
+                <AppText
+                  variant="caption"
+                  color="warningText"
+                  style={{ flex: 1 }}
+                >
+                  {notice}
+                </AppText>
+              </View>
+            )}
 
             {/* Live activity zone */}
             {timer.status !== 'idle' && (
@@ -242,6 +277,17 @@ export function VoiceCoachScreen() {
                 <AppText variant="caption" style={{ flex: 1 }} numberOfLines={3}>
                   “{transcript}”
                 </AppText>
+              </View>
+            )}
+
+            {/* Coach reply as text — the voiceless fallback when TTS is down. */}
+            {!!coachText && (
+              <View style={styles.quoteRow}>
+                <View style={[styles.quoteBar, styles.coachBar]} />
+                <View style={{ flex: 1, gap: spacing.xs }}>
+                  <AppText variant="label">Sync</AppText>
+                  <AppText variant="body">{coachText.trim()}</AppText>
+                </View>
               </View>
             )}
 
@@ -332,6 +378,16 @@ const styles = StyleSheet.create({
     width: 3,
     borderRadius: 2,
     backgroundColor: colors.accentSoft,
+  },
+  coachBar: { backgroundColor: colors.successSoft },
+  noticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningSoft,
   },
   feedCard: { paddingVertical: spacing.sm },
   feedHeading: {

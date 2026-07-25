@@ -49,6 +49,8 @@ yarn-error.*
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # Claude Code local settings + skills (per-machine, not part of the app)
 .claude/

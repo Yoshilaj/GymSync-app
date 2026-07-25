@@ -46,6 +46,7 @@
         }
       ],
       "expo-asset",
+      "onnxruntime-react-native",
       [
         "expo-speech-recognition",
         {

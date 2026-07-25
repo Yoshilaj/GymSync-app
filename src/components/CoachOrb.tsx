@@ -9,6 +9,12 @@ interface Props {
   size?: number;
   /** Optional 0–1 speech intensity to scale the speaking bars. */
   intensity?: number;
+  /**
+   * Live mic level (0–1, from useVoiceSession). While `listening`, the bars
+   * ride it so the orb visibly reacts to the user's voice. Driven per frame
+   * outside the render loop — must stay an Animated.Value.
+   */
+  level?: Animated.Value;
 }
 
 const BAR_COUNT = 4;
@@ -20,7 +26,7 @@ const BAR_COUNT = 4;
  * idle breathes, connecting pulses the ring, listening pulses it orange,
  * thinking ripples the bars low, speaking animates them tall.
  */
-export function CoachOrb({ phase, size = 160, intensity = 1 }: Props) {
+export function CoachOrb({ phase, size = 160, intensity = 1, level }: Props) {
   const breath = useRef(new Animated.Value(0)).current;
   const ring = useRef(new Animated.Value(0)).current;
   const bars = useRef(
@@ -146,6 +152,15 @@ export function CoachOrb({ phase, size = 160, intensity = 1 }: Props) {
                 inputRange: [0, 1],
                 outputRange: [1, 2.4],
               });
+              // While listening, the bars ride the live mic level (staggered
+              // per bar so the meter feels organic, not mechanical).
+              const listenGrow =
+                phase === 'listening' && level
+                  ? level.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [1, 2 + ((i * 7) % 4) * 0.35],
+                    })
+                  : null;
               return (
                 <Animated.View
                   key={i}
@@ -153,7 +168,11 @@ export function CoachOrb({ phase, size = 160, intensity = 1 }: Props) {
                     styles.bar,
                     {
                       height: barsActive ? maxBar / 2.4 : coreSize * 0.12 + i * 2,
-                      transform: barsActive ? [{ scaleY: grow }] : undefined,
+                      transform: barsActive
+                        ? [{ scaleY: grow }]
+                        : listenGrow
+                          ? [{ scaleY: listenGrow }]
+                          : undefined,
                     },
                   ]}
                 />
