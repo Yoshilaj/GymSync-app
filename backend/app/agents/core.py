@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 from anthropic import AsyncAnthropic
 from supabase import AsyncClient
 
+from app.agents import conversation_store
 from app.agents.personalities import build_system_prompt
 from app.agents.tools import TOOL_DEFINITIONS, ToolContext, blocks_to_dicts, execute_tool, utcnow
 from app.config import settings
@@ -36,10 +37,17 @@ async def _load_personality(user_id: str, db: AsyncClient) -> dict:
     ).execute()
     if res.data:
         return res.data[0]
-    return {"preset_id": "supportive", "system_prompt_override": None}
+    return {"preset_id": "classic", "system_prompt_override": None}
 
 
-async def _load_history(session_id: str | None, db: AsyncClient) -> list[dict]:
+async def _load_history(
+    session_id: str | None,
+    conversation_id: str | None,
+    db: AsyncClient,
+) -> list[dict]:
+    if conversation_id:
+        # Chat-tab thread: already bounded (count + char budget) by the store.
+        return await conversation_store.load_recent(conversation_id, db)
     if not session_id:
         return []
     res = await db.table("workout_sessions").select("chat_history").eq(
@@ -77,7 +85,20 @@ async def _save_history(
     user_message: str,
     assistant_text: str,
     db: AsyncClient,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
 ) -> None:
+    if conversation_id and user_id:
+        await conversation_store.add_messages(
+            conversation_id,
+            user_id,
+            [
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": assistant_text},
+            ],
+            db,
+        )
+        return
     if not session_id:
         return
     updated = existing + [
@@ -94,6 +115,7 @@ async def _agent_events(
     session_id: str | None,
     user_id: str,
     db: AsyncClient,
+    conversation_id: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Core agent loop. Yields plain event dicts:
@@ -106,7 +128,7 @@ async def _agent_events(
     ctx = ToolContext(user_id=user_id, session_id=session_id, db=db)
 
     personality = await _load_personality(user_id, db)
-    history = await _load_history(session_id, db)
+    history = await _load_history(session_id, conversation_id, db)
     session_ctx = await _load_session_context(session_id, db)
 
     system_text = build_system_prompt(
@@ -116,7 +138,10 @@ async def _agent_events(
     # Changes only when the user switches personality — covers ~80% of tokens.
     system = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
 
-    messages: list[dict] = [{"role": m["role"], "content": m["content"]} for m in history[-10:]]
+    # Conversation history arrives pre-bounded from the store; the workout-session
+    # JSONB path keeps its original last-10 replay window.
+    replay = history if conversation_id else history[-10:]
+    messages: list[dict] = [{"role": m["role"], "content": m["content"]} for m in replay]
     full_user_message = session_ctx + user_message
     messages.append({"role": "user", "content": full_user_message})
 
@@ -139,7 +164,13 @@ async def _agent_events(
 
             if final.stop_reason != "tool_use":
                 await _save_history(
-                    session_id, history, user_message, "".join(assistant_text_parts), db
+                    session_id,
+                    history,
+                    user_message,
+                    "".join(assistant_text_parts),
+                    db,
+                    conversation_id=conversation_id,
+                    user_id=user_id,
                 )
                 yield {"type": "done"}
                 break

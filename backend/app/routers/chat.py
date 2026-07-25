@@ -1,3 +1,9 @@
+"""
+Deprecated: the mobile app chats over the /ws/voice WebSocket, and
+conversation persistence lives there (see voice_ws.py). This SSE endpoint
+stays for tooling/tests but remains stateless — it never touches the
+conversations tables.
+"""
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
