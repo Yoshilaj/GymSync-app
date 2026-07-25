@@ -50,9 +50,9 @@ export function TabBarSurface({ children, style }: Props) {
 }
 
 /**
- * The active-tab highlight: a brighter glass pill riding on the clear bar —
- * the same interactive glass material as the system toggle knob, so it
- * responds while held. Falls back to a translucent white pill.
+ * The active-tab highlight: an accent-tinted glass pill riding on the clear
+ * bar — the same interactive glass material as the system toggle knob, so it
+ * responds while held. Falls back to a soft accent pill.
  */
 export function GlassLozenge({ style }: { style?: StyleProp<ViewStyle> }) {
   if (Platform.OS === 'ios' && glassAvailable) {
@@ -60,6 +60,7 @@ export function GlassLozenge({ style }: { style?: StyleProp<ViewStyle> }) {
       <GlassView
         glassEffectStyle="regular"
         isInteractive
+        tintColor={colors.accentSoft}
         style={[lozengeStyles.base, style]}
       />
     );
@@ -72,7 +73,7 @@ const lozengeStyles = StyleSheet.create({
     borderRadius: layout.TAB_BAR_RADIUS,
     overflow: 'hidden',
   },
-  fallback: { backgroundColor: 'rgba(255,255,255,0.8)' },
+  fallback: { backgroundColor: colors.accentSoft },
 });
 
 const styles = StyleSheet.create({

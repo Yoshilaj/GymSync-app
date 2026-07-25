@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -8,9 +9,8 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, gradients, shadows, spacing } from '@/theme';
+import { colors, shadows, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
 
 interface Props {
@@ -57,14 +57,10 @@ export function AuthLayout({
         >
           <View style={styles.brandBlock}>
             <View style={styles.logoShadow}>
-              <LinearGradient
-                colors={gradients.brand}
-                start={{ x: 0.2, y: 0 }}
-                end={{ x: 0.8, y: 1 }}
+              <Image
+                source={require('../../../assets/icon.png')}
                 style={styles.logo}
-              >
-                <Ionicons name="sparkles" size={28} color={colors.textInverse} />
-              </LinearGradient>
+              />
             </View>
             <AppText variant="display" align="center">
               {title}
@@ -100,14 +96,13 @@ const styles = StyleSheet.create({
   },
   logoShadow: {
     ...shadows.glow,
-    borderRadius: 32,
+    // iOS app-icon squircle ratio (~22.5% of size) so the mark reads as the icon.
+    borderRadius: 14,
     marginBottom: spacing.md,
   },
   logo: {
     width: 64,
     height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 14,
   },
 });

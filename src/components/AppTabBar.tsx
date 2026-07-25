@@ -8,10 +8,13 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  runOnJS,
+  SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -23,6 +26,11 @@ import { GlassLozenge, TabBarSurface } from '@/components/TabBarSurface';
 import { getTodaysWorkout } from '@/data/mockPlan';
 
 const SLIDE = { duration: 220, easing: Easing.out(Easing.quad) };
+// Horizontal breathing room between the lozenge and its slot's edges.
+const LOZENGE_INSET = 5;
+// Finger travel before a touch becomes a drag — small enough to feel
+// instant, big enough that a still tap stays a tap.
+const PICKUP_DISTANCE = 4;
 
 const TABS: Record<
   string,
@@ -46,36 +54,130 @@ export function AppTabBar({
 
   const barBottom = Math.max(insets.bottom, layout.TAB_BAR_BOTTOM_MIN);
 
-  // The active-tab glass lozenge: slides to the touched tab on press-down
-  // (like the system tab bar) and swells slightly while held (like the
-  // liquid-glass toggle knob).
+  // The active-tab glass lozenge slides to the touched tab on press-down,
+  // and — like the system/Instagram bar — dragging picks it up so it rides
+  // under the finger; releasing selects the tab it lands on.
   const [rowWidth, setRowWidth] = useState(0);
   const slotWidth = rowWidth / state.routes.length;
-  const slot = useSharedValue(state.index);
+  const lozengeWidth = slotWidth - LOZENGE_INSET * 2;
+  // The FAB slot is a spacer, not a tab — the lozenge can't rest there.
+  const maxSlot = state.routes.reduce(
+    (max, route, index) => (route.name === FAB_ROUTE ? max : index),
+    0,
+  );
+  const minX = LOZENGE_INSET;
+  const maxX = maxSlot * slotWidth + LOZENGE_INSET;
+
+  // Lozenge left edge in px (drives both slot snaps and free drag).
+  const x = useSharedValue(state.index * slotWidth + LOZENGE_INSET);
   const hold = useSharedValue(0);
-  const activeIndexRef = useRef(state.index);
-  activeIndexRef.current = state.index;
+  const drag = useSharedValue(0);
+  const hoverSlot = useSharedValue(state.index);
+  const activeSlot = useSharedValue(state.index);
+  const hadLayout = useRef(false);
 
   useEffect(() => {
-    slot.value = withTiming(state.index, SLIDE);
-  }, [state.index, slot]);
+    if (slotWidth <= 0) return;
+    activeSlot.value = state.index;
+    const target = state.index * slotWidth + LOZENGE_INSET;
+    if (!hadLayout.current) {
+      // First layout: place, don't animate.
+      hadLayout.current = true;
+      x.value = target;
+    } else {
+      x.value = withTiming(target, SLIDE);
+    }
+  }, [state.index, slotWidth, x, activeSlot]);
 
   const lozengeStyle = useAnimatedStyle(() => ({
     transform: [
-      { translateX: slot.value * slotWidth + 5 },
-      { scale: 1 + hold.value * 0.07 },
+      { translateX: x.value },
+      // Swells slightly on press, a touch more while dragged.
+      { scale: 1 + hold.value * 0.07 + drag.value * 0.06 },
     ],
-  }), [slotWidth]);
+  }));
 
   const onTabPressIn = (index: number) => {
-    slot.value = withTiming(index, SLIDE);
+    x.value = withTiming(index * slotWidth + LOZENGE_INSET, SLIDE);
     hold.value = withTiming(1, { duration: 140 });
   };
   const onTabPressOut = () => {
+    // A pickup cancels the pressable — the pan gesture owns cleanup then.
+    if (drag.value > 0) return;
     hold.value = withTiming(0, { duration: 180 });
     // If the touch was cancelled without navigating, glide home.
-    slot.value = withTiming(activeIndexRef.current, SLIDE);
+    x.value = withTiming(activeSlot.value * slotWidth + LOZENGE_INSET, SLIDE);
   };
+
+  const selectTab = (slot: number) => {
+    const route = state.routes[slot];
+    if (!route || route.name === FAB_ROUTE) return;
+    const event = navigation.emit({
+      type: 'tabPress',
+      target: route.key,
+      canPreventDefault: true,
+    });
+    if (state.index !== slot && !event.defaultPrevented) {
+      navigation.navigate(route.name, route.params as never);
+    }
+  };
+
+  const pickupHaptic = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  const crossHaptic = () => {
+    void Haptics.selectionAsync();
+  };
+
+  const pan = Gesture.Pan()
+    .maxPointers(1)
+    .minDistance(PICKUP_DISTANCE)
+    .onStart((e) => {
+      'worklet';
+      drag.value = withTiming(1, { duration: 140 });
+      hold.value = withTiming(1, { duration: 140 });
+      const left = Math.min(
+        Math.max(e.x - lozengeWidth / 2, minX),
+        maxX,
+      );
+      hoverSlot.value = Math.round((left - LOZENGE_INSET) / slotWidth);
+      // Ease under the finger rather than teleporting.
+      x.value = withTiming(left, { duration: 120 });
+      runOnJS(pickupHaptic)();
+    })
+    .onUpdate((e) => {
+      'worklet';
+      const left = Math.min(
+        Math.max(e.x - lozengeWidth / 2, minX),
+        maxX,
+      );
+      x.value = left;
+      const slot = Math.min(
+        Math.max(Math.round((left - LOZENGE_INSET) / slotWidth), 0),
+        maxSlot,
+      );
+      if (slot !== hoverSlot.value) {
+        hoverSlot.value = slot;
+        runOnJS(crossHaptic)();
+      }
+    })
+    .onEnd(() => {
+      'worklet';
+      const slot = hoverSlot.value;
+      x.value = withTiming(slot * slotWidth + LOZENGE_INSET, SLIDE);
+      runOnJS(selectTab)(slot);
+    })
+    .onFinalize((_e, success) => {
+      'worklet';
+      drag.value = withTiming(0, { duration: 180 });
+      hold.value = withTiming(0, { duration: 180 });
+      if (!success) {
+        x.value = withTiming(
+          activeSlot.value * slotWidth + LOZENGE_INSET,
+          SLIDE,
+        );
+      }
+    });
 
   return (
     <View
@@ -87,62 +189,56 @@ export function AppTabBar({
       }
     >
       <TabBarSurface style={styles.surface}>
-        <View
-          style={styles.row}
-          onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
-        >
-          {slotWidth > 0 && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.lozengeWrap,
-                { width: slotWidth - 10 },
-                lozengeStyle,
-              ]}
-            >
-              <GlassLozenge style={styles.lozenge} />
-            </Animated.View>
-          )}
-          {state.routes.map((route, index) => {
-            const focused = state.index === index;
-
-            if (route.name === FAB_ROUTE) {
-              // Spacer only — the FAB itself renders outside the clipped
-              // glass surface (it pokes above the bar's top edge).
-              return <View key={route.key} style={styles.tab} />;
-            }
-
-            const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
-              if (!focused && !event.defaultPrevented) {
-                navigation.navigate(route.name, route.params as never);
-              }
-            };
-
-            const icons = TABS[route.name];
-            const iconColor = focused ? colors.accent : colors.textSecondary;
-            return (
-              <Pressable
-                key={route.key}
-                onPress={onPress}
-                onPressIn={() => onTabPressIn(index)}
-                onPressOut={onTabPressOut}
-                style={styles.tab}
-                android_ripple={{ color: 'transparent' }}
+        <GestureDetector gesture={pan}>
+          <View
+            style={styles.row}
+            onLayout={(e) => setRowWidth(e.nativeEvent.layout.width)}
+          >
+            {slotWidth > 0 && (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.lozengeWrap,
+                  { width: lozengeWidth },
+                  lozengeStyle,
+                ]}
               >
-                <Ionicons
-                  name={focused ? icons.on : icons.off}
-                  size={25}
-                  color={iconColor}
-                />
-              </Pressable>
-            );
-          })}
-        </View>
+                <GlassLozenge style={styles.lozenge} />
+              </Animated.View>
+            )}
+            {state.routes.map((route, index) => {
+              const focused = state.index === index;
+
+              if (route.name === FAB_ROUTE) {
+                // Spacer only — the FAB itself renders outside the clipped
+                // glass surface (it pokes above the bar's top edge).
+                return <View key={route.key} style={styles.tab} />;
+              }
+
+              const icons = TABS[route.name];
+              return (
+                <Pressable
+                  key={route.key}
+                  onPress={() => selectTab(index)}
+                  onPressIn={() => onTabPressIn(index)}
+                  onPressOut={onTabPressOut}
+                  style={styles.tab}
+                  android_ripple={{ color: 'transparent' }}
+                >
+                  <TabIcon
+                    name={focused ? icons.on : icons.off}
+                    color={focused ? colors.accent : colors.textSecondary}
+                    index={index}
+                    slotWidth={slotWidth}
+                    x={x}
+                    drag={drag}
+                    lozengeWidth={lozengeWidth}
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+        </GestureDetector>
       </TabBarSurface>
 
       <FabButton
@@ -171,6 +267,43 @@ export function AppTabBar({
         }}
       />
     </View>
+  );
+}
+
+/** Tab glyph that pops when the dragged lozenge hovers over its slot. */
+function TabIcon({
+  name,
+  color,
+  index,
+  slotWidth,
+  x,
+  drag,
+  lozengeWidth,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  color: string;
+  index: number;
+  slotWidth: number;
+  x: SharedValue<number>;
+  drag: SharedValue<number>;
+  lozengeWidth: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    if (slotWidth <= 0) return { transform: [{ scale: 1 }] };
+    const center = x.value + lozengeWidth / 2;
+    const hovered =
+      drag.value > 0.5 &&
+      center >= index * slotWidth &&
+      center < (index + 1) * slotWidth;
+    return {
+      transform: [{ scale: withTiming(hovered ? 1.18 : 1, { duration: 120 }) }],
+    };
+  }, [slotWidth, index, lozengeWidth]);
+
+  return (
+    <Animated.View style={style}>
+      <Ionicons name={name} size={25} color={color} />
+    </Animated.View>
   );
 }
 

@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
@@ -64,18 +65,21 @@ export default function App() {
   });
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <UserProvider>
-          <StatusBar style="dark" />
-          {fontsLoaded ? <RootGate /> : <Splash />}
-        </UserProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.flex}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <UserProvider>
+            <StatusBar style="dark" />
+            {fontsLoaded ? <RootGate /> : <Splash />}
+          </UserProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   splash: {
     flex: 1,
     alignItems: 'center',
