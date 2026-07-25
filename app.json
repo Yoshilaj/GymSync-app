@@ -45,7 +45,14 @@
           "microphonePermission": "GymSync uses your microphone so you can talk to your AI coach during a workout."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "GymSync uses your microphone so you can dictate messages and talk to your AI coach.",
+          "speechRecognitionPermission": "GymSync uses speech recognition to turn your voice into text."
+        }
+      ]
     ],
     "extra": {
       "eas": {

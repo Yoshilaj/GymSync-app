@@ -4,6 +4,7 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
   useFonts,
   Inter_400Regular,
@@ -66,14 +67,16 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.flex}>
-      <SafeAreaProvider>
-        <AuthProvider>
-          <UserProvider>
-            <StatusBar style="dark" />
-            {fontsLoaded ? <RootGate /> : <Splash />}
-          </UserProvider>
-        </AuthProvider>
-      </SafeAreaProvider>
+      <KeyboardProvider>
+        <SafeAreaProvider>
+          <AuthProvider>
+            <UserProvider>
+              <StatusBar style="dark" />
+              {fontsLoaded ? <RootGate /> : <Splash />}
+            </UserProvider>
+          </AuthProvider>
+        </SafeAreaProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }
