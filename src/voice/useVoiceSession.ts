@@ -6,6 +6,7 @@ import { voiceMic, ensureMicAccess } from './VoiceMic';
 import { voicePlayer } from './VoicePlayer';
 import { MicGate } from './MicGate';
 import { SileroVad } from './SileroVad';
+import { LevelEmitter, type WaveformSource } from './levels';
 import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
 
 /** How long a non-fatal notice banner stays up before auto-clearing. */
@@ -42,6 +43,8 @@ export interface VoiceSessionApi {
    * bind it to Animated styles (the orb), never read it in render.
    */
   micLevel: Animated.Value;
+  /** Raw mic waveform feed (4 × 16ms RMS buckets per frame) for VoiceWaveform. */
+  micWaveform: WaveformSource;
   /** The workout session this voice connection is attached to (if any). */
   sessionId: string | null;
   /**
@@ -80,6 +83,7 @@ export function useVoiceSession({
   const gateRef = useRef<MicGate | null>(null);
   const vadLoadRef = useRef<Promise<SileroVad | null> | null>(null);
   const micLevel = useRef(new Animated.Value(0)).current;
+  const micWaveform = useRef(new LevelEmitter()).current;
   const phaseRef = useRef<VoicePhase>('idle');
   const mountedRef = useRef(true);
   const sessionIdRef = useRef<string | null>(null);
@@ -95,11 +99,10 @@ export function useVoiceSession({
 
   // Set both the ref (for reads inside callbacks) and the state (for renders).
   const goto = useCallback((next: VoicePhase) => {
-    // Leaving `listening` closes the mic gate: the current utterance is over
-    // (or the session is), so the VAD forgets its state and `speaking` drops.
-    if (phaseRef.current === 'listening' && next !== 'listening') {
-      gateRef.current?.reset();
-    }
+    // Half-duplex: the gate is muted in every phase except `listening`. Muting
+    // (not resetting) keeps the pre-roll ring rolling, so words spoken just
+    // before the phase flips back to listening still reach the server.
+    gateRef.current?.setMuted(next !== 'listening');
     phaseRef.current = next;
     if (mountedRef.current) setPhase(next);
   }, []);
@@ -126,6 +129,7 @@ export function useVoiceSession({
           if (mountedRef.current) setSpeaking(s);
         },
         level: (v) => micLevel.setValue(v),
+        levelBuckets: (b) => micWaveform.emit(b),
       });
     }
     if (!vadLoadRef.current) {
@@ -156,10 +160,10 @@ export function useVoiceSession({
     }, NOTICE_MS);
   }, []);
 
-  // Start mic capture and route each PCM frame through the gate. Frames only
-  // flow while Machine A is in `listening` (half-duplex: mic is "muted" during
-  // thinking / coach_speaking); within `listening`, the VAD gate decides what
-  // actually reaches the server.
+  // Start mic capture and route EVERY frame through the gate, in all phases —
+  // the gate's muted state (driven by goto) decides whether anything is sent.
+  // Called during `connecting` so the native recorder spin-up overlaps the WS
+  // handshake instead of eating the first words after "Listening" appears.
   const startMic = useCallback(async () => {
     try {
       const granted = await ensureMicAccess();
@@ -170,7 +174,6 @@ export function useVoiceSession({
       if (!mountedRef.current || phaseRef.current === 'idle') return;
       const gate = ensureGate();
       voiceMic.start((frame) => {
-        if (phaseRef.current !== 'listening') return;
         gate.pushFrame(frame);
       });
     } catch (e) {
@@ -236,6 +239,10 @@ export function useVoiceSession({
   const connect = useCallback(
     async (attachSessionId: string | null) => {
       goto('connecting');
+      // Spin the mic up NOW (parallel with token fetch + WS handshake) so it's
+      // already capturing when the ack flips us to `listening` — the gate is
+      // muted until then, so nothing leaks early.
+      void startMic();
       try {
         const token = await getToken();
 
@@ -288,7 +295,7 @@ export function useVoiceSession({
         fail(e instanceof Error ? e.message : String(e));
       }
     },
-    [getToken, userId, handleMessage, goto, fail],
+    [getToken, userId, handleMessage, goto, fail, startMic],
   );
 
   const start = useCallback(
@@ -354,5 +361,15 @@ export function useVoiceSession({
     };
   }, []);
 
-  return { phase, error, notice, speaking, micLevel, sessionId, start, stop };
+  return {
+    phase,
+    error,
+    notice,
+    speaking,
+    micLevel,
+    micWaveform,
+    sessionId,
+    start,
+    stop,
+  };
 }

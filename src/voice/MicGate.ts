@@ -14,6 +14,14 @@
  * Passthrough mode: with no VAD (Silero failed to load / Expo Go) every frame
  * is forwarded while un-muted — exactly the pre-M5 continuous loop, where the
  * audio itself keeps Deepgram alive.
+ *
+ * Muting (half-duplex, Machine A): the hook mutes the gate whenever the phase
+ * isn't `listening`. While muted, frames still run VAD (recurrent state stays
+ * warm) and fill the pre-roll ring, but nothing is sent and no keepalives fire.
+ * On unmute the ring survives — so words spoken just before the phase flipped
+ * (mic spin-up, coach still finishing) flush with the first gate-open instead
+ * of being clipped. Deepgram hears nothing while muted; that matches the old
+ * frame-drop behavior, and the server-side SDK keepalive covers idle timeouts.
  */
 import type { SileroVad } from './SileroVad';
 
@@ -33,9 +41,11 @@ export interface MicGateConfig {
 }
 
 export const DEFAULT_GATE_CONFIG: MicGateConfig = {
-  openThreshold: 0.5,
+  // Hysteresis narrowed to 0.4/0.35 deliberately: faster opens on soft speech
+  // onsets ("I hit...") — still a valid band, and close behavior is unchanged.
+  openThreshold: 0.4,
   closeThreshold: 0.35,
-  preRollFrames: 5,
+  preRollFrames: 12, // ~768ms @64ms frames — covers mic spin-up + soft onsets
   hangoverMs: 700,
   keepaliveIntervalMs: 5000,
   frameMs: 64,
@@ -50,10 +60,17 @@ export interface MicGateEvents {
   speakingChanged: (speaking: boolean) => void;
   /** Smoothed mic level 0..1, every frame — for UI only, never for gating. */
   level: (value: number) => void;
+  /**
+   * Raw per-frame waveform data: 4 × 16ms RMS buckets (0..1, unsmoothed) —
+   * real 62Hz signal for the waveform UI. Optional; skipped when absent.
+   */
+  levelBuckets?: (buckets: number[]) => void;
 }
 
 export class MicGate {
   private vad: SileroVad | null = null;
+  /** Starts muted; the hook unmutes when Machine A enters `listening`. */
+  private muted = true;
   private open = false;
   private preRoll: ArrayBuffer[] = [];
   private hangoverLeftMs = 0;
@@ -76,13 +93,42 @@ export class MicGate {
     this.vad = vad;
   }
 
+  /**
+   * Half-duplex mute (phase ≠ listening). Muting closes the gate but KEEPS the
+   * pre-roll ring rolling and the VAD state warm — audio through the mic is
+   * continuous, so the next unmute + gate-open can flush speech that started
+   * moments before the phase flip.
+   */
+  setMuted(muted: boolean): void {
+    if (this.muted === muted) return;
+    this.muted = muted;
+    if (muted && this.open) {
+      this.open = false;
+      this.hangoverLeftMs = 0;
+      this.events.speakingChanged(false);
+    }
+    this.silentMsSinceKeepalive = 0;
+  }
+
   /** Feed one mic frame. Safe to call from the mic callback (sync). */
   pushFrame(frame: ArrayBuffer): void {
     if (this.disposed) return;
     this.emitLevel(frame);
 
     if (!this.vad) {
-      // Passthrough: continuous streaming, audio itself is the keepalive.
+      // Passthrough: continuous streaming while unmuted (audio itself is the
+      // keepalive). While muted, ring the frames so unmute flushes recent
+      // audio — the same clipping fix, minus the VAD.
+      if (this.muted) {
+        this.ringPush(frame);
+        return;
+      }
+      if (this.preRoll.length > 0) {
+        const burst = [...this.preRoll, frame];
+        this.preRoll = [];
+        this.events.send(burst);
+        return;
+      }
       this.events.send([frame]);
       return;
     }
@@ -97,17 +143,18 @@ export class MicGate {
         // Inference broke mid-session — drop to passthrough for good.
         console.warn('[MicGate] VAD failed, switching to passthrough:', e);
         this.vad = null;
-        this.events.send([frame]);
+        if (!this.muted) this.events.send([frame]);
       }
     });
   }
 
   /**
-   * Close the gate and forget the utterance (phase left `listening`, or
-   * session teardown). Level/speaking reset so the UI doesn't freeze mid-bar.
+   * Full teardown (session stop / unmount) — NOT for phase changes; those use
+   * setMuted. Forgets the utterance, the ring, and the VAD state.
    */
   reset(): void {
     if (this.open) this.events.speakingChanged(false);
+    this.muted = true;
     this.open = false;
     this.preRoll = [];
     this.hangoverLeftMs = 0;
@@ -125,8 +172,20 @@ export class MicGate {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
+  private ringPush(frame: ArrayBuffer): void {
+    this.preRoll.push(frame);
+    if (this.preRoll.length > this.config.preRollFrames) this.preRoll.shift();
+  }
+
   private applyGate(frame: ArrayBuffer, prob: number): void {
     const cfg = this.config;
+
+    if (this.muted) {
+      // Half-duplex mute: keep the ring rolling (VAD state was already updated
+      // by process()), but never send, keepalive, or flip `speaking`.
+      this.ringPush(frame);
+      return;
+    }
 
     if (!this.open) {
       if (prob >= cfg.openThreshold) {
@@ -141,8 +200,7 @@ export class MicGate {
         return;
       }
       // Still silent: remember recent audio, tick the keepalive clock.
-      this.preRoll.push(frame);
-      if (this.preRoll.length > cfg.preRollFrames) this.preRoll.shift();
+      this.ringPush(frame);
       this.silentMsSinceKeepalive += cfg.frameMs;
       if (this.silentMsSinceKeepalive >= cfg.keepaliveIntervalMs) {
         this.silentMsSinceKeepalive = 0;
@@ -170,6 +228,26 @@ export class MicGate {
 
   private emitLevel(frame: ArrayBuffer): void {
     const pcm = new Int16Array(frame);
+
+    // Waveform buckets: 4 sub-RMS values per frame (raw — the waveform wants
+    // real signal, not smoothing). Skipped entirely when nobody listens.
+    if (this.events.levelBuckets) {
+      const buckets: number[] = [];
+      const size = Math.max(1, Math.floor(pcm.length / 4));
+      for (let b = 0; b < 4; b++) {
+        let sq = 0;
+        const start = b * size;
+        const end = b === 3 ? pcm.length : start + size;
+        for (let i = start; i < end; i++) {
+          const s = pcm[i] / 32768;
+          sq += s * s;
+        }
+        const rms = Math.sqrt(sq / Math.max(1, end - start));
+        buckets.push(Math.min(1, rms * 4));
+      }
+      this.events.levelBuckets(buckets);
+    }
+
     let sumSq = 0;
     for (let i = 0; i < pcm.length; i++) {
       const s = pcm[i] / 32768;

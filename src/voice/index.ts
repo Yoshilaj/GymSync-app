@@ -28,7 +28,12 @@ export type {
   ServerMessage,
   AppActionMessage,
   PlanChange,
+  PlanProposalWire,
+  PlanProposalDay,
+  PlanProposalExercise,
 } from './protocol';
+export { LevelEmitter, makeShimmerSource } from './levels';
+export type { WaveformSource } from './levels';
 export { voiceMic, ensureMicAccess } from './VoiceMic';
 export type { PcmFrameHandler } from './VoiceMic';
 export { voicePlayer } from './VoicePlayer';

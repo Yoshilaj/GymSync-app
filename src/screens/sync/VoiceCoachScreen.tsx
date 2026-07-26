@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -6,15 +6,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, layout, radius, spacing } from '@/theme';
 import { AppText, Button, Card, TimerDisplay } from '@/components/ui';
 import { VoiceButton } from '@/components/VoiceButton';
-import { CoachOrb } from '@/components/CoachOrb';
+import { VoiceWaveform } from '@/components/VoiceWaveform';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
+import { usePlan } from '@/context/PlanContext';
 import { fetchPersonality } from '@/api/personality';
 import { fetchActiveSession } from '@/api/session';
 import {
   useVoiceSession,
   useWorkoutSession,
   useSessionActions,
+  voicePlayer,
+  makeShimmerSource,
   type VoicePhase,
   type AppActionMessage,
 } from '@/voice';
@@ -60,7 +63,9 @@ export function VoiceCoachScreen() {
 
   // The workout session (REST) and the voice connection (socket) are owned
   // separately: mic-off only drops the socket, never the session.
-  const workout = useWorkoutSession({ getToken });
+  const { plan } = usePlan();
+  // planId → the backend snapshots the real plan for the voice coach.
+  const workout = useWorkoutSession({ getToken, planId: plan?.planId ?? null });
 
   // New utterance = new turn: clear any fallback text from the previous one.
   const onTranscript = useCallback((text: string) => {
@@ -73,7 +78,7 @@ export function VoiceCoachScreen() {
     [],
   );
 
-  const { phase, error, notice, speaking, micLevel, start, stop } =
+  const { phase, error, notice, speaking, micWaveform, start, stop } =
     useVoiceSession({
       userId: authUser?.id ?? '',
       getToken,
@@ -81,6 +86,27 @@ export function VoiceCoachScreen() {
       onAppAction,
       onText,
     });
+
+  // "Thinking" shimmer: same waveform component, a synthetic slow-sine feed.
+  const shimmer = useMemo(() => makeShimmerSource(), []);
+  useEffect(() => () => shimmer.stop(), [shimmer]);
+
+  const waveSource =
+    phase === 'listening'
+      ? micWaveform
+      : phase === 'coach_speaking'
+        ? voicePlayer.waveform
+        : phase === 'thinking'
+          ? shimmer
+          : null;
+  const waveColor =
+    phase === 'listening'
+      ? colors.live
+      : phase === 'coach_speaking' || phase === 'thinking'
+        ? colors.accent
+        : colors.borderStrong;
+  const waveActive =
+    phase === 'listening' || phase === 'coach_speaking' || phase === 'thinking';
 
   const connect = useCallback(async () => {
     const sid = await workout.start();
@@ -224,9 +250,14 @@ export function VoiceCoachScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {/* Hero zone */}
+            {/* Hero zone — the voice, as a live waveform. */}
             <View style={styles.micBlock}>
-              <CoachOrb phase={phase} size={150} level={micLevel} />
+              <VoiceWaveform
+                source={waveSource}
+                color={waveColor}
+                active={waveActive}
+                height={96}
+              />
               <AppText variant="h2" align="center">
                 {phase === 'listening' && speaking
                   ? 'Hearing you…'
