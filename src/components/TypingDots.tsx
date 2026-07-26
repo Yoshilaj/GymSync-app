@@ -40,16 +40,15 @@ function Dot({ delay }: { delay: number }) {
   return <Animated.View style={[styles.dot, style]} />;
 }
 
-/** Coach-side "thinking" bubble shown between send and the first token. */
+/** Bare inline "thinking" dots — sit exactly where the coach's next paragraph
+ * will start, no container (matches the bubble-less chat style). */
 export function TypingDots() {
   const styles = useStyles();
   return (
     <View style={styles.row}>
-      <View style={styles.bubble}>
-        <Dot delay={0} />
-        <Dot delay={160} />
-        <Dot delay={320} />
-      </View>
+      <Dot delay={0} />
+      <Dot delay={160} />
+      <Dot delay={320} />
     </View>
   );
 }
@@ -57,19 +56,10 @@ export function TypingDots() {
 const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginBottom: spacing.sm,
-  },
-  bubble: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: t.colors.card,
-    borderRadius: radius.lg,
-    borderBottomLeftRadius: spacing.xs,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    ...t.shadows.xs,
+    gap: spacing.xs + 1,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
   },
   dot: {
     width: 7,

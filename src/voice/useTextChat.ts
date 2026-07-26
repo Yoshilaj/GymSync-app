@@ -139,6 +139,9 @@ export function useTextChat({
   const socketRef = useRef<VoiceSocket | null>(null);
   const readyRef = useRef<Promise<void> | null>(null);
   const streamIdRef = useRef<string | null>(null);
+  // Set when a plan card arrives mid-stream: the card carries the details, so
+  // any further narration deltas for this turn are dropped (de-duplication).
+  const suppressDeltasRef = useRef(false);
   const pendingUserIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   // Read at handshake time (never closure-captured) so a mid-conversation
@@ -148,6 +151,7 @@ export function useTextChat({
   const starterItemIdRef = useRef<string | null>(null);
 
   const finalizeStream = useCallback(() => {
+    suppressDeltasRef.current = false;
     const sid = streamIdRef.current;
     streamIdRef.current = null;
     if (sid) {
@@ -166,6 +170,7 @@ export function useTextChat({
     (msg: ServerMessage) => {
       switch (msg.type) {
         case 'text_delta': {
+          if (suppressDeltasRef.current) break;
           setItems((prev) => {
             const sid = streamIdRef.current;
             if (sid) {
@@ -212,14 +217,30 @@ export function useTextChat({
           break;
         }
         case 'plan_proposal': {
-          // A fresh proposal supersedes any prior pending card (mirrors the
-          // server, which flips stale plan_proposals rows to superseded).
+          // The card carries the plan — collapse any long in-flight narration
+          // to a stub and drop further deltas this turn (no duplicated plan).
+          const sid = streamIdRef.current;
+          streamIdRef.current = null;
+          suppressDeltasRef.current = true;
           setItems((prev) => [
-            ...prev.map((it) =>
-              it.kind === 'plan_proposal' && it.status === 'pending'
-                ? { ...it, status: 'superseded' as const }
-                : it,
-            ),
+            ...prev.map((it) => {
+              if (it.kind === 'plan_proposal' && it.status === 'pending') {
+                // A fresh proposal supersedes any prior pending card.
+                return { ...it, status: 'superseded' as const };
+              }
+              if (
+                sid &&
+                it.kind === 'message' &&
+                it.id === sid &&
+                it.text.length > 120
+              ) {
+                return { ...it, text: "Here's your plan —", streaming: false };
+              }
+              if (sid && it.kind === 'message' && it.id === sid) {
+                return { ...it, streaming: false };
+              }
+              return it;
+            }),
             {
               kind: 'plan_proposal',
               id: uid('p'),

@@ -7,6 +7,7 @@ import { DayStrip, getWeekDates } from '@/components/DayStrip';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
+import { BodyWeightCard } from '@/components/BodyWeightCard';
 import { layout, spacing } from '@/theme';
 import { getExerciseById, resolvePlannedExercise } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
@@ -24,13 +25,25 @@ export function PlanScreen() {
   const { plan, status } = usePlan();
 
   const today = useMemo(() => new Date(), []);
-  const todayLong = WEEK_LONG[today.getDay()];
-  const [selectedDay, setSelectedDay] = useState<string>(todayLong);
-  const weekDates = useMemo(() => getWeekDates(today), [today]);
+  const todayIso = today.toDateString();
+  const [selectedIso, setSelectedIso] = useState<string>(todayIso);
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  // Derived — the plan is weekly-recurring, so every downstream consumer
+  // still keys off the weekday label; only selection became date-based.
+  const selectedDay = WEEK_LONG[new Date(selectedIso).getDay()];
 
   const workoutForDay = plan?.workouts.find((w) => w.dayLabel === selectedDay);
   const isRest = plan ? plan.restDays.includes(selectedDay) : false;
   const markedDays = plan ? plan.workouts.map((w) => w.dayLabel) : [];
+
+  // Resolve a weekday label to its concrete date within the VIEWED week.
+  const isoForDayInViewedWeek = (dayLabel: string): string => {
+    const ref = new Date(today);
+    ref.setDate(ref.getDate() + weekOffset * 7);
+    const hit = getWeekDates(ref).find((d) => d.long === dayLabel);
+    return hit ? hit.iso : todayIso;
+  };
 
   // The first scheduled workout after the selected day, walking the week cyclically.
   const nextWorkout = useMemo<NextWorkoutPreview | undefined>(() => {
@@ -55,18 +68,19 @@ export function PlanScreen() {
     <Screen scroll padded={false}>
       <View style={styles.headerGap} />
       <DayStrip
-        week={weekDates}
-        selected={selectedDay}
-        today={todayLong}
-        onSelect={setSelectedDay}
+        selectedIso={selectedIso}
+        todayIso={todayIso}
+        onSelectIso={setSelectedIso}
         markedDays={markedDays}
+        weekOffset={weekOffset}
+        onWeekChange={setWeekOffset}
       />
 
       <View style={styles.content}>
         {workoutForDay ? (
           <WorkoutDay
             workout={workoutForDay}
-            isToday={selectedDay === todayLong}
+            isToday={selectedIso === todayIso}
             selectedDay={selectedDay}
             units={user.units}
             onStart={(id) => nav.navigate('LiveWorkoutStart', { workoutId: id })}
@@ -80,7 +94,7 @@ export function PlanScreen() {
               nextWorkout={nextWorkout}
               onPressNextWorkout={
                 nextWorkout
-                  ? () => setSelectedDay(nextWorkout.dayLabel)
+                  ? () => setSelectedIso(isoForDayInViewedWeek(nextWorkout.dayLabel))
                   : undefined
               }
             />
@@ -99,9 +113,7 @@ export function PlanScreen() {
 
         {/* Always reachable — workout days and rest days alike. */}
         <View style={styles.librarySection}>
-          <AppText variant="label" style={styles.listHeading}>
-            Library
-          </AppText>
+          <BodyWeightCard />
           <Card padded={false}>
             <ListRow
               title="Exercise library"
@@ -197,6 +209,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   listHeading: { marginLeft: spacing.xs, marginBottom: spacing.sm },
-  librarySection: { marginTop: spacing.lg },
+  librarySection: { marginTop: spacing.lg, gap: spacing.md },
   headerGap: { height: spacing.sm },
 });

@@ -1,3 +1,9 @@
+/**
+ * Chat turns, frontier-style: the coach's words ARE the page — bare prose at
+ * full width, no bubble, no label. The user's message is a quiet right-aligned
+ * chip. Rhythm does the separating that bubbles used to: lg after a user chip
+ * (question → its answer), xl after coach prose (turn boundary).
+ */
 import { View } from 'react-native';
 import { makeStyles, radius, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
@@ -12,48 +18,47 @@ interface Props {
 export function ChatBubble({ message, streaming = false }: Props) {
   const styles = useStyles();
   const isUser = message.author === 'user';
-  return (
-    <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
-      <View
-        style={[styles.bubble, isUser ? styles.userBubble : styles.syncBubble]}
-      >
-        {!isUser && (
-          <AppText variant="label" color="accentText" style={styles.authorLabel}>
-            Sync
-          </AppText>
-        )}
-        <AppText variant="body" color={isUser ? 'textInverse' : 'textPrimary'}>
-          {message.text}
-          {streaming ? <AppText variant="body" color="accentText">▍</AppText> : null}
-        </AppText>
+
+  if (isUser) {
+    return (
+      <View style={styles.userRow}>
+        <View style={styles.userPill}>
+          <AppText variant="body">{message.text}</AppText>
+        </View>
       </View>
+    );
+  }
+
+  return (
+    <View style={styles.assistantRow}>
+      <AppText variant="body">
+        {message.text}
+        {streaming ? (
+          <AppText variant="body" color="accentText">
+            ▍
+          </AppText>
+        ) : null}
+      </AppText>
     </View>
   );
 }
 
 const useStyles = makeStyles((t) => ({
-  row: {
-    flexDirection: 'row',
-    marginBottom: spacing.sm,
+  assistantRow: {
+    marginBottom: spacing.xl,
   },
-  rowLeft: { justifyContent: 'flex-start' },
-  rowRight: { justifyContent: 'flex-end' },
-  bubble: {
-    maxWidth: '82%',
+  userRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: spacing.lg,
+  },
+  userPill: {
+    maxWidth: '78%',
+    // White chip on the tinted light bg; elevated navy on dark — the quiet
+    // ChatGPT-style user turn. Flat: no shadow, no border, no tail.
+    backgroundColor: t.colors.card,
+    borderRadius: radius.xl,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: radius.lg,
-  },
-  userBubble: {
-    backgroundColor: t.colors.accent,
-    borderBottomRightRadius: spacing.xs,
-  },
-  syncBubble: {
-    backgroundColor: t.colors.card,
-    borderBottomLeftRadius: spacing.xs,
-    ...t.shadows.xs,
-  },
-  authorLabel: {
-    marginBottom: 4,
   },
 }));

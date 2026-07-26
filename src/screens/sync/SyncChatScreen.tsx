@@ -32,6 +32,7 @@ import { TypingDots } from '@/components/TypingDots';
 import { useAuth } from '@/auth/AuthContext';
 import { useConversations, useDictation, useTabBarClearance } from '@/hooks';
 import { useUser } from '@/context/UserContext';
+import { usePlan } from '@/context/PlanContext';
 import { useTextChat, type ChatItem } from '@/voice';
 import { ConversationSummary, fetchConversationThread } from '@/api/conversations';
 import { acceptPlanProposal } from '@/api/plan';
@@ -263,19 +264,23 @@ export function SyncChatScreen() {
     inputRef.current?.focus();
   };
 
+  const { refresh: refreshPlan } = usePlan();
+
   const handleAcceptProposal = useCallback(
     async (item: ChatItem & { kind: 'plan_proposal' }) => {
       chat.setProposalStatus(item.id, 'accepting');
       try {
         const token = await getToken();
         await acceptPlanProposal(token, item.proposalId);
+        // The Plan tab must show the new plan IMMEDIATELY — no app restart.
+        await refreshPlan();
         chat.setProposalStatus(item.id, 'accepted');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         chat.setProposalStatus(item.id, 'failed');
       }
     },
-    [chat, getToken],
+    [chat, getToken, refreshPlan],
   );
 
   const handleRequestChanges = useCallback(() => {
@@ -507,10 +512,10 @@ const useStyles = makeStyles((t) => ({
   },
   listContent: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.lg,
   },
-  actionChipRow: { alignItems: 'center', marginBottom: spacing.sm },
-  proposalRow: { marginBottom: spacing.sm },
+  actionChipRow: { alignItems: 'center', marginBottom: spacing.lg },
+  proposalRow: { marginBottom: spacing.lg },
   actionChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -520,10 +525,11 @@ const useStyles = makeStyles((t) => ({
     paddingVertical: spacing.xs + 1,
     paddingHorizontal: spacing.md,
   },
-  failedHint: { alignSelf: 'flex-end', marginBottom: spacing.sm },
-  dayRow: { marginVertical: spacing.md },
-  copiedLeft: { alignSelf: 'flex-start', marginBottom: spacing.sm },
-  copiedRight: { alignSelf: 'flex-end', marginBottom: spacing.sm },
+  // Hints pull up under their message (rows now carry lg/xl bottom margins).
+  failedHint: { alignSelf: 'flex-end', marginTop: -spacing.md, marginBottom: spacing.md },
+  dayRow: { marginVertical: spacing.lg },
+  copiedLeft: { alignSelf: 'flex-start', marginTop: -spacing.lg, marginBottom: spacing.md },
+  copiedRight: { alignSelf: 'flex-end', marginTop: -spacing.md, marginBottom: spacing.md },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',

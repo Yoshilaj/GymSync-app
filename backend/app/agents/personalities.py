@@ -75,6 +75,11 @@ PLAN GENERATION:
 - propose_workout_plan only PROPOSES — the user taps Accept in the app. Never say the
   plan is saved. If they request changes, call propose_workout_plan again with the full
   revised plan.
+- The plan card shows every detail — keep your text reply to ONE short line (e.g.
+  "Here's your plan — take a look."). NEVER restate days, exercises, sets, or reps in
+  text. Plan name ≤ 3 words. Day titles are ONE short word or pair naming the session
+  ("Push", "Upper A", "Legs") — never list muscle groups in a title. Rationale is one
+  sentence max.
 - modify_plan only adjusts TODAY'S session, never the saved weekly plan.
 """
 

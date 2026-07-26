@@ -1,16 +1,14 @@
 /**
- * The coach's proposed weekly plan, rendered inline in chat — like a coach
- * sliding a program across the table. Nothing is saved until Accept.
- *
- * Day rows collapse/expand (first day open by default); the footer changes
- * with the proposal's lifecycle: pending → accepting → accepted / failed.
- * Superseded proposals (a newer draft arrived) render dimmed and collapsed.
+ * The coach's proposed weekly plan, rendered inline in chat. Compact and
+ * scannable: one meta line up top, strictly one-line day rows (long LLM
+ * titles are shortened client-side), tight exercise rows. Nothing is saved
+ * until Accept.
  */
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Button, Card, Chip } from '@/components/ui';
+import { AppText, Button, Card } from '@/components/ui';
 import type { PlanProposalDay, PlanProposalWire } from '@/voice';
 import type { ProposalStatus } from '@/voice/useTextChat';
 
@@ -23,8 +21,31 @@ interface Props {
   onViewPlan: () => void;
 }
 
+/** '3×8–12' / '3×8' — compact, no spaces. */
 function repsLabel(sets: number, low: number, high?: number): string {
-  return high && high !== low ? `${sets} × ${low}–${high}` : `${sets} × ${low}`;
+  return high && high !== low ? `${sets}×${low}–${high}` : `${sets}×${low}`;
+}
+
+/**
+ * 'Push — Chest, Shoulders & Triceps' → 'Push'. Splits on em/en dash, colon,
+ * pipe, or a SPACED hyphen — in-word hyphens ('Full-Body') survive.
+ */
+function shortDayTitle(title: string): string {
+  const head = title.split(/\s*(?:—|–|\||:)\s*|\s+-\s+/)[0].trim();
+  return head || title;
+}
+
+/** 'Push/Pull/Legs · 3 days · ~55 min' — minutes averaged, rounded to 5. */
+function metaLine(plan: PlanProposalWire): string {
+  const parts: string[] = [];
+  if (plan.split_type) parts.push(plan.split_type);
+  parts.push(`${plan.days.length} day${plan.days.length === 1 ? '' : 's'}`);
+  const mins = plan.days.map((d) => d.est_minutes).filter(Boolean) as number[];
+  if (mins.length) {
+    const avg = Math.round(mins.reduce((a, b) => a + b, 0) / mins.length / 5) * 5;
+    parts.push(`~${avg} min`);
+  }
+  return parts.join(' · ');
 }
 
 function DayRow({
@@ -46,12 +67,12 @@ function DayRow({
             {day.day_label}
           </AppText>
         </View>
-        <AppText variant="bodyMedium" style={{ flex: 1 }}>
-          {day.title}
+        <AppText variant="bodyMedium" numberOfLines={1} style={styles.dayTitle}>
+          {shortDayTitle(day.title)}
         </AppText>
-        {!!day.est_minutes && (
+        {!expanded && (
           <AppText variant="caption" color="textSecondary">
-            ~{day.est_minutes}min
+            {day.exercises.length} exercises
           </AppText>
         )}
         <Ionicons
@@ -64,15 +85,17 @@ function DayRow({
         <View style={styles.exercises}>
           {day.exercises.map((ex, i) => (
             <View key={`${ex.exercise_name}-${i}`} style={styles.exerciseRow}>
-              <View style={{ flex: 1 }}>
-                <AppText variant="body">{ex.exercise_name}</AppText>
+              <View style={styles.exerciseName}>
+                <AppText variant="body" numberOfLines={1}>
+                  {ex.exercise_name}
+                </AppText>
                 {!!ex.note && (
-                  <AppText variant="caption" color="textSecondary">
+                  <AppText variant="caption" color="textSecondary" numberOfLines={1}>
                     {ex.note}
                   </AppText>
                 )}
               </View>
-              <AppText variant="bodyMedium" color="textSecondary">
+              <AppText variant="caption" color="textSecondary" style={styles.reps}>
                 {repsLabel(ex.sets, ex.reps_low, ex.reps_high)}
               </AppText>
             </View>
@@ -101,7 +124,7 @@ export function PlanProposalCard({
         <AppText variant="caption" color="textSecondary">
           Earlier draft — replaced by a newer plan below
         </AppText>
-        <AppText variant="bodyMedium" color="textSecondary">
+        <AppText variant="bodyMedium" color="textSecondary" numberOfLines={1}>
           {plan.name}
         </AppText>
       </Card>
@@ -111,16 +134,13 @@ export function PlanProposalCard({
   return (
     <Card style={styles.card}>
       <View style={styles.header}>
-        <AppText variant="h3" style={{ flex: 1 }}>
+        <AppText variant="h3" numberOfLines={1}>
           {plan.name}
         </AppText>
-        {!!plan.split_type && <Chip label={plan.split_type} size="sm" tone="accent" />}
-      </View>
-      {!!plan.rationale && (
-        <AppText variant="caption" color="textSecondary" style={styles.rationale}>
-          {plan.rationale}
+        <AppText variant="caption" color="textSecondary" numberOfLines={1}>
+          {metaLine(plan)}
         </AppText>
-      )}
+      </View>
 
       <View style={styles.days}>
         {plan.days.map((day, i) => (
@@ -177,12 +197,7 @@ const useStyles = makeStyles((t) => ({
     gap: spacing.xs,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  rationale: {
-    marginTop: -spacing.xs,
+    gap: spacing.xxs,
   },
   days: {
     gap: spacing.xs,
@@ -202,6 +217,7 @@ const useStyles = makeStyles((t) => ({
   dayLabelBadge: {
     minWidth: 44,
   },
+  dayTitle: { flex: 1 },
   exercises: {
     paddingBottom: spacing.sm,
     gap: spacing.sm,
@@ -211,6 +227,8 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  exerciseName: { flex: 1 },
+  reps: { fontVariant: ['tabular-nums'] },
   footer: {
     gap: spacing.sm,
     marginTop: spacing.xs,
