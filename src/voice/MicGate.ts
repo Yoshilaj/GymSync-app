@@ -71,6 +71,8 @@ export class MicGate {
   private vad: SileroVad | null = null;
   /** Starts muted; the hook unmutes when Machine A enters `listening`. */
   private muted = true;
+  /** User-requested mute (the dock's mic toggle) — independent of phase mute. */
+  private userMuted = false;
   private open = false;
   private preRoll: ArrayBuffer[] = [];
   private hangoverLeftMs = 0;
@@ -110,9 +112,45 @@ export class MicGate {
     this.silentMsSinceKeepalive = 0;
   }
 
+  /**
+   * User mute (the dock's mic toggle) — unlike phase mute it can last a whole
+   * rest period, so keepalives KEEP ticking (an idle socket behind a proxy
+   * would otherwise time out mid-workout). Nothing is retained or sent while
+   * user-muted: the ring is skipped and cleared on unmute, so words spoken
+   * with the mic "off" can never reach the server.
+   */
+  setUserMuted(muted: boolean): void {
+    if (this.userMuted === muted) return;
+    this.userMuted = muted;
+    if (muted && this.open) {
+      this.open = false;
+      this.hangoverLeftMs = 0;
+      this.events.speakingChanged(false);
+    }
+    if (!muted) {
+      this.preRoll = [];
+      this.vad?.reset();
+    }
+    this.silentMsSinceKeepalive = 0;
+    this.events.level(0);
+  }
+
+  get isUserMuted(): boolean {
+    return this.userMuted;
+  }
+
   /** Feed one mic frame. Safe to call from the mic callback (sync). */
   pushFrame(frame: ArrayBuffer): void {
     if (this.disposed) return;
+
+    // User mute: drop the frame entirely (no VAD, no ring, no levels — the
+    // waveform sits flat), but keep the keepalive clock ticking while the
+    // phase would otherwise allow sending.
+    if (this.userMuted) {
+      if (!this.muted) this.tickKeepalive();
+      return;
+    }
+
     this.emitLevel(frame);
 
     if (!this.vad) {
@@ -155,6 +193,7 @@ export class MicGate {
   reset(): void {
     if (this.open) this.events.speakingChanged(false);
     this.muted = true;
+    this.userMuted = false;
     this.open = false;
     this.preRoll = [];
     this.hangoverLeftMs = 0;
@@ -175,6 +214,14 @@ export class MicGate {
   private ringPush(frame: ArrayBuffer): void {
     this.preRoll.push(frame);
     if (this.preRoll.length > this.config.preRollFrames) this.preRoll.shift();
+  }
+
+  private tickKeepalive(): void {
+    this.silentMsSinceKeepalive += this.config.frameMs;
+    if (this.silentMsSinceKeepalive >= this.config.keepaliveIntervalMs) {
+      this.silentMsSinceKeepalive = 0;
+      this.events.keepalive();
+    }
   }
 
   private applyGate(frame: ArrayBuffer, prob: number): void {
@@ -201,11 +248,7 @@ export class MicGate {
       }
       // Still silent: remember recent audio, tick the keepalive clock.
       this.ringPush(frame);
-      this.silentMsSinceKeepalive += cfg.frameMs;
-      if (this.silentMsSinceKeepalive >= cfg.keepaliveIntervalMs) {
-        this.silentMsSinceKeepalive = 0;
-        this.events.keepalive();
-      }
+      this.tickKeepalive();
       return;
     }
 

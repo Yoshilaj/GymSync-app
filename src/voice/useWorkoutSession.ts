@@ -19,6 +19,9 @@ export interface UseWorkoutSessionArgs {
   getToken: () => Promise<string>;
   /** Optional plan to snapshot into the session at start. */
   planId?: string | null;
+  /** Which day of the plan is being trained — recorded in the snapshot so the
+   * coach's session context leads with the right workout. */
+  workoutId?: string | null;
 }
 
 export interface WorkoutSessionApi {
@@ -36,6 +39,7 @@ export interface WorkoutSessionApi {
 export function useWorkoutSession({
   getToken,
   planId = null,
+  workoutId = null,
 }: UseWorkoutSessionArgs): WorkoutSessionApi {
   const [status, setStatus] = useState<WorkoutSessionStatus>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -58,7 +62,7 @@ export function useWorkoutSession({
     }
     try {
       const token = await getToken();
-      const session: WorkoutSessionRow = await createSession(token, planId);
+      const session: WorkoutSessionRow = await createSession(token, planId, workoutId);
       sessionIdRef.current = session.id;
       if (mountedRef.current) {
         setSessionId(session.id);
@@ -72,7 +76,7 @@ export function useWorkoutSession({
       }
       return null;
     }
-  }, [getToken, planId]);
+  }, [getToken, planId, workoutId]);
 
   const end = useCallback(async () => {
     const sid = sessionIdRef.current;

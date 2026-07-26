@@ -6,7 +6,9 @@ LangGraph state machine (Step 11) will wrap _agent_events with state routing.
 """
 import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 
 from anthropic import AsyncAnthropic
 from supabase import AsyncClient
@@ -21,6 +23,8 @@ from app.config import settings
 # safety (pain/injury), plan changes, or open-ended reasoning — no extra classifier hop.
 MODEL_FAST = "claude-haiku-4-5-20251001"
 MODEL_REASONING = "claude-sonnet-4-6"
+
+logger = logging.getLogger(__name__)
 
 _anthropic: AsyncAnthropic | None = None
 
@@ -60,17 +64,18 @@ async def _load_history(
 async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
     """Compact <user_profile> block prefixed onto every turn (chat AND voice) —
     who the agent is coaching: goals, constraints, body stats, active injuries."""
-    res = await db.table("profiles").select(
-        "units, experience, goals, preferences, sex, birth_year, height_cm, "
-        "weight_kg, activity_level, training_days, session_minutes, equipment, onboarded_at"
-    ).eq("user_id", user_id).execute()
+    res, inj = await asyncio.gather(
+        db.table("profiles").select(
+            "units, experience, goals, preferences, sex, birth_year, height_cm, "
+            "weight_kg, activity_level, training_days, session_minutes, equipment, onboarded_at"
+        ).eq("user_id", user_id).execute(),
+        db.table("injuries").select(
+            "body_part, severity, avoid_movements"
+        ).eq("user_id", user_id).eq("status", "active").execute(),
+    )
     if not res.data:
         return ""
     p = res.data[0]
-
-    inj = await db.table("injuries").select(
-        "body_part, severity, avoid_movements"
-    ).eq("user_id", user_id).eq("status", "active").execute()
 
     lines = []
     for key in (
@@ -92,27 +97,194 @@ async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
     return "<user_profile>\n" + "\n".join(lines) + "\n</user_profile>\n\n"
 
 
+def _names_match(a: str | None, b: str | None) -> bool:
+    """Loose exercise-name match: the agent, the UI, and the plan snapshot each
+    write names from slightly different sources ("Bench Press" vs "bench press")."""
+    if not a or not b:
+        return False
+    a, b = a.strip().lower(), b.strip().lower()
+    return a == b or a in b or b in a
+
+
+def _fmt_set(row: dict) -> str:
+    weight = row.get("weight")
+    if weight is None:
+        return str(row.get("reps"))
+    return f"{row.get('reps')}@{weight}{row.get('weight_unit') or ''}"
+
+
+def _fmt_target(target_sets: list) -> str:
+    """'3x8' / '3x8-12' from the snapshot's camelCase PlannedSet list."""
+    n = len(target_sets or [])
+    if not n:
+        return "?"
+    first = target_sets[0] or {}
+    reps = first.get("targetReps")
+    if reps is None:
+        return f"{n} sets"
+    high = first.get("repsHigh")
+    return f"{n}x{reps}-{high}" if high else f"{n}x{reps}"
+
+
+def _pick_today_workout(
+    snapshot: dict,
+    current_exercise: str | None,
+    logged_names: list[str],
+) -> dict | None:
+    """Which day of the snapshot is being trained right now, best signal first:
+    the day the client opened (recorded at session start), then the day holding
+    current_exercise, then the day the logged sets overlap most, then weekday."""
+    workouts = snapshot.get("workouts") or []
+    if not workouts:
+        return None
+
+    today_id = snapshot.get("today_workout_id")
+    if today_id:
+        for w in workouts:
+            if w.get("id") == today_id:
+                return w
+
+    if current_exercise:
+        for w in workouts:
+            if any(_names_match(current_exercise, e.get("exercise_name")) for e in w.get("exercises") or []):
+                return w
+
+    if logged_names:
+        best, best_overlap = None, 0
+        for w in workouts:
+            plan_names = [e.get("exercise_name") for e in w.get("exercises") or []]
+            overlap = sum(1 for n in logged_names if any(_names_match(n, p) for p in plan_names))
+            if overlap > best_overlap:
+                best, best_overlap = w, overlap
+        if best:
+            return best
+
+    weekday = datetime.now(timezone.utc).strftime("%a").lower()
+    for w in workouts:
+        label = (w.get("day_label") or "").strip().lower()
+        if label[:3] == weekday:
+            return w
+    return None
+
+
+def _render_session_state(
+    current_exercise: str | None,
+    overrides: dict,
+    snapshot: dict | None,
+    sets: list[dict],
+) -> str:
+    # Group logged sets per exercise, preserving log order.
+    logged: dict[str, list[dict]] = {}
+    for row in sets:
+        logged.setdefault(row.get("exercise_name") or "?", []).append(row)
+
+    lines: list[str] = []
+    today = _pick_today_workout(snapshot, current_exercise, list(logged)) if snapshot else None
+
+    if today:
+        title = today.get("title") or "Workout"
+        day = today.get("day_label")
+        lines.append(f"today_workout: {title}" + (f" ({day})" if day else ""))
+
+        exercises = today.get("exercises") or []
+        matched: set[str] = set()
+
+        def _sets_for(plan_name: str | None) -> list[dict]:
+            for name, rows in logged.items():
+                if name not in matched and _names_match(name, plan_name):
+                    matched.add(name)
+                    return rows
+            return []
+
+        per_exercise = [(e, _sets_for(e.get("exercise_name"))) for e in exercises]
+
+        # CURRENT = the client-reported exercise if it's in today's list, else the
+        # first exercise that still has sets left, else the first exercise.
+        current_idx = next(
+            (i for i, (e, _) in enumerate(per_exercise)
+             if _names_match(current_exercise, e.get("exercise_name"))),
+            None,
+        )
+        if current_idx is None:
+            current_idx = next(
+                (i for i, (e, rows) in enumerate(per_exercise)
+                 if len(rows) < len(e.get("target_sets") or []) or not e.get("target_sets")),
+                0 if per_exercise else None,
+            )
+
+        lines.append("exercises (in order):")
+        for i, (e, rows) in enumerate(per_exercise):
+            name = e.get("exercise_name") or "Exercise"
+            planned = len(e.get("target_sets") or [])
+            done = ", ".join(_fmt_set(r) for r in rows)
+            if rows and planned and len(rows) >= planned:
+                status = f"DONE ({done})"
+            elif rows:
+                status = f"IN PROGRESS {len(rows)}/{planned or '?'} ({done})"
+            else:
+                status = "not started"
+            marker = "   <- CURRENT" if i == current_idx else ""
+            lines.append(f"{i + 1}. {name} — {_fmt_target(e.get('target_sets'))} — {status}{marker}")
+
+        for name, rows in logged.items():
+            if name not in matched:
+                lines.append(f"extra: {name} — {', '.join(_fmt_set(r) for r in rows)}")
+
+        resolved_current = current_exercise
+        if not resolved_current and current_idx is not None and per_exercise:
+            resolved_current = per_exercise[current_idx][0].get("exercise_name")
+        lines.append(f"current_exercise: {resolved_current or 'none'}")
+    else:
+        # No day resolved (freeform session, or no plan): fall back to the plan's
+        # day list plus the grouped log — the model can still call get_workout_plan.
+        if snapshot and snapshot.get("workouts"):
+            days = ", ".join(
+                f"{w.get('title') or 'Workout'} ({w.get('day_label')})" if w.get("day_label")
+                else (w.get("title") or "Workout")
+                for w in snapshot["workouts"]
+            )
+            lines.append(f"plan_days: {days}")
+        lines.append(f"current_exercise: {current_exercise or 'none'}")
+        for name, rows in logged.items():
+            lines.append(f"logged: {name} — {', '.join(_fmt_set(r) for r in rows)}")
+
+    if overrides:
+        lines.append(f"overrides: {json.dumps(overrides)}")
+    lines.append(
+        "If the user mentions a set/reps/weight WITHOUT naming an exercise, "
+        "it is for the CURRENT exercise."
+    )
+    return "<session_state>\n" + "\n".join(lines) + "\n</session_state>\n\n"
+
+
 async def _load_session_context(session_id: str | None, db: AsyncClient) -> str:
+    """Compact <session_state> block for live-workout turns: today's exercises in
+    order with every set logged so far, the CURRENT position, and any overrides.
+    Best-effort by contract — session context is an enhancement and must never
+    kill a turn (a stale session_id used to raise out of `.single()` here)."""
     if not session_id:
         return ""
-    res = await db.table("workout_sessions").select(
-        "current_exercise, session_overrides"
-    ).eq("id", session_id).single().execute()
-    if not res.data:
+    try:
+        res, sets_res = await asyncio.gather(
+            db.table("workout_sessions").select(
+                "current_exercise, session_overrides, plan_snapshot"
+            ).eq("id", session_id).maybe_single().execute(),
+            db.table("completed_sets").select(
+                "exercise_name, set_index, reps, weight, weight_unit"
+            ).eq("session_id", session_id).order("logged_at").limit(40).execute(),
+        )
+        if res is None or not res.data:
+            return ""
+        s = res.data
+        return _render_session_state(
+            s.get("current_exercise"),
+            s.get("session_overrides") or {},
+            s.get("plan_snapshot"),
+            sets_res.data or [],
+        )
+    except Exception:
+        logger.exception("session context unavailable for session %s", session_id)
         return ""
-    s = res.data
-    # Recent sets logged this session (compact). The full plan is fetched on demand
-    # via the get_workout_plan tool, so it stays out of every turn's context.
-    sets_res = await db.table("completed_sets").select(
-        "exercise_name, reps, weight, weight_unit"
-    ).eq("session_id", session_id).order("logged_at", desc=True).limit(15).execute()
-    return (
-        f"<session_state>\n"
-        f"current_exercise: {s.get('current_exercise') or 'none'}\n"
-        f"sets_logged_this_session: {json.dumps(sets_res.data or [])}\n"
-        f"overrides: {json.dumps(s.get('session_overrides') or {})}\n"
-        f"</session_state>\n\n"
-    )
 
 
 async def _save_history(
@@ -164,10 +336,14 @@ async def _agent_events(
     client = _get_client()
     ctx = ToolContext(user_id=user_id, session_id=session_id, db=db)
 
-    personality = await _load_personality(user_id, db)
-    history = await _load_history(session_id, conversation_id, db)
-    session_ctx = await _load_session_context(session_id, db)
-    profile_ctx = await _load_profile_context(user_id, db)
+    # Independent reads — run concurrently; on a voice turn this is the bulk of
+    # the pre-model latency.
+    personality, history, session_ctx, profile_ctx = await asyncio.gather(
+        _load_personality(user_id, db),
+        _load_history(session_id, conversation_id, db),
+        _load_session_context(session_id, db),
+        _load_profile_context(user_id, db),
+    )
 
     system_text = build_system_prompt(
         personality["preset_id"], personality.get("system_prompt_override")
@@ -242,7 +418,12 @@ async def _agent_events(
             ]
 
     except Exception as exc:
-        yield {"type": "error", "message": str(exc)}
+        # Mid-stream failure: by the time this fires, earlier deltas may already be
+        # spoken/rendered. Non-fatal + a trailing done keeps the client's turn state
+        # machine intact (it returns to listening instead of hanging in thinking).
+        logger.exception("agent turn failed")
+        yield {"type": "error", "message": str(exc), "fatal": False}
+        yield {"type": "done"}
 
 
 async def run_chat_agent(

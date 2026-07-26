@@ -111,6 +111,13 @@ export type ServerMessage =
       plan: PlanProposalWire;
       warnings?: string[];
     }
+  /**
+   * Voice mode: the binary MP3 chunks received since the previous segment_end
+   * form one complete, independently playable MP3 (the ack, or one sentence).
+   * Play it immediately — don't wait for `done`. Older servers never send
+   * this; the client then plays the whole buffered turn on `done` (legacy).
+   */
+  | { type: 'segment_end' }
   | { type: 'done' }
   /**
    * fatal:false = per-turn failure (e.g. TTS down), always followed by `done` —

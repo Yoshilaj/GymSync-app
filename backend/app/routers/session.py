@@ -14,6 +14,7 @@ router = APIRouter(tags=["session"])
 
 class SessionStart(BaseModel):
     plan_id: str | None = None  # if provided, snapshot is copied from workout_plans
+    workout_id: str | None = None  # which day of the plan the user opened
 
 
 class SessionPatch(BaseModel):
@@ -67,6 +68,12 @@ async def start_session(
     plan_snapshot = None
     if plan_id:
         plan_snapshot = await _build_plan_snapshot(plan_id, user_id, db)
+        # Record which day is being trained — the coach's session context leads
+        # with it instead of guessing the day from logged sets or the weekday.
+        if body.workout_id and any(
+            w.get("id") == body.workout_id for w in plan_snapshot.get("workouts", [])
+        ):
+            plan_snapshot["today_workout_id"] = body.workout_id
 
     res = await db.table("workout_sessions").insert(
         {

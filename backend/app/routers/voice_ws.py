@@ -27,6 +27,12 @@ Server → Client:
   {"type": "text_delta",  "text": "..."}   ← LLM streaming (text mode); in voice mode
                                               only as the TTS-failure text fallback
   {"type": "app_action",  "action": "..."}
+  {"type": "segment_end"}                   ← voice mode: the binary MP3 chunks sent
+                                              since the last segment_end form one
+                                              complete, independently playable MP3
+                                              (the ack, or one sentence). Client
+                                              plays it immediately — no waiting
+                                              for "done"
   {"type": "done"}
   {"type": "error", "message": "...", "fatal": bool}
                                             ← fatal:false = per-turn failure, always

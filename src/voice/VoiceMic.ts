@@ -53,16 +53,31 @@ function getModule(): AudioRecordModule {
  * Ask for mic permission and put the audio session into record mode.
  * Returns false if the user denied access (caller should surface an error).
  */
-export async function ensureMicAccess(): Promise<boolean> {
-  const { granted } = await requestRecordingPermissionsAsync();
-  if (!granted) return false;
+/**
+ * (Re-)apply the shared audio-session mode — no permission prompt. expo-audio
+ * players reconfigure the iOS session on create/remove, which silently kills
+ * recording; call this again after coach playback ends to revive it.
+ */
+export async function reassertAudioMode(): Promise<void> {
   await setAudioModeAsync({
     allowsRecording: true,
     playsInSilentMode: true, // coach replies must play through the silent switch (M3)
-    interruptionMode: 'doNotMix',
-    shouldPlayInBackground: false,
+    // Duck (don't kill) the user's music: gym sessions run on top of Spotify.
+    // True per-utterance pause/resume isn't possible on iOS without dropping
+    // our own audio session — which would also drop the background mic.
+    interruptionMode: 'duckOthers',
+    // With UIBackgroundModes:["audio"] (app.json) this keeps the audio session —
+    // and therefore the mic, the VAD gate, and the socket — alive when the
+    // screen locks: the whole hands-free loop runs from the pocket.
+    shouldPlayInBackground: true,
     shouldRouteThroughEarpiece: false,
   });
+}
+
+export async function ensureMicAccess(): Promise<boolean> {
+  const { granted } = await requestRecordingPermissionsAsync();
+  if (!granted) return false;
+  await reassertAudioMode();
   return true;
 }
 
@@ -89,6 +104,16 @@ export const voiceMic = {
     } catch {
       /* already stopped / native teardown race — ignore */
     }
+  },
+
+  /**
+   * Force-restart the recorder (stop + start). `.on()` replaces the prior
+   * listener, so re-registering is safe. Used to re-arm capture after coach
+   * playback disturbed the shared audio session.
+   */
+  async restart(onFrame: PcmFrameHandler): Promise<void> {
+    await this.stop();
+    this.start(onFrame);
   },
 
   get isRunning(): boolean {

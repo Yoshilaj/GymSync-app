@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated } from 'react-native';
+import { Animated, AppState } from 'react-native';
 import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
-import { voiceMic, ensureMicAccess } from './VoiceMic';
+import { voiceMic, ensureMicAccess, reassertAudioMode } from './VoiceMic';
 import { voicePlayer } from './VoicePlayer';
 import { MicGate } from './MicGate';
 import { SileroVad } from './SileroVad';
@@ -47,6 +47,14 @@ export interface VoiceSessionApi {
   micWaveform: WaveformSource;
   /** The workout session this voice connection is attached to (if any). */
   sessionId: string | null;
+  /** User-requested mic mute (the dock toggle) — the session stays connected. */
+  micMuted: boolean;
+  /**
+   * Mute/unmute the mic without touching the session: the recorder keeps
+   * running (it holds the iOS audio session alive) but nothing recorded while
+   * muted is ever sent — the gate drops the frames outright.
+   */
+  setMicMuted: (muted: boolean) => void;
   /**
    * Open the socket and start streaming mic audio. Pass the id of an existing
    * workout session to attach to it, or null/omit for a session-less chat.
@@ -77,6 +85,7 @@ export function useVoiceSession({
   const [notice, setNotice] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [micMuted, setMicMutedState] = useState(false);
 
   const socketRef = useRef<VoiceSocket | null>(null);
   // Mic gate (Machine B) + its VAD. Created once per hook; reset per session.
@@ -147,6 +156,11 @@ export function useVoiceSession({
     [goto],
   );
 
+  const setMicMuted = useCallback((muted: boolean) => {
+    gateRef.current?.setUserMuted(muted);
+    if (mountedRef.current) setMicMutedState(muted);
+  }, []);
+
   // Non-fatal problem (TTS down, one turn lost): surface it without leaving
   // the session — the server always follows with `done`, so the phase machine
   // recovers on its own.
@@ -158,6 +172,14 @@ export function useVoiceSession({
       noticeTimerRef.current = null;
       if (mountedRef.current) setNotice(null);
     }, NOTICE_MS);
+  }, []);
+
+  // Stable frame handler shared by start, re-arm, and the watchdog. Stamps
+  // the arrival time so a dead recorder (no frames) is detectable.
+  const lastFrameAtRef = useRef(0);
+  const handleFrame = useCallback((frame: ArrayBuffer) => {
+    lastFrameAtRef.current = Date.now();
+    gateRef.current?.pushFrame(frame);
   }, []);
 
   // Start mic capture and route EVERY frame through the gate, in all phases —
@@ -172,27 +194,40 @@ export function useVoiceSession({
         return;
       }
       if (!mountedRef.current || phaseRef.current === 'idle') return;
-      const gate = ensureGate();
-      voiceMic.start((frame) => {
-        gate.pushFrame(frame);
-      });
+      ensureGate();
+      voiceMic.start(handleFrame);
     } catch (e) {
       fail(e instanceof Error ? e.message : 'Microphone failed to start');
     }
-  }, [fail, ensureGate]);
+  }, [fail, ensureGate, handleFrame]);
 
-  // Drain the coach's buffered audio for this turn, then return to listening.
-  // Awaiting playback keeps the mic muted (half-duplex) until the coach is done.
+  // Coach playback (expo-audio players) reconfigures the shared iOS audio
+  // session and can silently kill the recorder — re-assert the mode and
+  // restart capture. Cheap (~100ms) and runs while the gate is phase-muted,
+  // so the capture hole is invisible to the server.
+  const rearmMic = useCallback(async () => {
+    try {
+      await reassertAudioMode();
+      await voiceMic.restart(handleFrame);
+    } catch (e) {
+      console.warn('[useVoiceSession] mic re-arm failed', e);
+    }
+  }, [handleFrame]);
+
+  // Drain the coach's remaining audio for this turn, re-arm the mic if any
+  // playback disturbed the audio session, then return to listening. Awaiting
+  // the drain keeps the mic muted (half-duplex) until the coach is done.
   const finishTurn = useCallback(async () => {
     try {
-      await voicePlayer.playTurn();
+      const played = await voicePlayer.playTurn();
+      if (played) await rearmMic();
     } finally {
       // Don't override a deliberate stop() or an error that landed mid-playback.
       if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') {
         goto('listening');
       }
     }
-  }, [goto]);
+  }, [goto, rearmMic]);
 
   const handleMessage = useCallback(
     (msg: ServerMessage) => {
@@ -219,8 +254,13 @@ export function useVoiceSession({
           if (phaseRef.current === 'thinking') goto('coach_speaking');
           cb.onText?.(msg.text);
           break;
+        case 'segment_end':
+          // One complete MP3 (the ack, or a sentence) — play it now, while the
+          // rest of the reply is still being generated.
+          voicePlayer.endSegment();
+          break;
         case 'done':
-          // Turn finished — play any buffered coach audio, then back to listening.
+          // Turn finished — drain remaining coach audio, then back to listening.
           void finishTurn();
           break;
         case 'error':
@@ -305,6 +345,7 @@ export function useVoiceSession({
         setError(null);
         setNotice(null);
         setSessionId(attachSessionId);
+        setMicMutedState(false); // fresh sessions always start unmuted
       }
       sessionIdRef.current = attachSessionId;
       reconnectTriedRef.current = false;
@@ -343,8 +384,43 @@ export function useVoiceSession({
     }
     socketRef.current = null;
     sessionIdRef.current = null;
-    if (mountedRef.current) setSessionId(null);
+    if (mountedRef.current) {
+      setSessionId(null);
+      setMicMutedState(false); // gate.reset() above already cleared user mute
+    }
   }, [goto]);
+
+  // Watchdog: the per-turn re-arm covers playback-induced recorder death, but
+  // an OS-level session steal (Siri, a call) can kill it at any time. On each
+  // entry to `listening`, verify a frame actually arrived; if not, re-arm once.
+  useEffect(() => {
+    if (phase !== 'listening') return;
+    const entered = Date.now();
+    const t = setTimeout(() => {
+      if (phaseRef.current !== 'listening') return;
+      if (!voiceMic.isRunning) return; // startMic still in flight — don't race it
+      if (AppState.currentState !== 'active') return; // backgrounded ≠ dead mic
+      if (lastFrameAtRef.current >= entered) return; // frames flowing — healthy
+      void rearmMic();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [phase, rearmMic]);
+
+  // Coming back from a suspension (phone call, Siri, a long lock without the
+  // background-audio session) can outlive the single auto-reconnect — its 500ms
+  // timer fires while the JS VM is still frozen. When the app is foregrounded
+  // again with a dead session, quietly try once more.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      if (phaseRef.current === 'error' && sessionIdRef.current) {
+        reconnectTriedRef.current = false;
+        if (mountedRef.current) setError(null);
+        void connect(sessionIdRef.current);
+      }
+    });
+    return () => sub.remove();
+  }, [connect]);
 
   // Tear down on unmount so a backgrounded screen doesn't leak the socket.
   useEffect(() => {
@@ -369,6 +445,8 @@ export function useVoiceSession({
     micLevel,
     micWaveform,
     sessionId,
+    micMuted,
+    setMicMuted,
     start,
     stop,
   };

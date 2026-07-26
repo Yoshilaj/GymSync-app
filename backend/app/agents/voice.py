@@ -13,6 +13,7 @@ text_delta frames, and the turn still ends with {"type": "done"}.
 """
 import asyncio
 import logging
+import random
 import re
 
 from deepgram import (
@@ -44,6 +45,63 @@ def _pop_sentences(text: str) -> tuple[list[str], str]:
     return [], text
 
 
+# ── Speech sanitation ────────────────────────────────────────────────────────
+# The agent writes for two surfaces: the chat UI, where markdown renders, and
+# TTS, where markdown is read aloud ("**bench press**" → "star star bench
+# press"). Sanitize deterministically on the TTS path only — the text_delta
+# fallback keeps the raw text for the client to render. Order matters: bullets
+# before emphasis (so "* item" isn't parsed as italics), ranged "3x8-12"
+# before plain "5x5".
+_SANITIZE_RULES: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"```[\s\S]*?```"), " "),                     # fenced code blocks
+    (re.compile(r"^```.*$", re.MULTILINE), ""),               # stray fence line
+    (re.compile(r"^\s{0,3}#{1,6}\s+", re.MULTILINE), ""),     # headers
+    (re.compile(r"^\s*>\s?", re.MULTILINE), ""),              # blockquotes
+    (re.compile(r"^\s*[-*•]\s+", re.MULTILINE), ""),          # bullet markers
+    (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),            # [label](url) → label
+    (re.compile(r"https?://\S+"), ""),                        # bare URLs
+    (re.compile(r"`([^`]*)`"), r"\1"),                        # inline code
+    (re.compile(r"\*{1,3}([^*\n]+)\*{1,3}"), r"\1"),          # *em* / **bold**
+    (re.compile(r"__([^_\n]+)__"), r"\1"),                    # __bold__ (single _ kept)
+    (re.compile(r"\b(\d+)\s*[xX×]\s*(\d+)\s*[-–]\s*(\d+)\b"), r"\1 by \2 to \3"),
+    (re.compile(r"\b(\d+)\s*[xX×]\s*(\d+)\b"), r"\1 by \2"),
+    (re.compile(r"\b(\d+)\s*[-–]\s*(\d+)(?=\s*(?:reps?|sets?)\b)"), r"\1 to \2"),
+]
+
+
+def _sanitize_for_speech(text: str) -> str:
+    """Markdown/notation → plain speakable text. May return "" (pure-markdown
+    input) — callers skip TTS entirely in that case."""
+    for pattern, repl in _SANITIZE_RULES:
+        text = pattern.sub(repl, text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+# ── Instant acknowledgments ──────────────────────────────────────────────────
+# Played as the first audio segment of every turn, before the agent runs, so
+# the user hears they were heard (~0s vs the full think+TTS latency). Audio
+# only — never a text_delta, never in history.
+_ACK_PHRASES: dict[str, list[str]] = {
+    "classic": ["Got it.", "Understood.", "Noted.", "On it."],
+    "supportive": ["Got it!", "Okay!", "Sure thing.", "I hear you."],
+    "energetic": ["LET'S GO!", "On it!", "Heard!", "Boom!"],
+}
+# (preset_id, phrase) → MP3 bytes, cached for the process lifetime (~20KB each).
+# Benign race if two sessions warm the same key concurrently — last write wins.
+_ack_cache: dict[tuple[str, str], bytes] = {}
+
+
+async def _ack_audio(preset_id: str, phrase: str) -> bytes | None:
+    key = (preset_id, phrase)
+    if key not in _ack_cache:
+        try:
+            _ack_cache[key] = b"".join([c async for c in synthesize(phrase, preset_id)])
+        except Exception:  # incl. TTSError — acks are best-effort by contract
+            logger.warning("ack synthesis failed for %s", key, exc_info=True)
+            return None
+    return _ack_cache[key]
+
+
 class VoiceSession:
     """
     Manages one live voice session per WebSocket connection.
@@ -69,11 +127,19 @@ class VoiceSession:
         self._stopping = False
         self._dg_recovering = False
         self._dg_restarted = False
+        # Preset cached per session (one DB query, not one per utterance); a
+        # mid-session personality switch takes effect on the next connect.
+        self._preset_id: str | None = None
+        self._ack_warm_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """Open Deepgram connection and start the transcript processor."""
         await self._open_deepgram()
         self._processor_task = asyncio.create_task(self._process_transcripts())
+        # Warm the ack audio in the background so the first turn's ack is a
+        # cache hit instead of a live TTS call.
+        self._preset_id = await self._get_preset_id()
+        self._ack_warm_task = asyncio.create_task(self._prewarm_acks())
 
     async def feed_audio(self, chunk: bytes) -> None:
         """Forward a raw PCM chunk from the client to Deepgram."""
@@ -91,6 +157,8 @@ class VoiceSession:
     async def stop(self) -> None:
         """Tear down the Deepgram connection and wait for the processor to finish."""
         self._stopping = True
+        if self._ack_warm_task and not self._ack_warm_task.done():
+            self._ack_warm_task.cancel()
         await self._transcript_q.put(None)   # sentinel to stop processor loop
         if self._dg:
             await self._dg.finish()
@@ -189,6 +257,31 @@ class VoiceSession:
         )
         return res.data[0]["preset_id"] if res.data else "supportive"
 
+    async def _preset(self) -> str:
+        """Session-cached preset id (start() populates it; this is the fallback)."""
+        if self._preset_id is None:
+            self._preset_id = await self._get_preset_id()
+        return self._preset_id
+
+    async def _prewarm_acks(self) -> None:
+        preset_id = self._preset_id or "supportive"
+        phrases = _ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"])
+        await asyncio.gather(*(_ack_audio(preset_id, p) for p in phrases))
+
+    async def _send_ack(self, preset_id: str) -> None:
+        """Instant spoken acknowledgment — the turn's first audio segment.
+        Best-effort: any failure is swallowed and the turn proceeds silently."""
+        try:
+            phrase = random.choice(_ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"]))
+            audio = await _ack_audio(preset_id, phrase)
+            if not audio:
+                return
+            async with self._ws_lock:
+                await self._ws.send_bytes(audio)
+                await self._ws.send_json({"type": "segment_end"})
+        except Exception:
+            logger.warning("ack send failed", exc_info=True)
+
     async def _process_transcripts(self) -> None:
         while True:
             transcript = await self._transcript_q.get()
@@ -219,7 +312,10 @@ class VoiceSession:
         async with self._ws_lock:
             await self._ws.send_json({"type": "transcript", "text": transcript})
 
-        preset_id = await self._get_preset_id()
+        preset_id = await self._preset()
+        # Heard-you feedback before the agent even starts thinking.
+        await self._send_ack(preset_id)
+
         tts_buffer = ""
         tts_failed = False
 
@@ -230,7 +326,11 @@ class VoiceSession:
                 return
             if not tts_failed:
                 try:
-                    await self._tts_and_send(sentence, preset_id)
+                    # Sanitized on the audio path only — the text fallback below
+                    # keeps the raw sentence for the client to render.
+                    spoken = _sanitize_for_speech(sentence)
+                    if spoken:
+                        await self._tts_and_send(spoken, preset_id)
                     return
                 except TTSError as exc:
                     tts_failed = True
@@ -248,6 +348,7 @@ class VoiceSession:
                     {"type": "text_delta", "text": sentence.rstrip() + " "}
                 )
 
+        done_sent = False
         async for event in _agent_events(transcript, self._session_id, self._user_id, self._db):
             if event["type"] == "text_delta":
                 tts_buffer += event["text"]
@@ -263,8 +364,27 @@ class VoiceSession:
                 await _speak(tts_buffer)
                 async with self._ws_lock:
                     await self._ws.send_json({"type": "done"})
+                done_sent = True
+
+        # Structural invariant: every turn ends with `done`, even if an upstream
+        # generator ends early without one — the client's phase machine depends
+        # on it to leave `thinking`/`coach_speaking`. (Raised exceptions are
+        # handled by _process_transcripts, which sends error + done itself.)
+        if not done_sent:
+            await _speak(tts_buffer)
+            async with self._ws_lock:
+                await self._ws.send_json({"type": "done"})
 
     async def _tts_and_send(self, text: str, preset_id: str) -> None:
-        async for chunk in synthesize(text, preset_id):
-            async with self._ws_lock:
-                await self._ws.send_bytes(chunk)
+        sent_any = False
+        try:
+            async for chunk in synthesize(text, preset_id):
+                sent_any = True
+                async with self._ws_lock:
+                    await self._ws.send_bytes(chunk)
+        finally:
+            # segment_end even when synthesize dies mid-stream: it isolates the
+            # partial MP3 in its own segment so the next sentence starts clean.
+            if sent_any:
+                async with self._ws_lock:
+                    await self._ws.send_json({"type": "segment_end"})

@@ -372,6 +372,12 @@ async def execute_tool(
             row["weight_unit"] = args.get("weight_unit", "lbs")
         await ctx.db.table("completed_sets").insert(row).execute()
 
+        # Logging IS the position signal for hands-free users, who never tap
+        # "next exercise" in the UI — keep the session's current_exercise fresh.
+        await ctx.db.table("workout_sessions").update(
+            {"current_exercise": exercise_name, "updated_at": utcnow()}
+        ).eq("id", ctx.session_id).execute()
+
         ctx.app_actions.append({
             "type": "app_action",
             "action": "log_set",

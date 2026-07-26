@@ -1,25 +1,45 @@
 /**
- * Coach audio playback for the voice client (Milestone 3).
+ * Coach audio playback for the voice client — segment-streaming edition.
  *
- * The backend sends the coach's reply as a single MP3 stream split into
- * arbitrary binary WebSocket frames — the chunks are NOT independently
- * decodable, so we buffer a turn's chunks, concatenate them into one MP3,
- * stage it to a cache file, and play the whole thing when the turn ends.
+ * The backend TTSes the reply sentence-by-sentence and marks each complete,
+ * independently playable MP3 with a {"type":"segment_end"} frame. Chunks
+ * accumulate in a segment buffer; each segment_end stages the buffer to its
+ * own cache file and queues it, and a sequential playback loop starts on the
+ * FIRST segment — the coach starts talking while the rest of the reply is
+ * still being generated. `playTurn()` (called on `done`) flushes any
+ * remainder and waits for the queue to drain. Old servers that never send
+ * segment_end degrade gracefully: everything buffers until `done`, then plays
+ * as one segment — the legacy whole-turn behavior.
  *
- * Waveform: while a turn plays, `voicePlayer.waveform` emits RMS buckets for
- * the coach-side VoiceWaveform. Primary source is expo-audio's (hidden)
+ * Waveform: while a segment plays, `voicePlayer.waveform` emits RMS buckets
+ * for the coach-side VoiceWaveform. Primary source is expo-audio's (hidden)
  * playback-sample API — real signal. It's probed at runtime: if no sample
  * arrives shortly after playback starts, we flag it dead for the app run and
- * fall back to a DECORATIVE low-passed random-walk envelope gated by
- * isPlaying (clearly synthetic; better than a frozen line).
+ * fall back to a DECORATIVE low-passed random-walk envelope. The envelope and
+ * the final emit([0]) are managed at turn granularity, not per segment, so
+ * the wave doesn't flicker to zero between sentences.
  */
 import { AudioPlayer, AudioStatus, createAudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { LevelEmitter } from './levels';
 
-let chunks: Uint8Array[] = [];
-let player: AudioPlayer | null = null;
+/** Upper bound for one segment (a single sentence). A corrupt file may never
+ * fire didJustFinish (AudioStatus carries no error), so the loop must not
+ * hang on it forever. */
+const SEGMENT_TIMEOUT_MS = 30_000;
+
+let segBuf: Uint8Array[] = [];        // chunks of the segment being received
+let queue: File[] = [];               // staged, ready-to-play segment files
+let loopRunning = false;
+/** Bumped by stop(); invalidates the running loop and any in-flight playFile. */
+let epoch = 0;
+let activePlayer: AudioPlayer | null = null;
+let activeResolve: (() => void) | null = null;
+let idleWaiters: (() => void)[] = [];
+/** True once any segment was staged this turn — drives the caller's mic re-arm. */
+let playedThisTurn = false;
 let turnSeq = 0;
+let segSeq = 0;
 
 const waveformEmitter = new LevelEmitter();
 
@@ -59,11 +79,6 @@ function rmsBucket(frames: number[], start: number, end: number): number {
   return Math.min(1, rms * 2.5);
 }
 
-/** True while the current turn has buffered audio not yet played. */
-function hasBuffered(): boolean {
-  return chunks.length > 0;
-}
-
 function concatChunks(parts: Uint8Array[]): Uint8Array {
   let total = 0;
   for (const p of parts) total += p.length;
@@ -76,119 +91,203 @@ function concatChunks(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
+/**
+ * Play one staged segment file. Resolves when playback finishes, hits the
+ * safety timeout, or is cancelled by stop() (epoch bump + activeResolve).
+ * Player teardown happens here; file deletion is the loop's job.
+ */
+function playFile(file: File, myEpoch: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const p = createAudioPlayer(file.uri);
+    activePlayer = p;
+
+    // Probe the hidden playback-sample API for the real coach waveform.
+    let sampleSeen = false;
+    let sampleSub: { remove: () => void } | null = null;
+    const hidden = p as unknown as {
+      setAudioSamplingEnabled?: (enabled: boolean) => void;
+    };
+    if (!samplingDead && typeof hidden.setAudioSamplingEnabled === 'function') {
+      try {
+        hidden.setAudioSamplingEnabled(true);
+        sampleSub = (p.addListener as (ev: string, cb: (d: unknown) => void) => { remove: () => void })(
+          'audioSampleUpdate',
+          (data) => {
+            sampleSeen = true;
+            const frames =
+              (data as { channels?: { frames?: number[] }[] })?.channels?.[0]
+                ?.frames ?? [];
+            if (!frames.length) return;
+            const half = Math.floor(frames.length / 2);
+            waveformEmitter.emit(
+              half > 0
+                ? [rmsBucket(frames, 0, half), rmsBucket(frames, half, frames.length)]
+                : [rmsBucket(frames, 0, frames.length)],
+            );
+          },
+        );
+      } catch {
+        samplingDead = true;
+      }
+    }
+    const probeTimer = setTimeout(() => {
+      if (!sampleSeen) {
+        if (!samplingDead) {
+          samplingDead = true;
+          console.log(
+            '[VoicePlayer] audioSampleUpdate never fired — using decorative envelope',
+          );
+        }
+        startFallbackEnvelope();
+      }
+    }, 400);
+    if (samplingDead) startFallbackEnvelope();
+
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(probeTimer);
+      clearTimeout(safetyTimer);
+      sub.remove();
+      sampleSub?.remove();
+      // Envelope/emit([0]) are turn-level (loop drain / stop), not per segment.
+      try {
+        p.remove();
+      } catch {
+        /* already released */
+      }
+      if (activePlayer === p) {
+        activePlayer = null;
+        activeResolve = null;
+      }
+      resolve();
+    };
+
+    const safetyTimer = setTimeout(finish, SEGMENT_TIMEOUT_MS);
+    const sub = p.addListener('playbackStatusUpdate', (status: AudioStatus) => {
+      if (!status.didJustFinish) return;
+      finish();
+    });
+    // stop() invokes the FULL cleanup (timers, listeners), not just the
+    // resolve — otherwise the pending probe timer could restart the
+    // decorative envelope after teardown.
+    activeResolve = finish;
+
+    if (epoch !== myEpoch) {
+      // stop() landed between queueing and starting this file.
+      finish();
+      return;
+    }
+    p.play();
+  });
+}
+
+async function runLoop(): Promise<void> {
+  loopRunning = true;
+  const myEpoch = epoch;
+  while (queue.length > 0 && epoch === myEpoch) {
+    const file = queue.shift()!;
+    try {
+      await playFile(file, myEpoch);
+    } catch (e) {
+      console.warn('[VoicePlayer] segment failed, skipping', e);
+    } finally {
+      try {
+        file.delete();
+      } catch {
+        /* cache file may be gone */
+      }
+    }
+  }
+  loopRunning = false;
+  if (epoch === myEpoch) {
+    // Natural drain (stop() handles its own cleanup on cancellation).
+    stopFallbackEnvelope();
+    waveformEmitter.emit([0]);
+    turnSeq++;
+    segSeq = 0;
+  }
+  const waiters = idleWaiters;
+  idleWaiters = [];
+  waiters.forEach((w) => w());
+}
+
 export const voicePlayer = {
   /** Coach-speech level feed for the waveform UI. */
   waveform: waveformEmitter,
 
-  /** Buffer one MP3 chunk from the socket. */
+  /** Buffer one MP3 chunk of the current segment. */
   enqueue(chunk: ArrayBuffer): void {
-    chunks.push(new Uint8Array(chunk));
+    segBuf.push(new Uint8Array(chunk));
   },
 
   get hasPending(): boolean {
-    return hasBuffered();
+    return segBuf.length > 0 || queue.length > 0 || loopRunning;
   },
 
   /**
-   * Play everything buffered for this turn. Resolves when playback finishes,
-   * or immediately if nothing was buffered (e.g. a text-only turn).
+   * The chunks received since the last marker form one complete MP3 — stage
+   * it and start playing if idle. No-op on an empty buffer (duplicate or
+   * bytes-free markers are harmless).
    */
-  async playTurn(): Promise<void> {
-    const buffered = chunks;
-    chunks = [];
-    if (buffered.length === 0) return;
-
-    // Stage the concatenated MP3 to a cache file — expo-audio plays from a file URI.
-    const mp3 = concatChunks(buffered);
-    const file = new File(Paths.cache, `coach-turn-${turnSeq++}.mp3`);
-    if (file.exists) file.delete();
-    file.create();
-    file.write(mp3);
-
-    // Tear down any leftover player before starting a new one.
-    await this.stop();
-
-    await new Promise<void>((resolve) => {
-      const p = createAudioPlayer(file.uri);
-      player = p;
-
-      // Probe the hidden playback-sample API for the real coach waveform.
-      let sampleSeen = false;
-      let sampleSub: { remove: () => void } | null = null;
-      const hidden = p as unknown as {
-        setAudioSamplingEnabled?: (enabled: boolean) => void;
-      };
-      if (!samplingDead && typeof hidden.setAudioSamplingEnabled === 'function') {
-        try {
-          hidden.setAudioSamplingEnabled(true);
-          sampleSub = (p.addListener as (ev: string, cb: (d: unknown) => void) => { remove: () => void })(
-            'audioSampleUpdate',
-            (data) => {
-              sampleSeen = true;
-              const frames =
-                (data as { channels?: { frames?: number[] }[] })?.channels?.[0]
-                  ?.frames ?? [];
-              if (!frames.length) return;
-              const half = Math.floor(frames.length / 2);
-              waveformEmitter.emit(
-                half > 0
-                  ? [rmsBucket(frames, 0, half), rmsBucket(frames, half, frames.length)]
-                  : [rmsBucket(frames, 0, frames.length)],
-              );
-            },
-          );
-        } catch {
-          samplingDead = true;
-        }
-      }
-      const probeTimer = setTimeout(() => {
-        if (!sampleSeen) {
-          if (!samplingDead) {
-            samplingDead = true;
-            console.log(
-              '[VoicePlayer] audioSampleUpdate never fired — using decorative envelope',
-            );
-          }
-          startFallbackEnvelope();
-        }
-      }, 400);
-      if (samplingDead) startFallbackEnvelope();
-
-      const cleanupWaveform = () => {
-        clearTimeout(probeTimer);
-        sampleSub?.remove();
-        stopFallbackEnvelope();
-        waveformEmitter.emit([0]);
-      };
-
-      const sub = p.addListener('playbackStatusUpdate', (status: AudioStatus) => {
-        if (!status.didJustFinish) return;
-        sub.remove();
-        cleanupWaveform();
-        try {
-          p.remove();
-        } catch {
-          /* already released */
-        }
-        try {
-          file.delete();
-        } catch {
-          /* cache file may be gone */
-        }
-        if (player === p) player = null;
-        resolve();
-      });
-      p.play();
-    });
+  endSegment(): void {
+    if (segBuf.length === 0) return;
+    const mp3 = concatChunks(segBuf);
+    segBuf = [];
+    try {
+      const file = new File(Paths.cache, `coach-seg-${turnSeq}-${segSeq++}.mp3`);
+      if (file.exists) file.delete();
+      file.create();
+      file.write(mp3);
+      queue.push(file);
+      playedThisTurn = true;
+    } catch (e) {
+      console.warn('[VoicePlayer] failed to stage segment, dropping', e);
+      return;
+    }
+    if (!loopRunning) void runLoop();
   },
 
-  /** Stop playback and drop any buffered audio. Safe to call anytime. */
+  /**
+   * Turn is over (`done` arrived): flush any remainder as a final segment —
+   * which is also the entire legacy path for servers without segment_end —
+   * and resolve once the queue drains. Returns whether ANY audio played this
+   * turn (drives the caller's mic re-arm; text-only turns skip it).
+   */
+  async playTurn(): Promise<boolean> {
+    this.endSegment();
+    const played = playedThisTurn;
+    if (!loopRunning && queue.length === 0) {
+      playedThisTurn = false;
+      return played;
+    }
+    await new Promise<void>((resolve) => {
+      idleWaiters.push(resolve);
+    });
+    playedThisTurn = false;
+    return played;
+  },
+
+  /** Stop playback and drop everything buffered/queued. Safe to call anytime. */
   async stop(): Promise<void> {
-    chunks = [];
+    epoch++;
+    segBuf = [];
+    playedThisTurn = false;
+    for (const file of queue) {
+      try {
+        file.delete();
+      } catch {
+        /* cache file may be gone */
+      }
+    }
+    queue = [];
     stopFallbackEnvelope();
     waveformEmitter.emit([0]);
-    const p = player;
-    player = null;
+    turnSeq++;
+    segSeq = 0;
+    const p = activePlayer;
+    activePlayer = null;
     if (p) {
       try {
         p.pause();
@@ -201,5 +300,11 @@ export const voicePlayer = {
         /* ignore */
       }
     }
+    // Unblock an in-flight playFile and any playTurn drain waiters.
+    activeResolve?.();
+    activeResolve = null;
+    const waiters = idleWaiters;
+    idleWaiters = [];
+    waiters.forEach((w) => w());
   },
 };

@@ -20,11 +20,12 @@ function headers(token: string) {
 export async function createSession(
   token: string,
   planId: string | null = null,
+  workoutId: string | null = null,
 ): Promise<WorkoutSessionRow> {
   const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session`, {
     method: 'POST',
     headers: headers(token),
-    body: JSON.stringify({ plan_id: planId }),
+    body: JSON.stringify({ plan_id: planId, workout_id: workoutId }),
   });
   if (!res.ok) throw new Error(`Session create failed (HTTP ${res.status})`);
   const data = (await res.json()) as { session: WorkoutSessionRow };

@@ -17,7 +17,7 @@ import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, Chip } from '@/components/ui';
 import { SetRow } from '@/components/SetRow';
 import { VoiceButton } from '@/components/VoiceButton';
-import { CoachOrb } from '@/components/CoachOrb';
+import { VoiceWaveform } from '@/components/VoiceWaveform';
 import { ExerciseImage } from '@/components/ExerciseImage';
 import { RestRing } from '@/components/RestRing';
 import { SessionToasts, SessionToast } from '@/components/SessionToasts';
@@ -31,6 +31,8 @@ import {
   useWorkoutSession,
   useSessionActions,
   formatClock,
+  makeShimmerSource,
+  voicePlayer,
   type AppActionMessage,
   type PlanChange,
   type VoicePhase,
@@ -125,7 +127,6 @@ export function WorkoutSessionScreen() {
   // children position against the parent's border box, which ignores the
   // safe-area padding the header flows below — so track y + height, not height.
   const [headerBottom, setHeaderBottom] = useState(0);
-  const [transcript, setTranscript] = useState('');
 
   const actions = useSessionActions();
   const { timer } = actions.state;
@@ -366,11 +367,16 @@ export function WorkoutSessionScreen() {
   // can drop (mic off) without ending the workout.
 
   // planId → the backend snapshots the real plan, so the voice coach sees it.
-  const workoutSession = useWorkoutSession({ getToken, planId: plan?.planId ?? null });
+  // workoutId → records which DAY is being trained, so the coach's session
+  // context leads with today's exercises instead of guessing.
+  const workoutSession = useWorkoutSession({
+    getToken,
+    planId: plan?.planId ?? null,
+    workoutId: workout.id === 'freeform' ? null : workout.id,
+  });
   const voice = useVoiceSession({
     userId: authUser?.id ?? '',
     getToken,
-    onTranscript: setTranscript,
     onAppAction: handleAppAction,
   });
 
@@ -382,14 +388,34 @@ export function WorkoutSessionScreen() {
     if (sid) await voice.start(sid);
   }, [authUser?.id, workoutSession.start, voice.start]);
 
-  const disableVoice = useCallback(() => {
-    void voice.stop(); // socket only — the workout session survives
-  }, [voice.stop]);
+  // Hands-free: the coach comes up with the workout — no mic tap needed. One
+  // shot per screen visit; failures land in the dock's error row (Retry).
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (!authUser?.id || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void enableVoice();
+  }, [authUser?.id, enableVoice]);
 
-  const toggleVoice = useCallback(() => {
-    if (voiceLive) disableVoice();
-    else void enableVoice();
-  }, [voiceLive, enableVoice, disableVoice]);
+  // Full-row waveform: the user's voice rides the mic feed (live orange), the
+  // coach's rides playback samples (accent), thinking gets a synthetic shimmer.
+  const shimmer = useMemo(() => makeShimmerSource(), []);
+  useEffect(() => () => shimmer.stop(), [shimmer]);
+  const listeningLive = voice.phase === 'listening' && !voice.micMuted;
+  const waveSource = listeningLive
+    ? voice.micWaveform
+    : voice.phase === 'coach_speaking'
+      ? voicePlayer.waveform
+      : voice.phase === 'thinking'
+        ? shimmer
+        : null;
+  const waveColor = listeningLive
+    ? colors.live
+    : voice.phase === 'coach_speaking' || voice.phase === 'thinking'
+      ? colors.accent
+      : colors.borderStrong;
+  const waveActive =
+    listeningLive || voice.phase === 'coach_speaking' || voice.phase === 'thinking';
 
   // ---- Manual logging (never depends on the socket) -------------------------
 
@@ -747,25 +773,32 @@ export function WorkoutSessionScreen() {
             />
           </View>
         ) : voiceLive ? (
-          <View style={styles.dockLiveRow}>
-            <Pressable onPress={endWorkout} hitSlop={8} style={styles.dockEndBtn}>
-              <Ionicons name="stop-circle-outline" size={22} color={colors.textSecondary} />
-            </Pressable>
-            <CoachOrb phase={voice.phase} size={44} />
-            <View style={styles.dockStatus}>
+          <View style={styles.dockLiveCol}>
+            {/* The whole row is the coach's presence — voice-first, no transcript
+                (the screen is usually pocketed while this is in use). */}
+            <VoiceWaveform
+              source={waveSource}
+              color={waveColor}
+              active={waveActive}
+              height={44}
+            />
+            <View style={styles.dockControlsRow}>
+              <Pressable onPress={endWorkout} hitSlop={8} style={styles.dockEndBtn}>
+                <Ionicons name="stop-circle-outline" size={22} color={colors.textSecondary} />
+              </Pressable>
               <AppText
                 variant="bodyMedium"
-                color={voice.phase === 'listening' ? 'liveText' : 'textPrimary'}
+                color={listeningLive ? 'liveText' : 'textSecondary'}
+                style={styles.dockPhaseLabel}
               >
-                {PHASE_LABEL[voice.phase]}
+                {voice.micMuted ? 'Muted' : PHASE_LABEL[voice.phase]}
               </AppText>
-              {!!transcript && (
-                <AppText variant="caption" numberOfLines={1}>
-                  You: {transcript}
-                </AppText>
-              )}
+              <VoiceButton
+                size={52}
+                active={listeningLive}
+                onPress={() => voice.setMicMuted(!voice.micMuted)}
+              />
             </View>
-            <VoiceButton size={52} active={voice.phase === 'listening'} onPress={toggleVoice} />
           </View>
         ) : (
           <View style={styles.dockIdleRow}>
@@ -777,7 +810,7 @@ export function WorkoutSessionScreen() {
               onPress={endWorkout}
               style={{ flex: 1 }}
             />
-            <VoiceButton size={52} onPress={toggleVoice} />
+            <VoiceButton size={52} onPress={() => void enableVoice()} />
           </View>
         )}
       </View>
@@ -995,7 +1028,10 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: spacing.md,
   },
-  dockLiveRow: {
+  dockLiveCol: {
+    gap: spacing.sm,
+  },
+  dockControlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -1006,7 +1042,7 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dockStatus: { flex: 1, gap: 2 },
+  dockPhaseLabel: { flex: 1, textAlign: 'center' },
   dockErrorRow: {
     flexDirection: 'row',
     alignItems: 'center',
