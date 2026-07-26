@@ -12,3 +12,12 @@ export { ListRow } from './ListRow';
 export { EmptyState } from './EmptyState';
 export { ProgressBar } from './ProgressBar';
 export { TimerDisplay, formatSeconds } from './TimerDisplay';
+export {
+  WheelPicker,
+  NumberWheel,
+  WheelRow,
+  WheelUnit,
+  WHEEL_HEIGHT,
+  WHEEL_ITEM_HEIGHT,
+} from './WheelPicker';
+export type { WheelItem } from './WheelPicker';

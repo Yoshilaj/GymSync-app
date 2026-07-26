@@ -2,14 +2,19 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { AppText, Card, EmptyState, Entering, ListRow, Screen } from '@/components/ui';
+import { AppText, EmptyState, Entering, Screen } from '@/components/ui';
 import { DayStrip, getWeekDates } from '@/components/DayStrip';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { BodyWeightCard } from '@/components/BodyWeightCard';
+import { LibraryCard } from '@/components/LibraryCard';
 import { layout, spacing } from '@/theme';
-import { getExerciseById, resolvePlannedExercise } from '@/data/mockExercises';
+import {
+  getExerciseById,
+  mockExercises,
+  resolvePlannedExercise,
+} from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
 import { PlanStackParamList } from '@/navigation/PlanStack';
@@ -114,14 +119,10 @@ export function PlanScreen() {
         {/* Always reachable — workout days and rest days alike. */}
         <View style={styles.librarySection}>
           <BodyWeightCard />
-          <Card padded={false}>
-            <ListRow
-              title="Exercise library"
-              left={{ icon: 'library-outline', tone: 'accent' }}
-              chevron
-              onPress={() => nav.navigate('ExerciseList', { mode: 'browse' })}
-            />
-          </Card>
+          <LibraryCard
+            count={mockExercises.length}
+            onPress={() => nav.navigate('ExerciseList', { mode: 'browse' })}
+          />
         </View>
       </View>
     </Screen>
@@ -172,12 +173,8 @@ function WorkoutDay({
           { label: 'Sets', value: `${totalSets}` },
           { label: 'Volume', value: volume.toLocaleString(), unit: units },
         ]}
-        // Only today's workout can be started; other days the list below IS the preview.
-        action={
-          isToday
-            ? { label: 'Start workout', icon: 'play', onPress: () => onStart(workout.id) }
-            : undefined
-        }
+        // Any workout day can start a session — `isToday` only drives the badge.
+        action={{ label: 'Start workout', icon: 'play', onPress: () => onStart(workout.id) }}
       />
       </Entering>
 

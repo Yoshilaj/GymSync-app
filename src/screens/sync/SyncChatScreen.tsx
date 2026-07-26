@@ -36,9 +36,8 @@ import { usePlan } from '@/context/PlanContext';
 import { useTextChat, type ChatItem } from '@/voice';
 import { ConversationSummary, fetchConversationThread } from '@/api/conversations';
 import { acceptPlanProposal } from '@/api/plan';
-import { consumePlanKickoff, PLAN_KICKOFF_MESSAGE } from '@/lib/planKickoff';
 import { HistoryPanel } from './components/HistoryPanel';
-import { PlanProposalCard } from './components/PlanProposalCard';
+import { PlanCard } from './components/PlanCard';
 import { SyncEmptyState } from './components/SyncEmptyState';
 import { Starter } from './starters';
 
@@ -72,7 +71,6 @@ export function SyncChatScreen() {
   const styles = useStyles();
   const [input, setInput] = useState('');
   const nav = useNavigation();
-  const kickoffDoneRef = useRef(false);
   const listRef = useRef<FlatList<ListRow>>(null);
   const inputRef = useRef<TextInput>(null);
   const { user } = useUser();
@@ -83,16 +81,6 @@ export function SyncChatScreen() {
     userId: authUser?.id ?? '',
     getToken,
   });
-
-  // Fresh from onboarding: auto-send the first-plan request exactly once.
-  useEffect(() => {
-    if (kickoffDoneRef.current) return;
-    kickoffDoneRef.current = true;
-    if (consumePlanKickoff()) {
-      chat.send(PLAN_KICKOFF_MESSAGE);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // ── Conversation history panel ────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -324,7 +312,7 @@ export function SyncChatScreen() {
     if (item.kind === 'plan_proposal') {
       return (
         <View style={styles.proposalRow}>
-          <PlanProposalCard
+          <PlanCard
             plan={item.plan}
             status={item.status}
             onAccept={() => void handleAcceptProposal(item)}

@@ -9,7 +9,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'live';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'live' | 'solid';
 type Size = 'lg' | 'md' | 'sm';
 
 interface Props {
@@ -37,7 +37,7 @@ export function Button({
   full = true,
   style,
 }: Props) {
-  const { colors, gradients } = useTheme();
+  const { colors, gradients, scheme } = useTheme();
   const styles = useStyles();
   const isDisabled = disabled || loading;
 
@@ -47,6 +47,8 @@ export function Button({
     ghost: colors.accentText,
     danger: colors.textInverse,
     live: colors.textInverse,
+    // solid = quiet ink button: inverse-on-ink in light, primary-on-card in dark.
+    solid: scheme === 'dark' ? colors.textPrimary : colors.textInverse,
   }[variant];
 
   const content = loading ? (
@@ -112,6 +114,7 @@ export function Button({
         variant === 'secondary' && styles.secondary,
         variant === 'danger' && styles.danger,
         variant === 'live' && styles.live,
+        variant === 'solid' && styles.solid,
         pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
         style,
@@ -140,6 +143,15 @@ const useStyles = makeStyles((t) => ({
   },
   danger: { backgroundColor: t.colors.danger },
   live: { backgroundColor: t.colors.live },
+  // Sophisticated ink button — real shadow, no glow, no gradient.
+  solid:
+    t.scheme === 'dark'
+      ? {
+          backgroundColor: t.colors.card,
+          borderWidth: 1,
+          borderColor: t.colors.borderStrong,
+        }
+      : { backgroundColor: t.colors.textPrimary, ...t.shadows.sm },
   icon: { marginRight: spacing.sm },
   labelSm: { fontSize: 15 },
   pressed: { opacity: 0.85 },

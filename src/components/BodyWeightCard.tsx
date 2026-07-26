@@ -1,30 +1,58 @@
 /**
- * "Today's body weight" — a slim one-row quick log on the Plan page. Prefills
- * with today's entry, saves on the check tap, feeds the Progress chart.
- * Values entered in the user's units; stored canonically in kg.
+ * "Today · Body weight" — the Plan page's quick log, custom-card language.
+ *
+ * One 64pt line at rest: icon well · "Today" eyebrow + title · big value ·
+ * rotating chevron. Tap → an inline scroll wheel (integer + decimal + unit)
+ * expands beneath; every settle auto-saves (debounced) — no buttons, no
+ * layout shift. Always logs TODAY regardless of which day the strip shows.
  */
-import { useEffect, useState } from 'react';
-import { Pressable, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { font, makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Card } from '@/components/ui';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
+import {
+  AppText,
+  Card,
+  NumberWheel,
+  WheelRow,
+  WheelUnit,
+  WHEEL_HEIGHT,
+} from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
 import { fetchBodyWeightSeries, logBodyWeight } from '@/api/progress';
 import { kgToLbs, lbsToKg } from '@/lib/units';
 
+const EXPANDED_H = WHEEL_HEIGHT + spacing.lg;
+
 export function BodyWeightCard() {
   const { colors } = useTheme();
   const styles = useStyles();
   const { getToken, session } = useAuth();
-  const { user } = useUser();
+  const { user, profile } = useUser();
   const metric = user.units === 'kg';
+  const reduceMotion = useReducedMotion();
 
-  const [value, setValue] = useState('');
-  const [savedValue, setSavedValue] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [intPart, setIntPart] = useState<number | null>(null);
+  const [decPart, setDecPart] = useState(0);
+  const [saveError, setSaveError] = useState(false);
+  const expandH = useSharedValue(0);
+  const chevron = useSharedValue(0);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedKg = useRef<number | null>(null);
 
-  // Prefill with today's entry, if any.
+  const intMin = metric ? 30 : 66;
+  const intMax = metric ? 250 : 550;
+
+  // Prefill: today's entry → profile weight → nothing (placeholder).
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
@@ -34,72 +62,147 @@ export function BodyWeightCard() {
         const points = await fetchBodyWeightSeries(token, 7);
         const today = new Date().toISOString().slice(0, 10);
         const entry = points.find((p) => p.day === today);
-        if (entry && !cancelled) {
-          const shown = metric ? entry.weight_kg : kgToLbs(entry.weight_kg);
-          const text = String(Math.round(shown * 10) / 10);
-          setValue(text);
-          setSavedValue(text);
+        const kg = entry?.weight_kg ?? profile?.weight_kg ?? null;
+        if (kg != null && !cancelled) {
+          const shown = metric ? kg : kgToLbs(kg);
+          const rounded = Math.round(shown * 10) / 10;
+          setIntPart(Math.floor(rounded));
+          setDecPart(Math.round((rounded % 1) * 10));
+          if (entry) lastSavedKg.current = entry.weight_kg;
         }
       } catch {
-        /* offline — input still works, save will retry */
+        /* offline — the wheel still works; saves retry on settle */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [session, getToken, metric]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, metric]);
 
-  const numeric = Number(value);
-  const kg = Number.isFinite(numeric) && numeric > 0 ? (metric ? numeric : lbsToKg(numeric)) : null;
-  const dirty = value.trim() !== '' && value !== savedValue && kg != null && kg >= 25 && kg <= 350;
-
-  const save = async () => {
-    if (!dirty || kg == null) return;
-    setSaving(true);
-    try {
-      const token = await getToken();
-      await logBodyWeight(token, kg);
-      setSavedValue(value);
-    } catch {
-      /* keep dirty so the user can retry */
-    } finally {
-      setSaving(false);
-    }
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    const duration = reduceMotion ? 0 : 220;
+    expandH.value = withTiming(next ? EXPANDED_H : 0, {
+      duration,
+      easing: Easing.out(Easing.cubic),
+    });
+    chevron.value = withTiming(next ? 1 : 0, { duration });
   };
+
+  const scheduleSave = (nextInt: number, nextDec: number) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const shown = nextInt + nextDec / 10;
+      const kg = Math.min(350, Math.max(25, metric ? shown : lbsToKg(shown)));
+      if (lastSavedKg.current != null && Math.abs(kg - lastSavedKg.current) < 0.05) {
+        return;
+      }
+      try {
+        const token = await getToken();
+        await logBodyWeight(token, kg);
+        lastSavedKg.current = kg;
+        setSaveError(false);
+      } catch {
+        setSaveError(true); // retries on the next settle
+      }
+    }, 800);
+  };
+
+  // Flush a pending save on unmount so a quick tab-hop doesn't lose the value.
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    },
+    [],
+  );
+
+  const expandStyle = useAnimatedStyle(() => ({
+    height: expandH.value,
+    overflow: 'hidden' as const,
+  }));
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${chevron.value * 180}deg` }],
+  }));
+
+  const defaultInt = metric ? 75 : 165;
+  const wheelInt = intPart ?? defaultInt;
+  const display =
+    intPart != null ? `${intPart}.${decPart}` : null;
 
   return (
     <Card padded={false}>
-      <View style={styles.row}>
+      <Pressable onPress={toggle} style={styles.row}>
         <View style={styles.iconWell}>
           <Ionicons name="scale-outline" size={17} color={colors.accentText} />
         </View>
-        <AppText variant="h3" style={{ flex: 1 }}>
-          Today's body weight
+        <View style={styles.titleCol}>
+          <AppText variant="label" color="accentText">
+            Today
+          </AppText>
+          <AppText variant="h3">Body weight</AppText>
+        </View>
+        <AppText variant="statSm">
+          {display ?? (
+            <AppText variant="statSm" color="textTertiary">
+              —
+            </AppText>
+          )}
+          {display ? (
+            <AppText variant="caption" color="textSecondary">
+              {'  '}
+              {user.units}
+            </AppText>
+          ) : null}
         </AppText>
-        <TextInput
-          style={styles.input}
-          value={value}
-          onChangeText={(t) => setValue(t.replace(/[^0-9.]/g, '').slice(0, 5))}
-          keyboardType="decimal-pad"
-          placeholder="—"
-          placeholderTextColor={colors.textTertiary}
-          maxLength={5}
-        />
-        <AppText variant="caption" color="textSecondary">
-          {user.units}
-        </AppText>
-        {dirty ? (
-          <Pressable onPress={save} hitSlop={10} disabled={saving} style={styles.saveBtn}>
-            <Ionicons
-              name="checkmark"
-              size={16}
-              color={colors.textInverse}
+        <Animated.View style={chevronStyle}>
+          <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
+        </Animated.View>
+      </Pressable>
+
+      <Animated.View style={expandStyle}>
+        <View style={styles.wheelArea}>
+          <WheelRow>
+            <NumberWheel
+              min={intMin}
+              max={intMax}
+              value={wheelInt}
+              onChange={(n) => {
+                setIntPart(n);
+                setSaveError(false);
+                scheduleSave(n, decPart);
+              }}
+              width={88}
+              showBand={false}
+              accessibilityLabel="Body weight"
             />
-          </Pressable>
-        ) : savedValue !== '' && value === savedValue ? (
-          <Ionicons name="checkmark-circle" size={20} color={colors.successText} />
-        ) : null}
-      </View>
+            <NumberWheel
+              min={0}
+              max={9}
+              value={decPart}
+              onChange={(n) => {
+                setDecPart(n);
+                if (intPart != null) scheduleSave(intPart, n);
+                else {
+                  setIntPart(defaultInt);
+                  scheduleSave(defaultInt, n);
+                }
+              }}
+              format={(n) => `.${n}`}
+              width={56}
+              showBand={false}
+              accessibilityLabel="Decimal"
+            />
+            <WheelUnit label={user.units} />
+          </WheelRow>
+          {saveError ? (
+            <AppText variant="caption" color="dangerText" align="center">
+              Couldn't save — will retry
+            </AppText>
+          ) : null}
+        </View>
+      </Animated.View>
     </Card>
   );
 }
@@ -109,7 +212,7 @@ const useStyles = makeStyles((t) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
+    minHeight: 64,
     paddingHorizontal: spacing.lg,
   },
   iconWell: {
@@ -120,20 +223,9 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  input: {
-    minWidth: 56,
-    textAlign: 'right',
-    fontSize: 17,
-    fontFamily: font.semibold,
-    color: t.colors.textPrimary,
-    paddingVertical: spacing.xs,
-  },
-  saveBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.pill,
-    backgroundColor: t.colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+  titleCol: { flex: 1 },
+  wheelArea: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
 }));
