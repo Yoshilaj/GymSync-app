@@ -876,3 +876,26 @@ export function getExerciseByName(name: string): Exercise | undefined {
     )
   );
 }
+
+/**
+ * Resolve a planned exercise to something renderable: catalog by id, catalog
+ * by name, else a synthesized generic entry — a server plan may contain
+ * exercises the local library doesn't know, and they must never vanish.
+ */
+export function resolvePlannedExercise(
+  exerciseId: string,
+  name?: string,
+): Exercise {
+  const found =
+    getExerciseById(exerciseId) ?? (name ? getExerciseByName(name) : undefined);
+  if (found) return found;
+  return {
+    id: exerciseId,
+    name: name ?? 'Exercise',
+    muscleGroup: 'Full Body',
+    equipment: 'Bodyweight',
+    description: '',
+    cues: [],
+    thumbnailColor: '#5B6B7C',
+  };
+}

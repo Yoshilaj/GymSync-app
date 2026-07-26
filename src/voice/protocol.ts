@@ -57,6 +57,31 @@ export type AppActionMessage =
   | { type: 'app_action'; action: 'swap_exercise'; from: string; to: string }
   | { type: 'app_action'; action: 'modify_plan'; changes: PlanChange[] };
 
+/** One exercise inside a proposed (not yet accepted) weekly plan. */
+export interface PlanProposalExercise {
+  exercise_id?: string | null;
+  exercise_name: string;
+  sets: number;
+  reps_low: number;
+  reps_high?: number;
+  note?: string;
+}
+
+export interface PlanProposalDay {
+  day_label: string;
+  title: string;
+  est_minutes?: number;
+  exercises: PlanProposalExercise[];
+}
+
+/** The agent's proposed weekly plan, as carried by a plan_proposal frame. */
+export interface PlanProposalWire {
+  name: string;
+  split_type: string;
+  rationale: string;
+  days: PlanProposalDay[];
+}
+
 /** Server → Client messages (JSON). Binary MP3 frames arrive separately. */
 export type ServerMessage =
   | {
@@ -76,6 +101,16 @@ export type ServerMessage =
       title: string;
     }
   | AppActionMessage
+  /**
+   * The agent proposed a weekly plan (propose_workout_plan tool). Nothing is
+   * saved yet — the user must Accept via POST /api/plans/proposals/{id}/accept.
+   */
+  | {
+      type: 'plan_proposal';
+      proposal_id: string;
+      plan: PlanProposalWire;
+      warnings?: string[];
+    }
   | { type: 'done' }
   /**
    * fatal:false = per-turn failure (e.g. TTS down), always followed by `done` —

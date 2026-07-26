@@ -13,7 +13,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors, gradients, radius, shadows, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
-import { getTodaysWorkout, getWorkoutById } from '@/data/mockPlan';
+import { usePlan } from '@/context/PlanContext';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 
 const { width } = Dimensions.get('window');
@@ -30,8 +30,17 @@ const BAR_HEIGHTS = [28, 44, 56, 36, 20];
 export function LiveWorkoutStartScreen() {
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
-  const workoutId = route.params?.workoutId ?? getTodaysWorkout().id;
-  const workout = getWorkoutById(workoutId) ?? getTodaysWorkout();
+  const { todaysWorkout, getWorkoutById } = usePlan();
+  const workout =
+    (route.params?.workoutId ? getWorkoutById(route.params.workoutId) : undefined) ??
+    todaysWorkout ?? {
+      id: 'freeform',
+      dayLabel: '',
+      title: 'Open workout',
+      estMinutes: 45,
+      exercises: [],
+    };
+  const workoutId = workout.id;
 
   const progress = useRef(new Animated.Value(0)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;

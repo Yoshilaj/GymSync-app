@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,7 +35,10 @@ import { useConversations, useDictation, useTabBarClearance } from '@/hooks';
 import { useUser } from '@/context/UserContext';
 import { useTextChat, type ChatItem } from '@/voice';
 import { ConversationSummary, fetchConversationThread } from '@/api/conversations';
+import { acceptPlanProposal } from '@/api/plan';
+import { consumePlanKickoff, PLAN_KICKOFF_MESSAGE } from '@/lib/planKickoff';
 import { HistoryPanel } from './components/HistoryPanel';
+import { PlanProposalCard } from './components/PlanProposalCard';
 import { SyncEmptyState } from './components/SyncEmptyState';
 import { Starter } from './starters';
 
@@ -66,6 +69,8 @@ function dayLabel(d: Date, now: Date): string {
  */
 export function SyncChatScreen() {
   const [input, setInput] = useState('');
+  const nav = useNavigation();
+  const kickoffDoneRef = useRef(false);
   const listRef = useRef<FlatList<ListRow>>(null);
   const inputRef = useRef<TextInput>(null);
   const { user } = useUser();
@@ -76,6 +81,16 @@ export function SyncChatScreen() {
     userId: authUser?.id ?? '',
     getToken,
   });
+
+  // Fresh from onboarding: auto-send the first-plan request exactly once.
+  useEffect(() => {
+    if (kickoffDoneRef.current) return;
+    kickoffDoneRef.current = true;
+    if (consumePlanKickoff()) {
+      chat.send(PLAN_KICKOFF_MESSAGE);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Conversation history panel ────────────────────────────────────────────
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -247,6 +262,31 @@ export function SyncChatScreen() {
     inputRef.current?.focus();
   };
 
+  const handleAcceptProposal = useCallback(
+    async (item: ChatItem & { kind: 'plan_proposal' }) => {
+      chat.setProposalStatus(item.id, 'accepting');
+      try {
+        const token = await getToken();
+        await acceptPlanProposal(token, item.proposalId);
+        chat.setProposalStatus(item.id, 'accepted');
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch {
+        chat.setProposalStatus(item.id, 'failed');
+      }
+    },
+    [chat, getToken],
+  );
+
+  const handleRequestChanges = useCallback(() => {
+    setInput("I'd like to change the plan: ");
+    inputRef.current?.focus();
+  }, []);
+
+  const handleViewPlan = useCallback(() => {
+    // Same tab-hop pattern PlanScreen uses in reverse ("Ask Sync").
+    (nav.getParent() ?? nav).navigate('Plan' as never);
+  }, [nav]);
+
   const status = chat.busy
     ? 'typing…'
     : chat.connectionState === 'open'
@@ -272,6 +312,19 @@ export function SyncChatScreen() {
               {item.text}
             </AppText>
           </View>
+        </View>
+      );
+    }
+    if (item.kind === 'plan_proposal') {
+      return (
+        <View style={styles.proposalRow}>
+          <PlanProposalCard
+            plan={item.plan}
+            status={item.status}
+            onAccept={() => void handleAcceptProposal(item)}
+            onRequestChanges={handleRequestChanges}
+            onViewPlan={handleViewPlan}
+          />
         </View>
       );
     }
@@ -456,6 +509,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   actionChipRow: { alignItems: 'center', marginBottom: spacing.sm },
+  proposalRow: { marginBottom: spacing.sm },
   actionChip: {
     flexDirection: 'row',
     alignItems: 'center',

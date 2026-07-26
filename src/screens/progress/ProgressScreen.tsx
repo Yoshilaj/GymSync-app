@@ -27,7 +27,7 @@ import { AppText, Card, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { mockProgress } from '@/data/mockProgress';
-import { mockPlan } from '@/data/mockPlan';
+import { usePlan } from '@/context/PlanContext';
 import { mockProfile } from '@/data/mockProfile';
 import { getExerciseById, mockExercises } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
@@ -309,6 +309,7 @@ function MonthView({
   offset: number;
   onPressDate: (iso: string) => void;
 }) {
+  const { plan } = usePlan();
   const d = monthAtOffset(offset);
   const year = d.getFullYear();
   const month = d.getMonth();
@@ -331,7 +332,8 @@ function MonthView({
             if (day === null) return <View key={i} style={styles.dayCell} />;
             const dayDate = new Date(year, month, day);
             const dayLabel = WEEKDAY_LONG[dayDate.getDay()];
-            const hasWorkout = mockPlan.workouts.some((w) => w.dayLabel === dayLabel);
+            const hasWorkout =
+              plan?.workouts.some((w) => w.dayLabel === dayLabel) ?? false;
             const isToday = isCurrent && day === today.getDate();
 
             return (

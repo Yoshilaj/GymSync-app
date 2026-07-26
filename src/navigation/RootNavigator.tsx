@@ -4,6 +4,7 @@ import { SyncStack } from './SyncStack';
 import { PlanStack } from './PlanStack';
 import { ProgressStack } from './ProgressStack';
 import { AppTabBar } from '@/components/AppTabBar';
+import { peekPlanKickoff } from '@/lib/planKickoff';
 
 const Tab = createBottomTabNavigator();
 
@@ -14,7 +15,8 @@ function FabPlaceholder() {
 export function RootNavigator() {
   return (
     <Tab.Navigator
-      initialRouteName="Plan"
+      // Fresh from onboarding: open on Sync, where the first-plan chat starts.
+      initialRouteName={peekPlanKickoff() ? 'Sync' : 'Plan'}
       tabBar={(props) => <AppTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >

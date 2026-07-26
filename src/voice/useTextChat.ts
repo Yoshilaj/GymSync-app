@@ -21,7 +21,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
-import { AppActionMessage, ServerMessage } from './protocol';
+import { AppActionMessage, PlanProposalWire, ServerMessage } from './protocol';
+
+/**
+ * pending → the card shows Accept / Request changes;
+ * accepting → Accept in flight; accepted → plan is live;
+ * failed → Accept errored (retryable); superseded → a newer proposal replaced
+ * this one (rendered dimmed/collapsed).
+ */
+export type ProposalStatus =
+  | 'pending'
+  | 'accepting'
+  | 'accepted'
+  | 'failed'
+  | 'superseded';
 
 export type ChatItem =
   | {
@@ -34,7 +47,15 @@ export type ChatItem =
       streaming?: boolean;
       failed?: boolean;
     }
-  | { kind: 'action'; id: string; text: string; createdAt: number };
+  | { kind: 'action'; id: string; text: string; createdAt: number }
+  | {
+      kind: 'plan_proposal';
+      id: string;
+      createdAt: number;
+      proposalId: string;
+      plan: PlanProposalWire;
+      status: ProposalStatus;
+    };
 
 /** A conversation_messages row as returned by GET /api/conversations/{id}. */
 export interface ConversationMessageRow {
@@ -94,6 +115,11 @@ export interface TextChatApi {
   hydrate: (conversationId: string, title: string | null, rows: ConversationMessageRow[]) => void;
   /** "New chat": clear the thread and detach from the current conversation. */
   reset: () => void;
+  /**
+   * Update a plan-proposal card's status (the accept POST itself lives in the
+   * screen — API calls stay out of the socket hook).
+   */
+  setProposalStatus: (itemId: string, status: ProposalStatus) => void;
 }
 
 export function useTextChat({
@@ -183,6 +209,26 @@ export function useTextChat({
               { kind: 'action', id: uid('a'), text, createdAt: Date.now() },
             ]);
           }
+          break;
+        }
+        case 'plan_proposal': {
+          // A fresh proposal supersedes any prior pending card (mirrors the
+          // server, which flips stale plan_proposals rows to superseded).
+          setItems((prev) => [
+            ...prev.map((it) =>
+              it.kind === 'plan_proposal' && it.status === 'pending'
+                ? { ...it, status: 'superseded' as const }
+                : it,
+            ),
+            {
+              kind: 'plan_proposal',
+              id: uid('p'),
+              createdAt: Date.now(),
+              proposalId: msg.proposal_id,
+              plan: msg.plan,
+              status: 'pending',
+            },
+          ]);
           break;
         }
         case 'done':
@@ -364,6 +410,17 @@ export function useTextChat({
     [dropSocket],
   );
 
+  const setProposalStatus = useCallback(
+    (itemId: string, status: ProposalStatus) => {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.kind === 'plan_proposal' && it.id === itemId ? { ...it, status } : it,
+        ),
+      );
+    },
+    [],
+  );
+
   const reset = useCallback(() => {
     dropSocket();
     streamIdRef.current = null;
@@ -397,5 +454,6 @@ export function useTextChat({
     injectStarter,
     hydrate,
     reset,
+    setProposalStatus,
   };
 }

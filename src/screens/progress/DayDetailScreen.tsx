@@ -8,7 +8,7 @@ import { RestDayCard } from '@/components/RestDayCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
-import { mockPlan } from '@/data/mockPlan';
+import { usePlan } from '@/context/PlanContext';
 import { getExerciseById } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { useTabBarClearance } from '@/hooks';
@@ -48,8 +48,9 @@ export function DayDetailScreen() {
   const dayLabel = WEEKDAYS[date.getDay()];
   const longDay = LONGDAYS[date.getDay()];
 
-  const workout = mockPlan.workouts.find((w) => w.dayLabel === dayLabel);
-  const isRest = mockPlan.restDays.includes(dayLabel);
+  const { plan } = usePlan();
+  const workout = plan?.workouts.find((w) => w.dayLabel === dayLabel);
+  const isRest = plan ? plan.restDays.includes(dayLabel) : true;
   const status = dayStatus(date);
 
   return (

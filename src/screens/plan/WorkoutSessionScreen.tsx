@@ -21,9 +21,9 @@ import { CoachOrb } from '@/components/CoachOrb';
 import { ExerciseImage } from '@/components/ExerciseImage';
 import { RestRing } from '@/components/RestRing';
 import { SessionToasts, SessionToast } from '@/components/SessionToasts';
-import { getTodaysWorkout, getWorkoutById } from '@/data/mockPlan';
 import { getExerciseById, getExerciseByName } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
+import { usePlan } from '@/context/PlanContext';
 import { useAuth } from '@/auth/AuthContext';
 import {
   useVoiceSession,
@@ -79,9 +79,23 @@ export function WorkoutSessionScreen() {
   const { user } = useUser();
   const { user: authUser, getToken } = useAuth();
 
+  const { plan, todaysWorkout, getWorkoutById } = usePlan();
+
+  // Real plan lookup; a session opened with no plan gets an empty free-form
+  // workout shell (the voice coach can still add exercises / log sets).
   const workout = useMemo(
-    () => getWorkoutById(route.params?.workoutId) ?? getTodaysWorkout(),
-    [route.params?.workoutId],
+    () =>
+      (route.params?.workoutId
+        ? getWorkoutById(route.params.workoutId)
+        : undefined) ??
+      todaysWorkout ?? {
+        id: 'freeform',
+        dayLabel: '',
+        title: 'Open workout',
+        estMinutes: 45,
+        exercises: [],
+      },
+    [route.params?.workoutId, getWorkoutById, todaysWorkout],
   );
 
   const [exercises, setExercises] = useState<SessionExercise[]>(() =>
@@ -89,7 +103,7 @@ export function WorkoutSessionScreen() {
       const meta = getExerciseById(pe.exerciseId);
       return {
         key: pe.exerciseId,
-        name: meta?.name ?? pe.exerciseId,
+        name: meta?.name ?? pe.name ?? pe.exerciseId,
         meta,
         sets: pe.sets.map((s) => ({ ...s })),
         note: pe.note,
@@ -348,7 +362,8 @@ export function WorkoutSessionScreen() {
   // The workout owns the backend session; the voice socket attaches to it and
   // can drop (mic off) without ending the workout.
 
-  const workoutSession = useWorkoutSession({ getToken });
+  // planId → the backend snapshots the real plan, so the voice coach sees it.
+  const workoutSession = useWorkoutSession({ getToken, planId: plan?.planId ?? null });
   const voice = useVoiceSession({
     userId: authUser?.id ?? '',
     getToken,

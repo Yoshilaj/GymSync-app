@@ -43,6 +43,8 @@ export interface PlannedSet {
   id: string;
   exerciseId: string;
   targetReps: number;
+  /** Top of the rep range when the plan prescribes one (e.g. 8–12). */
+  repsHigh?: number;
   weight: number;
   achievedReps?: number;
   completed?: boolean;
@@ -50,6 +52,8 @@ export interface PlannedSet {
 
 export interface PlannedExercise {
   exerciseId: string;
+  /** Denormalized display name — the fallback when exerciseId isn't in the library. */
+  name?: string;
   sets: PlannedSet[];
   note?: string;
 }
@@ -63,6 +67,8 @@ export interface PlannedWorkout {
 }
 
 export interface WeeklyPlan {
+  /** Server id of the plan (absent for local/legacy plans). */
+  planId?: string;
   startDate: string;
   workouts: PlannedWorkout[];
   restDays: string[];

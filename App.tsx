@@ -15,7 +15,9 @@ import {
 } from '@expo-google-fonts/inter';
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { AuthNavigator } from '@/navigation/AuthNavigator';
-import { UserProvider } from '@/context/UserContext';
+import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
+import { UserProvider, useUser } from '@/context/UserContext';
+import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { colors } from '@/theme';
 
@@ -41,17 +43,32 @@ function Splash() {
   );
 }
 
-/** Auth gate: splash while loading, auth flow when logged out, the app when logged in. */
+/**
+ * Auth + first-run gate: splash while loading, auth flow when logged out,
+ * onboarding until the profile has onboarded_at, then the app. If the profile
+ * can't be fetched at all (offline, server down) we fail OPEN into the app —
+ * never lock a user out over a flag lookup.
+ */
 function RootGate() {
   const { loading, session } = useAuth();
+  const { profile, profileStatus } = useUser();
 
-  if (loading) {
+  if (loading || (session && profileStatus === 'loading')) {
     return <Splash />;
   }
 
+  const needsOnboarding =
+    !!session && profileStatus === 'ready' && !profile?.onboarded_at;
+
   return (
     <NavigationContainer theme={navTheme}>
-      {session ? <RootNavigator /> : <AuthNavigator />}
+      {!session ? (
+        <AuthNavigator />
+      ) : needsOnboarding ? (
+        <OnboardingNavigator />
+      ) : (
+        <RootNavigator />
+      )}
     </NavigationContainer>
   );
 }
@@ -71,8 +88,10 @@ export default function App() {
         <SafeAreaProvider>
           <AuthProvider>
             <UserProvider>
-              <StatusBar style="dark" />
-              {fontsLoaded ? <RootGate /> : <Splash />}
+              <PlanProvider>
+                <StatusBar style="dark" />
+                {fontsLoaded ? <RootGate /> : <Splash />}
+              </PlanProvider>
             </UserProvider>
           </AuthProvider>
         </SafeAreaProvider>

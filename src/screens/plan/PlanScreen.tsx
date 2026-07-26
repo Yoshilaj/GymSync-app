@@ -8,9 +8,9 @@ import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { layout, spacing } from '@/theme';
-import { mockPlan } from '@/data/mockPlan';
-import { getExerciseById } from '@/data/mockExercises';
+import { getExerciseById, resolvePlannedExercise } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
+import { usePlan } from '@/context/PlanContext';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { PlannedWorkout, Units } from '@/types';
 
@@ -21,22 +21,24 @@ const WEEK_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export function PlanScreen() {
   const nav = useNavigation<Nav>();
   const { user } = useUser();
+  const { plan, status } = usePlan();
 
   const today = useMemo(() => new Date(), []);
   const todayLong = WEEK_LONG[today.getDay()];
   const [selectedDay, setSelectedDay] = useState<string>(todayLong);
   const weekDates = useMemo(() => getWeekDates(today), [today]);
 
-  const workoutForDay = mockPlan.workouts.find((w) => w.dayLabel === selectedDay);
-  const isRest = mockPlan.restDays.includes(selectedDay);
-  const markedDays = mockPlan.workouts.map((w) => w.dayLabel);
+  const workoutForDay = plan?.workouts.find((w) => w.dayLabel === selectedDay);
+  const isRest = plan ? plan.restDays.includes(selectedDay) : false;
+  const markedDays = plan ? plan.workouts.map((w) => w.dayLabel) : [];
 
   // The first scheduled workout after the selected day, walking the week cyclically.
   const nextWorkout = useMemo<NextWorkoutPreview | undefined>(() => {
+    if (!plan) return undefined;
     const start = WEEK_LONG.indexOf(selectedDay);
     for (let i = 1; i <= 7; i += 1) {
       const day = WEEK_LONG[(start + i) % 7];
-      const w = mockPlan.workouts.find((x) => x.dayLabel === day);
+      const w = plan.workouts.find((x) => x.dayLabel === day);
       if (w) {
         return {
           title: w.title,
@@ -47,7 +49,7 @@ export function PlanScreen() {
       }
     }
     return undefined;
-  }, [selectedDay]);
+  }, [plan, selectedDay]);
 
   return (
     <Screen scroll padded={false}>
@@ -172,8 +174,7 @@ function WorkoutDay({
           Exercises
         </AppText>
         {workout.exercises.map((pe, i) => {
-          const ex = getExerciseById(pe.exerciseId);
-          if (!ex) return null;
+          const ex = resolvePlannedExercise(pe.exerciseId, pe.name);
           return (
             <Entering key={pe.exerciseId} index={i + 1}>
               <ExerciseRow

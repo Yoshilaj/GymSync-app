@@ -23,7 +23,7 @@ import { BottomTabBarHeightCallbackContext } from '@react-navigation/bottom-tabs
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, gradients, layout, shadows } from '@/theme';
 import { GlassLozenge, TabBarSurface } from '@/components/TabBarSurface';
-import { getTodaysWorkout } from '@/data/mockPlan';
+import { usePlan } from '@/context/PlanContext';
 
 const SLIDE = { duration: 220, easing: Easing.out(Easing.quad) };
 // Horizontal breathing room between the lozenge and its slot's edges.
@@ -51,6 +51,7 @@ export function AppTabBar({
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
+  const { todaysWorkout } = usePlan();
 
   const barBottom = Math.max(insets.bottom, layout.TAB_BAR_BOTTOM_MIN);
 
@@ -259,10 +260,15 @@ export function AppTabBar({
               })
             : undefined;
           if (!event?.defaultPrevented) {
-            (navigation as any).navigate('Plan', {
-              screen: 'LiveWorkoutStart',
-              params: { workoutId: getTodaysWorkout().id },
-            });
+            if (todaysWorkout) {
+              (navigation as any).navigate('Plan', {
+                screen: 'LiveWorkoutStart',
+                params: { workoutId: todaysWorkout.id },
+              });
+            } else {
+              // Rest day / no plan yet — land on the Plan tab instead.
+              (navigation as any).navigate('Plan');
+            }
           }
         }}
       />
