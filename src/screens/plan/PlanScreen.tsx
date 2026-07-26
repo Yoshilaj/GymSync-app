@@ -9,7 +9,7 @@ import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { BodyWeightCard } from '@/components/BodyWeightCard';
 import { LibraryCard } from '@/components/LibraryCard';
-import { layout, spacing } from '@/theme';
+import { layout, spacing, useTheme } from '@/theme';
 import {
   getExerciseById,
   mockExercises,
@@ -26,6 +26,7 @@ const WEEK_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function PlanScreen() {
   const nav = useNavigation<Nav>();
+  const { colors } = useTheme();
   const { user } = useUser();
   const { plan, status } = usePlan();
 
@@ -116,9 +117,13 @@ export function PlanScreen() {
           />
         )}
 
+        {/* A quiet rule so the tools below read as their own section, not
+            more exercises. */}
+        <View style={[styles.sectionRule, { backgroundColor: colors.border }]} />
+
         {/* Always reachable — workout days and rest days alike. */}
         <View style={styles.librarySection}>
-          <BodyWeightCard />
+          <BodyWeightCard date={new Date(selectedIso)} />
           <LibraryCard
             count={mockExercises.length}
             onPress={() => nav.navigate('ExerciseList', { mode: 'browse' })}
@@ -206,6 +211,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   listHeading: { marginLeft: spacing.xs, marginBottom: spacing.sm },
+  sectionRule: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: spacing.xl,
+    marginHorizontal: spacing.sm,
+  },
   librarySection: { marginTop: spacing.lg, gap: spacing.md },
   headerGap: { height: spacing.sm },
 });

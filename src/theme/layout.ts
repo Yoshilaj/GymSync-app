@@ -12,8 +12,6 @@ export const layout = {
   TAB_BAR_BOTTOM_MIN: spacing.md,
   /** Floating tab bar pill: corner radius (pill ends on a 64pt bar). */
   TAB_BAR_RADIUS: radius.xxl,
-  /** Center FAB diameter — sits level with the other tabs inside the bar. */
-  TAB_FAB_SIZE: 54,
   /** KeyboardAvoidingView offset under the app header. */
   HEADER_KEYBOARD_OFFSET: 86,
 } as const;

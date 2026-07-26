@@ -10,7 +10,7 @@
  * labels between them — e.g.  [75] [.6] kg.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -90,8 +90,7 @@ export function WheelPicker<T>({
   accessibilityLabel,
 }: WheelPickerProps<T>) {
   const styles = useStyles();
-  const scrollY = useSharedValue(0);
-  const listRef = useRef<FlatList<WheelItem<T>>>(null);
+  const listRef = useRef<ScrollView>(null);
   const draggingRef = useRef(false);
   const reduceMotion = useReducedMotion();
 
@@ -99,6 +98,9 @@ export function WheelPicker<T>({
     0,
     items.findIndex((it) => it.value === value),
   );
+  const scrollY = useSharedValue(index * WHEEL_ITEM_HEIGHT);
+  // Paint at the selected row on first frame (no scroll-into-place flash).
+  const initialOffset = useRef(index * WHEEL_ITEM_HEIGHT).current;
 
   const scrollHandler = useAnimatedScrollHandler((e) => {
     scrollY.value = e.contentOffset.y;
@@ -131,8 +133,8 @@ export function WheelPicker<T>({
   // Controlled resync (external value change while not scrolling).
   useEffect(() => {
     if (draggingRef.current) return;
-    listRef.current?.scrollToOffset({
-      offset: index * WHEEL_ITEM_HEIGHT,
+    listRef.current?.scrollTo({
+      y: index * WHEEL_ITEM_HEIGHT,
       animated: false,
     });
   }, [index]);
@@ -154,24 +156,12 @@ export function WheelPicker<T>({
       accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
     >
       {showBand && <View style={styles.band} pointerEvents="none" />}
-      <Animated.FlatList
+      {/* Plain ScrollView on purpose: the wheel lives inside ScrollView
+          screens, where a nested VirtualizedList breaks windowing (and RN
+          warns). Item counts are small enough to render outright. */}
+      <Animated.ScrollView
         ref={listRef as never}
-        data={items}
-        keyExtractor={(it) => String(it.value)}
-        renderItem={({ item, index: i }) => (
-          <Row
-            label={item.label}
-            index={i}
-            scrollY={scrollY}
-            textVariant={textVariant}
-          />
-        )}
-        getItemLayout={(_, i) => ({
-          length: WHEEL_ITEM_HEIGHT,
-          offset: WHEEL_ITEM_HEIGHT * i,
-          index: i,
-        })}
-        initialScrollIndex={index}
+        contentOffset={{ x: 0, y: initialOffset }}
         snapToInterval={WHEEL_ITEM_HEIGHT}
         decelerationRate="fast"
         showsVerticalScrollIndicator={false}
@@ -187,11 +177,18 @@ export function WheelPicker<T>({
           const y = e.nativeEvent.contentOffset.y;
           if (!e.nativeEvent.velocity?.y) commit(y);
         }}
-        initialNumToRender={VISIBLE_ROWS + 4}
-        windowSize={5}
-        maxToRenderPerBatch={12}
         nestedScrollEnabled
-      />
+      >
+        {items.map((item, i) => (
+          <Row
+            key={String(item.value)}
+            label={item.label}
+            index={i}
+            scrollY={scrollY}
+            textVariant={textVariant}
+          />
+        ))}
+      </Animated.ScrollView>
       {reduceMotion ? null : null}
     </View>
   );

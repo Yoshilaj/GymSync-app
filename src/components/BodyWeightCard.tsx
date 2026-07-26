@@ -1,10 +1,11 @@
 /**
- * "Today · Body weight" — the Plan page's quick log, custom-card language.
+ * "Body weight" — the Plan page's quick log, custom-card language.
  *
- * One 64pt line at rest: icon well · "Today" eyebrow + title · big value ·
+ * One 64pt line at rest: icon well · day eyebrow + title · big value ·
  * rotating chevron. Tap → an inline scroll wheel (integer + decimal + unit)
  * expands beneath; every settle auto-saves (debounced) — no buttons, no
- * layout shift. Always logs TODAY regardless of which day the strip shows.
+ * layout shift. Logs THE DAY SELECTED on the strip, so each day keeps its
+ * own entry and the trend chart gets a real series.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
@@ -29,10 +30,23 @@ import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
 import { fetchBodyWeightSeries, logBodyWeight } from '@/api/progress';
 import { kgToLbs, lbsToKg } from '@/lib/units';
+import { localDayIso } from '@/lib/dates';
 
 const EXPANDED_H = WHEEL_HEIGHT + spacing.lg;
 
-export function BodyWeightCard() {
+/** The most recent logged weight on or before the given day. */
+function nearestOnOrBefore(
+  entries: Record<string, number>,
+  dayIso: string,
+): number | null {
+  let bestDay: string | null = null;
+  for (const d of Object.keys(entries)) {
+    if (d <= dayIso && (bestDay === null || d > bestDay)) bestDay = d;
+  }
+  return bestDay ? entries[bestDay] : null;
+}
+
+export function BodyWeightCard({ date }: { date: Date }) {
   const { colors } = useTheme();
   const styles = useStyles();
   const { getToken, session } = useAuth();
@@ -40,35 +54,40 @@ export function BodyWeightCard() {
   const metric = user.units === 'kg';
   const reduceMotion = useReducedMotion();
 
+  const dayIso = localDayIso(date);
+  const todayIso = localDayIso();
+  const isToday = dayIso === todayIso;
+  const dayLabel = isToday
+    ? 'Today'
+    : date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' });
+
   const [open, setOpen] = useState(false);
   const [intPart, setIntPart] = useState<number | null>(null);
   const [decPart, setDecPart] = useState(0);
   const [saveError, setSaveError] = useState(false);
+  // day (YYYY-MM-DD) → logged kg, within the fetched window.
+  const [entries, setEntries] = useState<Record<string, number>>({});
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
   const expandH = useSharedValue(0);
   const chevron = useSharedValue(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSavedKg = useRef<number | null>(null);
 
   const intMin = metric ? 30 : 66;
   const intMax = metric ? 250 : 550;
 
-  // Prefill: today's entry → profile weight → nothing (placeholder).
+  // Load the recent log once per session (the strip only reaches back weeks).
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
     (async () => {
       try {
         const token = await getToken();
-        const points = await fetchBodyWeightSeries(token, 7);
-        const today = new Date().toISOString().slice(0, 10);
-        const entry = points.find((p) => p.day === today);
-        const kg = entry?.weight_kg ?? profile?.weight_kg ?? null;
-        if (kg != null && !cancelled) {
-          const shown = metric ? kg : kgToLbs(kg);
-          const rounded = Math.round(shown * 10) / 10;
-          setIntPart(Math.floor(rounded));
-          setDecPart(Math.round((rounded % 1) * 10));
-          if (entry) lastSavedKg.current = entry.weight_kg;
+        const points = await fetchBodyWeightSeries(token, 60);
+        if (!cancelled) {
+          const map: Record<string, number> = {};
+          for (const p of points) map[p.day] = p.weight_kg;
+          setEntries(map);
         }
       } catch {
         /* offline — the wheel still works; saves retry on settle */
@@ -77,8 +96,26 @@ export function BodyWeightCard() {
     return () => {
       cancelled = true;
     };
+  }, [session, getToken]);
+
+  const entryKg = entries[dayIso] ?? null;
+
+  // Re-seat the wheel whenever the selected day (or its entry) changes:
+  // that day's entry → most recent earlier entry → profile snapshot.
+  useEffect(() => {
+    const kg = entryKg ?? nearestOnOrBefore(entries, dayIso) ?? profile?.weight_kg ?? null;
+    setSaveError(false);
+    if (kg == null) {
+      setIntPart(null);
+      setDecPart(0);
+      return;
+    }
+    const shown = metric ? kg : kgToLbs(kg);
+    const rounded = Math.round(shown * 10) / 10;
+    setIntPart(Math.floor(rounded));
+    setDecPart(Math.round((rounded % 1) * 10));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, metric]);
+  }, [dayIso, entryKg, metric]);
 
   const toggle = () => {
     const next = !open;
@@ -92,25 +129,26 @@ export function BodyWeightCard() {
   };
 
   const scheduleSave = (nextInt: number, nextDec: number) => {
+    const day = dayIso; // capture — a day-swipe mid-debounce keeps the target
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       const shown = nextInt + nextDec / 10;
       const kg = Math.min(350, Math.max(25, metric ? shown : lbsToKg(shown)));
-      if (lastSavedKg.current != null && Math.abs(kg - lastSavedKg.current) < 0.05) {
-        return;
-      }
+      const saved = entriesRef.current[day];
+      if (saved != null && Math.abs(kg - saved) < 0.05) return;
       try {
         const token = await getToken();
-        await logBodyWeight(token, kg);
-        lastSavedKg.current = kg;
+        await logBodyWeight(token, kg, day);
+        setEntries((prev) => ({ ...prev, [day]: kg }));
         setSaveError(false);
-      } catch {
+      } catch (e) {
+        if (__DEV__) console.warn('Body weight save failed:', e);
         setSaveError(true); // retries on the next settle
       }
     }, 800);
   };
 
-  // Flush a pending save on unmount so a quick tab-hop doesn't lose the value.
+  // Drop a pending save on unmount (it re-arms on the next settle anyway).
   useEffect(
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -128,8 +166,16 @@ export function BodyWeightCard() {
 
   const defaultInt = metric ? 75 : 165;
   const wheelInt = intPart ?? defaultInt;
+  // The resting value belongs to THIS day: its saved entry, or the wheel
+  // position while an edit for it is open. Other days stay "—".
+  const shownEntry =
+    entryKg != null ? Math.round((metric ? entryKg : kgToLbs(entryKg)) * 10) / 10 : null;
   const display =
-    intPart != null ? `${intPart}.${decPart}` : null;
+    shownEntry != null
+      ? `${Math.floor(shownEntry)}.${Math.round((shownEntry % 1) * 10)}`
+      : open && intPart != null
+        ? `${intPart}.${decPart}`
+        : null;
 
   return (
     <Card padded={false}>
@@ -139,7 +185,7 @@ export function BodyWeightCard() {
         </View>
         <View style={styles.titleCol}>
           <AppText variant="label" color="accentText">
-            Today
+            {dayLabel}
           </AppText>
           <AppText variant="h3">Body weight</AppText>
         </View>

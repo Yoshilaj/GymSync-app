@@ -75,8 +75,15 @@ export function logCompletedSet(token: string, body: SetLogBody): Promise<unknow
   return request(token, 'POST', '/sets', body);
 }
 
-export function logBodyWeight(token: string, weightKg: number): Promise<unknown> {
-  return request(token, 'POST', '/bodyweight', { weight_kg: weightKg });
+export function logBodyWeight(
+  token: string,
+  weightKg: number,
+  day?: string, // YYYY-MM-DD; omitted = today
+): Promise<unknown> {
+  return request(token, 'POST', '/bodyweight', {
+    weight_kg: weightKg,
+    ...(day ? { day } : null),
+  });
 }
 
 export async function fetchBodyWeightSeries(

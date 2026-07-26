@@ -42,6 +42,13 @@ export function WorkoutHeroCard({
   const fg = onGradient ? colors.textInverse : colors.textPrimary;
   const fgSoft = onGradient ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
 
+  // Plan titles arrive as "Upper A — Strength Focus"; the dash suffix becomes
+  // a small subtitle so the display line never wraps.
+  const [mainTitle, focus] = (() => {
+    const parts = title.split(/\s+[—–-]+\s+/);
+    return parts.length > 1 ? [parts[0], parts.slice(1).join(' · ')] : [title, null];
+  })();
+
   const inner = (
     <>
       {onGradient && <View style={styles.glow} pointerEvents="none" />}
@@ -66,9 +73,14 @@ export function WorkoutHeroCard({
         )}
       </View>
 
-      <AppText variant="h1" color={fg} style={styles.title}>
-        {title}
+      <AppText variant="h1" color={fg} style={styles.title} numberOfLines={1}>
+        {mainTitle}
       </AppText>
+      {focus ? (
+        <AppText variant="label" color={fgSoft} style={styles.focus}>
+          {focus}
+        </AppText>
+      ) : null}
 
       {muscles.length > 0 && (
         // One line always — long muscle lists scroll instead of wrapping.
@@ -185,6 +197,7 @@ const useStyles = makeStyles((t) => ({
   },
   badgeCompleted: { backgroundColor: t.colors.successSoft },
   title: { marginTop: spacing.md },
+  focus: { marginTop: spacing.xxs, letterSpacing: 1.5 },
   musclesScroll: {
     marginTop: spacing.sm,
     flexGrow: 0,

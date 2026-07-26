@@ -14,7 +14,7 @@ Progress data — the honest numbers behind the Progress tab.
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from supabase import AsyncClient
 
@@ -178,6 +178,7 @@ async def exercise_series(
 
 class BodyWeight(BaseModel):
     weight_kg: float = Field(ge=25, le=350)
+    day: date | None = None  # defaults to today; lets the UI log past days
 
 
 @router.post("/bodyweight")
@@ -186,21 +187,24 @@ async def log_bodyweight(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
-    today = date.today().isoformat()
+    today = date.today()
+    day = body.day or today
     await db.table("body_weight_logs").upsert(
-        {"user_id": user_id, "day": today, "weight_kg": body.weight_kg},
+        {"user_id": user_id, "day": day.isoformat(), "weight_kg": body.weight_kg},
         on_conflict="user_id,day",
     ).execute()
-    # Keep the profile's snapshot current (used by the nutrition calc later).
-    await db.table("profiles").update(
-        {"weight_kg": body.weight_kg, "updated_at": _utcnow()}
-    ).eq("user_id", user_id).execute()
-    return {"day": today, "weight_kg": body.weight_kg}
+    # Keep the profile's snapshot current (used by the nutrition calc later) —
+    # but only for today's entry; backfilling history shouldn't rewind it.
+    if day == today:
+        await db.table("profiles").update(
+            {"weight_kg": body.weight_kg, "updated_at": _utcnow()}
+        ).eq("user_id", user_id).execute()
+    return {"day": day.isoformat(), "weight_kg": body.weight_kg}
 
 
 @router.get("/bodyweight")
 async def bodyweight_series(
-    days: int = Query(60, ge=7, le=365),
+    days: int = Query(60, ge=7, le=1095),
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:

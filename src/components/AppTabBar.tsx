@@ -1,11 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  StyleProp,
-  ViewStyle,
-} from 'react-native';
+import { View, Pressable } from 'react-native';
 import Animated, {
   Easing,
   runOnJS,
@@ -16,14 +10,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BottomTabBarHeightCallbackContext } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { layout, makeStyles, useTheme } from '@/theme';
 import { GlassLozenge, TabBarSurface } from '@/components/TabBarSurface';
-import { usePlan } from '@/context/PlanContext';
 
 const SLIDE = { duration: 220, easing: Easing.out(Easing.quad) };
 // Horizontal breathing room between the lozenge and its slot's edges.
@@ -42,8 +34,6 @@ const TABS: Record<
   Progress: { on: 'person-circle', off: 'person-circle-outline' },
 };
 
-const FAB_ROUTE = 'LiveWorkout';
-
 export function AppTabBar({
   state,
   descriptors,
@@ -51,7 +41,6 @@ export function AppTabBar({
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
-  const { todaysWorkout } = usePlan();
   const { colors } = useTheme();
   const styles = useStyles();
 
@@ -63,11 +52,7 @@ export function AppTabBar({
   const [rowWidth, setRowWidth] = useState(0);
   const slotWidth = rowWidth / state.routes.length;
   const lozengeWidth = slotWidth - LOZENGE_INSET * 2;
-  // The FAB slot is a spacer, not a tab — the lozenge can't rest there.
-  const maxSlot = state.routes.reduce(
-    (max, route, index) => (route.name === FAB_ROUTE ? max : index),
-    0,
-  );
+  const maxSlot = state.routes.length - 1;
   const minX = LOZENGE_INSET;
   const maxX = maxSlot * slotWidth + LOZENGE_INSET;
 
@@ -114,7 +99,7 @@ export function AppTabBar({
 
   const selectTab = (slot: number) => {
     const route = state.routes[slot];
-    if (!route || route.name === FAB_ROUTE) return;
+    if (!route) return;
     const event = navigation.emit({
       type: 'tabPress',
       target: route.key,
@@ -211,13 +196,6 @@ export function AppTabBar({
             )}
             {state.routes.map((route, index) => {
               const focused = state.index === index;
-
-              if (route.name === FAB_ROUTE) {
-                // Spacer only — the FAB itself renders outside the clipped
-                // glass surface (it pokes above the bar's top edge).
-                return <View key={route.key} style={styles.tab} />;
-              }
-
               const icons = TABS[route.name];
               return (
                 <Pressable
@@ -243,37 +221,6 @@ export function AppTabBar({
           </View>
         </GestureDetector>
       </TabBarSurface>
-
-      <FabButton
-        // Center the FAB over the last of the equal-width slots.
-        style={
-          rowWidth > 0
-            ? { right: rowWidth / (2 * state.routes.length) - layout.TAB_FAB_SIZE / 2 }
-            : undefined
-        }
-        onPress={() => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          const route = state.routes.find((r) => r.name === FAB_ROUTE);
-          const event = route
-            ? navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              })
-            : undefined;
-          if (!event?.defaultPrevented) {
-            if (todaysWorkout) {
-              (navigation as any).navigate('Plan', {
-                screen: 'LiveWorkoutStart',
-                params: { workoutId: todaysWorkout.id },
-              });
-            } else {
-              // Rest day / no plan yet — land on the Plan tab instead.
-              (navigation as any).navigate('Plan');
-            }
-          }
-        }}
-      />
     </View>
   );
 }
@@ -315,85 +262,6 @@ function TabIcon({
   );
 }
 
-function FabButton({
-  onPress,
-  style,
-}: {
-  onPress: () => void;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const { gradients } = useTheme();
-  const styles = useStyles();
-  return (
-    <Pressable onPress={onPress} style={[styles.fabSlot, style]} hitSlop={6}>
-      <View style={styles.fabShadow}>
-        <LinearGradient
-          colors={gradients.brand}
-          start={{ x: 0.2, y: 0 }}
-          end={{ x: 0.8, y: 1 }}
-          style={styles.fab}
-        >
-          <LiveIcon />
-        </LinearGradient>
-      </View>
-    </Pressable>
-  );
-}
-
-function LiveIcon() {
-  return (
-    <View style={liveStyles.wrap}>
-      <View style={[liveStyles.bar, liveStyles.barOne]} />
-      <View style={[liveStyles.bar, liveStyles.barTwo]} />
-      <View style={[liveStyles.bar, liveStyles.barThree]} />
-      <Ionicons
-        name="sparkles"
-        size={11}
-        color="#fff"
-        style={liveStyles.sparkle}
-      />
-    </View>
-  );
-}
-
-const liveStyles = StyleSheet.create({
-  wrap: {
-    width: 30,
-    height: 30,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bar: {
-    position: 'absolute',
-    width: 3,
-    borderRadius: 2,
-    backgroundColor: '#fff',
-  },
-  barOne: {
-    left: 5,
-    top: 8,
-    height: 14,
-  },
-  barTwo: {
-    left: 11,
-    top: 5,
-    height: 20,
-  },
-  barThree: {
-    right: 5,
-    top: 12,
-    height: 10,
-  },
-  sparkle: {
-    position: 'absolute',
-    top: -1,
-    right: -3,
-    textShadowColor: 'rgba(255,255,255,0.6)',
-    textShadowRadius: 4,
-  },
-});
-
 const useStyles = makeStyles((t) => ({
   wrap: {
     position: 'absolute',
@@ -418,25 +286,5 @@ const useStyles = makeStyles((t) => ({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // The FAB floats over the pill's last slot, outside the clipped surface,
-  // vertically centered so it sits level with the other tabs.
-  fabSlot: {
-    position: 'absolute',
-    top: (layout.TAB_BAR_BASE_HEIGHT - layout.TAB_FAB_SIZE) / 2,
-    right: 0,
-  },
-  fabShadow: {
-    ...t.shadows.glow,
-    borderRadius: layout.TAB_FAB_SIZE / 2 + 1,
-  },
-  fab: {
-    width: layout.TAB_FAB_SIZE,
-    height: layout.TAB_FAB_SIZE,
-    borderRadius: layout.TAB_FAB_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: 'rgba(255,255,255,0.9)',
   },
 }));
