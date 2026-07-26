@@ -26,7 +26,10 @@ export function ChangeEmailScreen() {
     setBusy(true);
     setError(null);
     try {
-      const { error: err } = await supabase.auth.updateUser({ email });
+      const { error: err } = await supabase.auth.updateUser(
+        { email },
+        { emailRedirectTo: 'gymsync://auth-callback' },
+      );
       if (err) throw err;
       setSent(true);
     } catch (e) {

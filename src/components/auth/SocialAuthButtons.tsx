@@ -25,8 +25,12 @@ export function OrDivider() {
  * WorkOS integration, so taps surface a friendly inline notice instead.
  */
 export function SocialAuthButtons() {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useStyles();
+  const dark = scheme === 'dark';
+  // Brand button content colors follow each brand's dark spec (deliberate hex).
+  const appleContent = dark ? '#000000' : '#FFFFFF';
+  const googleContent = dark ? '#E3E3E3' : colors.textPrimary;
   const [notice, setNotice] = useState<Provider | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -46,15 +50,15 @@ export function SocialAuthButtons() {
   return (
     <View style={styles.stack}>
       <AnimatedPressable style={styles.apple} onPress={() => announce('Apple')}>
-        <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
-        <AppText variant="button" color="#FFFFFF">
+        <Ionicons name="logo-apple" size={20} color={appleContent} />
+        <AppText variant="button" color={appleContent}>
           Continue with Apple
         </AppText>
       </AnimatedPressable>
 
       <AnimatedPressable style={styles.google} onPress={() => announce('Google')}>
-        <Ionicons name="logo-google" size={18} color={colors.textPrimary} />
-        <AppText variant="button" color="textPrimary">
+        <Ionicons name="logo-google" size={18} color={googleContent} />
+        <AppText variant="button" color={googleContent}>
           Continue with Google
         </AppText>
       </AnimatedPressable>
@@ -91,13 +95,18 @@ const useStyles = makeStyles((t) => ({
     marginVertical: spacing.lg,
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: t.colors.border },
-  // Apple HIG requires the black button — deliberate hex, not a theme token.
-  apple: { ...row, backgroundColor: '#000000' },
+  // Brand buttons per each brand's OWN light/dark specs (deliberate hex, not
+  // theme tokens): Apple = black-on-light / white-on-dark; Google = white with
+  // border on light / #131314 dark button.
+  apple: {
+    ...row,
+    backgroundColor: t.scheme === 'dark' ? '#FFFFFF' : '#000000',
+  },
   google: {
     ...row,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: t.scheme === 'dark' ? '#131314' : '#FFFFFF',
     borderWidth: 1,
-    borderColor: t.colors.border,
+    borderColor: t.scheme === 'dark' ? '#8E918F' : t.colors.border,
   },
   notice: {
     flexDirection: 'row',

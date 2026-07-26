@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
@@ -71,7 +71,13 @@ export function WorkoutHeroCard({
       </AppText>
 
       {muscles.length > 0 && (
-        <View style={styles.muscles}>
+        // One line always — long muscle lists scroll instead of wrapping.
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.musclesScroll}
+          contentContainerStyle={styles.muscles}
+        >
           {muscles.map((m) => (
             <Chip
               key={m}
@@ -80,7 +86,7 @@ export function WorkoutHeroCard({
               tone={onGradient ? 'onAccent' : 'accent'}
             />
           ))}
-        </View>
+        </ScrollView>
       )}
 
       <View style={[styles.statsRow, !onGradient && styles.statsRowCompleted]}>
@@ -179,11 +185,13 @@ const useStyles = makeStyles((t) => ({
   },
   badgeCompleted: { backgroundColor: t.colors.successSoft },
   title: { marginTop: spacing.md },
+  musclesScroll: {
+    marginTop: spacing.sm,
+    flexGrow: 0,
+  },
   muscles: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
-    marginTop: spacing.sm,
   },
   statsRow: {
     flexDirection: 'row',

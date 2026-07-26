@@ -27,7 +27,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   { label, icon, secure = false, error = false, containerStyle, ...rest },
   ref,
 ) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useStyles();
   const [hidden, setHidden] = useState(true);
 
@@ -44,6 +44,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           ref={ref}
           style={styles.input}
           placeholderTextColor={colors.textTertiary}
+          keyboardAppearance={scheme === 'dark' ? 'dark' : 'light'}
           secureTextEntry={secure && hidden}
           {...rest}
         />

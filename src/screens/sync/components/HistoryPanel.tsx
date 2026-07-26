@@ -79,7 +79,7 @@ export function HistoryPanel({
   onDelete,
   onNewChat,
 }: Props) {
-  const { colors } = useTheme();
+  const { colors, scheme } = useTheme();
   const styles = useStyles();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -227,7 +227,11 @@ export function HistoryPanel({
       <GestureDetector gesture={pan}>
         <Animated.View style={[styles.panel, { width: panelWidth }, panelStyle]}>
           {Platform.OS === 'ios' ? (
-            <BlurView tint="light" intensity={90} style={styles.surface}>
+            <BlurView
+              tint={scheme === 'dark' ? 'dark' : 'light'}
+              intensity={90}
+              style={styles.surface}
+            >
               <View style={[StyleSheet.absoluteFill, styles.frostVeil]} />
               {panelContent}
             </BlurView>
@@ -249,7 +253,11 @@ const useStyles = makeStyles((t) => ({
     left: 0,
   },
   surface: { flex: 1 },
-  frostVeil: { backgroundColor: 'rgba(255,255,255,0.78)' },
+  // Frost keeps blur legible: white veil in light, card-tone veil in dark.
+  frostVeil: {
+    backgroundColor:
+      t.scheme === 'dark' ? 'rgba(22,35,58,0.78)' : 'rgba(255,255,255,0.78)',
+  },
   solid: { backgroundColor: t.colors.card },
   panelInner: {
     flex: 1,

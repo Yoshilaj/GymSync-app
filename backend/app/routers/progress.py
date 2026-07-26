@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from supabase import AsyncClient
 
+from app import plan_store
 from app.auth import get_current_user_id
 from app.database import get_db
 
@@ -110,10 +111,26 @@ async def progress_summary(
             prs += 1
         best_before[name] = max(best_before[name], float(w))
 
-    prof = (
-        await db.table("profiles").select("training_days").eq("user_id", user_id).execute()
-    )
-    week_target = (prof.data[0].get("training_days") if prof.data else None) or 4
+    # Week target: the ACTIVE PLAN's day count is the source of truth (a 5-day
+    # plan means n/5), falling back to the profile preference, then 4.
+    week_target: int | None = None
+    plan_id = await plan_store.get_active_plan_id(user_id, db)
+    if plan_id:
+        wk = (
+            await db.table("plan_workouts")
+            .select("id", count="exact")
+            .eq("plan_id", plan_id)
+            .execute()
+        )
+        week_target = wk.count or None
+    if not week_target:
+        prof = (
+            await db.table("profiles")
+            .select("training_days")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        week_target = (prof.data[0].get("training_days") if prof.data else None) or 4
 
     return {
         "current_streak": streak,

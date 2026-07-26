@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Alert, Linking, View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
@@ -51,11 +51,30 @@ function useAdoptServerTheme() {
 }
 
 /**
+ * Supabase email links (change-email / reset confirmations) redirect to
+ * gymsync://auth-callback — the verification already happened server-side by
+ * the time the app opens, so just acknowledge it.
+ */
+function useAuthDeepLinks() {
+  useEffect(() => {
+    const handle = (url: string | null) => {
+      if (url?.startsWith('gymsync://auth-callback')) {
+        Alert.alert('Confirmed', 'Your change has been confirmed.');
+      }
+    };
+    const sub = Linking.addEventListener('url', (e) => handle(e.url));
+    void Linking.getInitialURL().then(handle);
+    return () => sub.remove();
+  }, []);
+}
+
+/**
  * Auth + first-run gate: splash while loading, auth flow when logged out,
  * onboarding until the profile has onboarded_at, then the app. Fails OPEN
  * into the app if the profile can't be fetched (never lock a user out).
  */
 function RootGate() {
+  useAuthDeepLinks();
   const { loading, session } = useAuth();
   const { profile, profileStatus } = useUser();
   const { colors, scheme } = useTheme();

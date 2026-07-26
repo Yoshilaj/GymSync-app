@@ -555,6 +555,13 @@ function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
             />
           </View>
         </>
+      ) : latest != null ? (
+        // Exactly one entry: acknowledge it and say what draws the line.
+        <EmptyState
+          icon="scale-outline"
+          title={`${latest.toFixed(1)} ${user.units} logged`}
+          message="Log tomorrow's weight and your trend line appears here."
+        />
       ) : (
         <EmptyState
           icon="scale-outline"
