@@ -12,6 +12,7 @@ from app.routers import (
     personality,
     plans,
     profile,
+    progress,
     session,
     voice_ws,
 )
@@ -43,6 +44,7 @@ app.include_router(personality.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
 app.include_router(account.router, prefix="/api")
+app.include_router(progress.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")

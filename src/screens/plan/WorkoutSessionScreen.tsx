@@ -22,6 +22,7 @@ import { ExerciseImage } from '@/components/ExerciseImage';
 import { RestRing } from '@/components/RestRing';
 import { SessionToasts, SessionToast } from '@/components/SessionToasts';
 import { getExerciseById, getExerciseByName } from '@/data/mockExercises';
+import { logCompletedSet } from '@/api/progress';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
 import { useAuth } from '@/auth/AuthContext';
@@ -435,6 +436,30 @@ export function WorkoutSessionScreen() {
     if (!wasCompleted) {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       actions.startRest(DEFAULT_REST_SECONDS);
+
+      // Persist the set so it counts toward real progress stats (fire-and-
+      // forget; un-toggling doesn't delete — last write stands in v1).
+      const ex = exercises[exerciseIdx];
+      const set = ex?.sets[setIdx];
+      const sessionId = workoutSession.sessionId;
+      if (ex && set && sessionId) {
+        void (async () => {
+          try {
+            const token = await getToken();
+            await logCompletedSet(token, {
+              session_id: sessionId,
+              exercise_id: ex.meta?.id ?? null,
+              exercise_name: ex.name,
+              set_index: setIdx,
+              reps: set.achievedReps ?? set.targetReps,
+              weight: set.weight > 0 ? set.weight : null,
+              weight_unit: user.units,
+            });
+          } catch {
+            /* offline — the local session state still has it */
+          }
+        })();
+      }
     }
   };
 

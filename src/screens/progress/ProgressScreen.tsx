@@ -23,15 +23,16 @@ import {
 } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { defaultLineChartProps, layout, makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Card, Entering } from '@/components/ui';
+import { AppText, Card, EmptyState, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
-import { mockProgress } from '@/data/mockProgress';
 import { usePlan } from '@/context/PlanContext';
-import { mockProfile } from '@/data/mockProfile';
 import { getExerciseById, mockExercises } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
-import { useTabBarClearance } from '@/hooks';
+import { useAuth } from '@/auth/AuthContext';
+import { useProgress, useTabBarClearance } from '@/hooks';
+import { kgToLbs } from '@/lib/units';
+import type { BodyWeightPoint, ProgressSummary, SeriesPoint } from '@/api/progress';
 import { ProgressStackParamList } from '@/navigation/ProgressStack';
 
 type Nav = NativeStackNavigationProp<ProgressStackParamList, 'ProgressHome'>;
@@ -65,6 +66,7 @@ export function ProgressScreen() {
   const [exerciseId, setExerciseId] = useState<string>('ex-bench');
   const [metric, setMetric] = useState<Metric>('strength');
   const clearance = useTabBarClearance();
+  const { summary, bodyWeight, series } = useProgress(exerciseId, metric);
 
   useEffect(() => {
     const params = route.params;
@@ -85,7 +87,10 @@ export function ProgressScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: clearance.scroll }]}
         showsVerticalScrollIndicator={false}
       >
-        <ProfileHeader onOpenSettings={() => nav.navigate('Settings')} />
+        <ProfileHeader
+          onOpenSettings={() => nav.navigate('Settings')}
+          summary={summary}
+        />
 
         <Entering index={1}>
           <CalendarBlock />
@@ -95,6 +100,7 @@ export function ProgressScreen() {
           <ExerciseTrends
             exerciseId={exerciseId}
             metric={metric}
+            series={series}
             onMetricChange={setMetric}
             onPickExercise={() =>
               nav.navigate('ExerciseList', { mode: 'picker', returnKey: 'strength' })
@@ -103,7 +109,7 @@ export function ProgressScreen() {
         </Entering>
 
         <Entering index={3}>
-          <BodyWeightBlock />
+          <BodyWeightBlock points={bodyWeight} />
         </Entering>
       </ScrollView>
     </SafeAreaView>
@@ -120,21 +126,41 @@ const AVATAR_SIZE = 68;
  * centered composition — avatar wrapped in a live weekly-training ring,
  * display-type name, and bare typographic stats. No boxes, no bands.
  */
-function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
+function ProfileHeader({
+  onOpenSettings,
+  summary,
+}: {
+  onOpenSettings: () => void;
+  summary: ProgressSummary | null;
+}) {
   const { colors, gradients } = useTheme();
   const styles = useStyles();
   const { user, profile } = useUser();
+  const { user: authUser } = useAuth();
   const insets = useSafeAreaInsets();
 
+  // Real numbers only — a fresh account shows zeros, never sample data.
+  const streak = summary?.current_streak ?? 0;
+  const prs = summary?.prs_this_month ?? 0;
+  const daysThisWeek = summary?.days_this_week ?? 0;
+  const weekTarget = summary?.week_target ?? 4;
+
   // The ring is data: how much of this week's plan is already trained.
-  const weekProgress = Math.min(1, mockProgress.daysTrainedThisWeek / 4);
+  const weekProgress = Math.min(1, weekTarget > 0 ? daysThisWeek / weekTarget : 0);
   const ringR = (RING_SIZE - RING_STROKE) / 2;
   const ringC = 2 * Math.PI * ringR;
 
+  const joined = authUser?.created_at
+    ? new Date(authUser.created_at).toLocaleDateString(undefined, {
+        month: 'long',
+        year: 'numeric',
+      })
+    : null;
+
   const stats: [string, string][] = [
-    [`${mockProgress.currentStreak}`, 'day streak'],
-    [`${mockProgress.prsThisMonth}`, 'PRs · month'],
-    [`${mockProgress.daysTrainedThisWeek}/4`, 'this week'],
+    [`${streak}`, 'day streak'],
+    [`${prs}`, 'PRs · month'],
+    [`${daysThisWeek}/${weekTarget}`, 'this week'],
   ];
 
   return (
@@ -199,14 +225,16 @@ function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
         <AppText variant="display" color="textInverse" align="center">
           {user.displayName}
         </AppText>
-        <AppText
-          variant="caption"
-          color="rgba(255,255,255,0.8)"
-          align="center"
-          style={styles.handle}
-        >
-          @{mockProfile.handle} · Joined {mockProfile.joined}
-        </AppText>
+        {joined ? (
+          <AppText
+            variant="caption"
+            color="rgba(255,255,255,0.8)"
+            align="center"
+            style={styles.handle}
+          >
+            Joined {joined}
+          </AppText>
+        ) : null}
 
         {/* Bare typographic stats — whitespace instead of boxes */}
         <View style={styles.statsRow}>
@@ -373,11 +401,13 @@ function MonthView({
 function ExerciseTrends({
   exerciseId,
   metric,
+  series,
   onMetricChange,
   onPickExercise,
 }: {
   exerciseId: string;
   metric: Metric;
+  series: SeriesPoint[];
   onMetricChange: (m: Metric) => void;
   onPickExercise: () => void;
 }) {
@@ -385,30 +415,25 @@ function ExerciseTrends({
   const styles = useStyles();
   const ex = getExerciseById(exerciseId) ?? mockExercises[0];
 
-  // Deterministic synthetic series until a real history endpoint exists —
-  // flagged in the UI with the "Sample data" chip.
-  const data = useMemo(() => {
-    const hash = [...exerciseId].reduce((a, c) => a + c.charCodeAt(0), 0);
-    const base = metric === 'volume' ? 12 + (hash % 8) : 140 + (hash % 60);
-    return mockProgress.estimated1RM.map((p, i) => ({
-      value: Math.round(
-        base +
-          i * (metric === 'volume' ? 0.4 : 1.1) +
-          Math.sin(i + hash) * (metric === 'volume' ? 1.2 : 4),
-      ),
-      label: i % 3 === 0 ? p.date.slice(3) : '',
-    }));
-  }, [exerciseId, metric]);
+  // Real logged history only. Label every ~3rd point with MM-DD.
+  const data = useMemo(
+    () =>
+      series.map((p, i) => ({
+        value: Math.round(p.value),
+        label: i % 3 === 0 ? p.date.slice(5) : '',
+      })),
+    [series],
+  );
 
-  const diff = data[data.length - 1].value - data[0].value;
+  const hasEnough = data.length >= 2;
+  const diff = hasEnough ? data[data.length - 1].value - data[0].value : 0;
   const up = diff >= 0;
-  const unit = metric === 'volume' ? 'k lbs' : 'lbs';
+  const unit = 'lbs';
 
   return (
     <ChartCard
       title="Exercise trends"
-      subtitle={metric === 'strength' ? 'Estimated 1RM' : 'Weekly weight moved'}
-      chip="Sample data"
+      subtitle={metric === 'strength' ? 'Estimated 1RM' : 'Daily weight moved'}
     >
       <View style={styles.trendControls}>
         <View style={styles.segmented}>
@@ -427,22 +452,26 @@ function ExerciseTrends({
             </Pressable>
           ))}
         </View>
-        <View
-          style={[
-            styles.trendBadge,
-            { backgroundColor: up ? colors.successSoft : colors.dangerSoft },
-          ]}
-        >
-          <Ionicons
-            name={up ? 'trending-up' : 'trending-down'}
-            size={12}
-            color={up ? colors.successText : colors.dangerText}
-          />
-          <AppText variant="caption" color={up ? 'successText' : 'dangerText'}>
-            {up ? '+' : ''}
-            {diff} {unit}
-          </AppText>
-        </View>
+        {hasEnough ? (
+          <View
+            style={[
+              styles.trendBadge,
+              { backgroundColor: up ? colors.successSoft : colors.dangerSoft },
+            ]}
+          >
+            <Ionicons
+              name={up ? 'trending-up' : 'trending-down'}
+              size={12}
+              color={up ? colors.successText : colors.dangerText}
+            />
+            <AppText variant="caption" color={up ? 'successText' : 'dangerText'}>
+              {up ? '+' : ''}
+              {diff} {unit}
+            </AppText>
+          </View>
+        ) : (
+          <View />
+        )}
       </View>
 
       <Pressable onPress={onPickExercise} style={styles.pickerButton}>
@@ -453,65 +482,86 @@ function ExerciseTrends({
         <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
       </Pressable>
 
-      <View style={styles.chartWrap}>
-        <LineChart
-          {...defaultLineChartProps(metric === 'strength' ? 'primary' : 'secondary')}
-          data={data}
-          width={CHART_W}
-          height={160}
-          maxValue={Math.max(...data.map((d) => d.value)) + 6}
-          yAxisOffset={Math.max(0, Math.min(...data.map((d) => d.value)) - 6)}
+      {hasEnough ? (
+        <View style={styles.chartWrap}>
+          <LineChart
+            {...defaultLineChartProps(metric === 'strength' ? 'primary' : 'secondary')}
+            data={data}
+            width={CHART_W}
+            height={160}
+            maxValue={Math.max(...data.map((d) => d.value)) + 6}
+            yAxisOffset={Math.max(0, Math.min(...data.map((d) => d.value)) - 6)}
+          />
+        </View>
+      ) : (
+        <EmptyState
+          icon="trending-up"
+          title="No history yet"
+          message={`Log ${ex.name} in a couple of workouts and your trend appears here.`}
         />
-      </View>
+      )}
     </ChartCard>
   );
 }
 
-function BodyWeightBlock() {
+function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
   const { colors } = useTheme();
   const styles = useStyles();
+  const { user } = useUser();
+  const metricUnits = user.units === 'kg';
+
   const data = useMemo(
     () =>
-      mockProgress.bodyweight.map((p, i) => ({
-        value: p.value,
-        label: i % 3 === 0 ? p.date.slice(3) : '',
+      points.map((p, i) => ({
+        value: metricUnits ? p.weight_kg : kgToLbs(p.weight_kg),
+        label: i % 3 === 0 ? p.day.slice(5) : '',
       })),
-    [],
+    [points, metricUnits],
   );
 
-  const latest = data[data.length - 1].value;
-  const diff = +(latest - data[0].value).toFixed(1);
+  const hasEnough = data.length >= 2;
+  const latest = data.length ? data[data.length - 1].value : null;
+  const diff = hasEnough ? +(data[data.length - 1].value - data[0].value).toFixed(1) : 0;
   const up = diff >= 0;
 
   return (
     <ChartCard
       title="Body weight"
-      subtitle={`${latest.toFixed(1)} lbs today`}
-      chip="Sample data"
+      subtitle={latest != null ? `${latest.toFixed(1)} ${user.units} latest` : 'Track your weight over time'}
     >
-      <View style={styles.trendControls}>
-        <View />
-        <View style={[styles.trendBadge, { backgroundColor: colors.warningSoft }]}>
-          <Ionicons
-            name={up ? 'trending-up' : 'trending-down'}
-            size={12}
-            color={colors.warningText}
-          />
-          <AppText variant="caption" color="warningText">
-            {up ? '+' : ''}
-            {diff} lbs
-          </AppText>
-        </View>
-      </View>
-      <View style={styles.chartWrap}>
-        <LineChart
-          {...defaultLineChartProps('hot')}
-          data={data}
-          width={CHART_W}
-          height={140}
-          noOfSections={3}
+      {hasEnough ? (
+        <>
+          <View style={styles.trendControls}>
+            <View />
+            <View style={[styles.trendBadge, { backgroundColor: colors.warningSoft }]}>
+              <Ionicons
+                name={up ? 'trending-up' : 'trending-down'}
+                size={12}
+                color={colors.warningText}
+              />
+              <AppText variant="caption" color="warningText">
+                {up ? '+' : ''}
+                {diff} {user.units}
+              </AppText>
+            </View>
+          </View>
+          <View style={styles.chartWrap}>
+            <LineChart
+              {...defaultLineChartProps('hot')}
+              data={data}
+              width={CHART_W}
+              height={140}
+              noOfSections={3}
+            />
+          </View>
+        </>
+      ) : (
+        <EmptyState
+          icon="scale-outline"
+          title="No entries yet"
+          message="Add today's weight on the Plan tab — a couple of entries draw the trend."
         />
-      </View>
+      )}
     </ChartCard>
   );
 }
