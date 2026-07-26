@@ -1,17 +1,28 @@
-import { useMemo, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 import { makeStyles, spacing, useTheme } from '@/theme';
-import { AppText, Button, Card, Chip, Input, Skeleton } from '@/components/ui';
-import { SectionHeader } from '@/components/SectionHeader';
+import {
+  AppText,
+  Input,
+  NumberWheel,
+  Skeleton,
+  WheelRow as WheelBand,
+  WheelUnit,
+} from '@/components/ui';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { pickAvatar, uploadAvatar } from '@/api/avatar';
 import { cmToFtIn, ftInToCm, kgToLbs, lbsToKg } from '@/lib/units';
 import type { Sex } from '@/api/profile';
-import { SettingsPage } from './SettingsKit';
+import {
+  CheckRow,
+  SettingsGroup,
+  SettingsPage,
+  WheelRow,
+  useDebouncedCommit,
+} from './SettingsKit';
 
 const SEX_OPTIONS: { id: Sex | 'skip'; label: string }[] = [
   { id: 'male', label: 'Male' },
@@ -24,7 +35,7 @@ const THIS_YEAR = new Date().getFullYear();
 /**
  * Gate: the form's fields initialize from `profile` exactly once, so it must
  * not mount until the server profile is actually loaded — otherwise the form
- * starts empty and a Save would overwrite real data with nulls.
+ * starts empty and a save would overwrite real data with nulls.
  */
 export function ProfileEditScreen() {
   const { profileStatus, profile } = useUser();
@@ -46,7 +57,6 @@ export function ProfileEditScreen() {
 function ProfileEditForm() {
   const styles = useStyles();
   const { colors } = useTheme();
-  const nav = useNavigation();
   const { user, profile, setDisplayName, saveProfile } = useUser();
   const { user: authUser } = useAuth();
   const metric = user.units === 'kg';
@@ -72,76 +82,75 @@ function ProfileEditForm() {
     }
   };
 
+  // ── Name: saves on blur, quiet "Saved" flash ─────────────────────────────
   const [name, setName] = useState(user.displayName);
-  const [sex, setSex] = useState<Sex | 'skip'>(profile?.sex ?? 'skip');
-  const [birthYear, setBirthYear] = useState(
-    profile?.birth_year ? String(profile.birth_year) : '',
-  );
+  const [nameSaved, setNameSaved] = useState(false);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedName = useRef(user.displayName);
 
-  const initialHeight = useMemo(() => {
-    if (!profile?.height_cm) return { cm: '', ft: '', in: '' };
-    const { feet, inches } = cmToFtIn(profile.height_cm);
-    return { cm: String(Math.round(profile.height_cm)), ft: String(feet), in: String(inches) };
-  }, [profile?.height_cm]);
-  const [heightCm, setHeightCm] = useState(initialHeight.cm);
-  const [heightFt, setHeightFt] = useState(initialHeight.ft);
-  const [heightIn, setHeightIn] = useState(initialHeight.in);
-
-  const [weight, setWeight] = useState(
-    profile?.weight_kg
-      ? String(metric ? Math.round(profile.weight_kg) : kgToLbs(profile.weight_kg))
-      : '',
-  );
-
-  const [saving, setSaving] = useState(false);
-
-  const heightCmValue = (): number | null => {
-    if (metric) {
-      const cm = Number(heightCm);
-      return cm >= 90 && cm <= 250 ? cm : null;
-    }
-    const ft = Number(heightFt);
-    const inch = Number(heightIn || '0');
-    if (!ft) return null;
-    const cm = ftInToCm(ft, inch);
-    return cm >= 90 && cm <= 250 ? cm : null;
-  };
-
-  const weightKgValue = (): number | null => {
-    const raw = Number(weight);
-    if (!raw) return null;
-    const kg = metric ? raw : lbsToKg(raw);
-    return kg >= 25 && kg <= 350 ? kg : null;
-  };
-
-  const save = async () => {
-    setSaving(true);
+  const saveName = async () => {
+    const next = name.trim();
+    if (!next || next === lastSavedName.current) return;
     try {
-      await saveProfile({
-        display_name: name.trim() || user.displayName,
-        sex: sex === 'skip' ? null : sex,
-        birth_year: birthYear.length === 4 ? Number(birthYear) : null,
-        height_cm: heightCmValue(),
-        weight_kg: weightKgValue(),
-      });
-      setDisplayName(name.trim() || user.displayName);
-      nav.goBack();
+      await saveProfile({ display_name: next });
+      setDisplayName(next);
+      lastSavedName.current = next;
+      setNameSaved(true);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setNameSaved(false), 1800);
     } catch {
-      Alert.alert("Couldn't save", 'Check your connection and try again.');
-    } finally {
-      setSaving(false);
+      Alert.alert("Couldn't save your name", 'Check your connection and try again.');
     }
   };
+
+  // ── Gender: immediate save ────────────────────────────────────────────────
+  const [sex, setSex] = useState<Sex | 'skip'>(profile?.sex ?? 'skip');
+  const chooseSex = (id: Sex | 'skip') => {
+    setSex(id);
+    void saveProfile({ sex: id === 'skip' ? null : id });
+  };
+
+  // ── Body stats: wheels, debounced optimistic saves ───────────────────────
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const toggle = (key: string) =>
+    setOpenKey((cur) => (cur === key ? null : key));
+
+  const [birthYear, setBirthYear] = useState(profile?.birth_year ?? THIS_YEAR - 27);
+  const commitBirthYear = useDebouncedCommit((y) => void saveProfile({ birth_year: y }));
+
+  const initialFtIn = profile?.height_cm
+    ? cmToFtIn(profile.height_cm)
+    : { feet: 5, inches: 10 };
+  const [heightCm, setHeightCm] = useState(
+    profile?.height_cm ? Math.round(profile.height_cm) : 175,
+  );
+  const [heightFt, setHeightFt] = useState(initialFtIn.feet);
+  const [heightIn, setHeightIn] = useState(initialFtIn.inches);
+  const commitHeight = useDebouncedCommit((cm) => void saveProfile({ height_cm: cm }));
+
+  const initialWeight = profile?.weight_kg
+    ? Math.round((metric ? profile.weight_kg : kgToLbs(profile.weight_kg)) * 10) / 10
+    : metric
+      ? 75
+      : 165;
+  const [weightInt, setWeightInt] = useState(Math.floor(initialWeight));
+  const [weightDec, setWeightDec] = useState(Math.round((initialWeight % 1) * 10));
+  const commitWeight = useDebouncedCommit(
+    (w) => void saveProfile({ weight_kg: metric ? w : lbsToKg(w) }),
+  );
+  const setWeight = (int: number, dec: number) => {
+    setWeightInt(int);
+    setWeightDec(dec);
+    commitWeight(int + dec / 10);
+  };
+
+  const heightLabel = metric
+    ? `${heightCm} cm`
+    : `${heightFt} ft ${heightIn} in`;
+  const weightLabel = `${weightInt}.${weightDec} ${user.units}`;
 
   return (
-    <SettingsPage
-      title="Profile"
-      footer={
-        <View style={styles.footer}>
-          <Button title="Save changes" onPress={save} loading={saving} />
-        </View>
-      }
-    >
+    <SettingsPage title="Profile">
       <View style={styles.avatarBlock}>
         <Pressable onPress={changePhoto} disabled={uploadingPhoto}>
           <ProfileAvatar name={name || 'Y'} size={84} uri={avatarUri} />
@@ -156,73 +165,148 @@ function ProfileEditForm() {
         </Pressable>
       </View>
 
-      <SectionHeader title="Name" />
-      <Input value={name} onChangeText={setName} placeholder="Your name" />
-      <AppText variant="caption" color="textTertiary" style={styles.hint}>
-        Signed in as {authUser?.email ?? '—'}
-      </AppText>
-
-      <SectionHeader title="Gender" />
-      <Card>
-        <View style={styles.chips}>
-          {SEX_OPTIONS.map((o) => (
-            <Chip
-              key={o.id}
-              label={o.label}
-              selected={sex === o.id}
-              onPress={() => setSex(o.id)}
-            />
-          ))}
+      <View style={styles.nameBlock}>
+        <View style={styles.nameHeader}>
+          <AppText variant="label" color="textTertiary">
+            Name
+          </AppText>
+          {nameSaved ? (
+            <AppText variant="caption" color="successText">
+              Saved
+            </AppText>
+          ) : null}
         </View>
-      </Card>
-
-      <SectionHeader title="Birth year" />
-      <Input
-        value={birthYear}
-        onChangeText={setBirthYear}
-        keyboardType="number-pad"
-        maxLength={4}
-        placeholder={`e.g. ${THIS_YEAR - 25}`}
-      />
-
-      <SectionHeader title="Height" />
-      {metric ? (
         <Input
-          value={heightCm}
-          onChangeText={setHeightCm}
-          keyboardType="number-pad"
-          maxLength={3}
-          placeholder="cm"
+          value={name}
+          onChangeText={setName}
+          onBlur={() => void saveName()}
+          placeholder="Your name"
+          returnKeyType="done"
         />
-      ) : (
-        <View style={styles.row}>
-          <Input
-            value={heightFt}
-            onChangeText={setHeightFt}
-            keyboardType="number-pad"
-            maxLength={1}
-            placeholder="ft"
-            containerStyle={styles.rowField}
-          />
-          <Input
-            value={heightIn}
-            onChangeText={setHeightIn}
-            keyboardType="number-pad"
-            maxLength={2}
-            placeholder="in"
-            containerStyle={styles.rowField}
-          />
-        </View>
-      )}
+        <AppText variant="caption" color="textTertiary" style={styles.hint}>
+          Signed in as {authUser?.email ?? '—'}
+        </AppText>
+      </View>
 
-      <SectionHeader title={`Weight (${user.units})`} />
-      <Input
-        value={weight}
-        onChangeText={setWeight}
-        keyboardType="decimal-pad"
-        maxLength={5}
-        placeholder={metric ? 'kg' : 'lbs'}
-      />
+      <SettingsGroup title="Gender">
+        {SEX_OPTIONS.map((o) => (
+          <CheckRow
+            key={o.id}
+            label={o.label}
+            selected={sex === o.id}
+            onPress={() => chooseSex(o.id)}
+          />
+        ))}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Body"
+        footnote="Changes save automatically and feed your coach's calorie and load math."
+      >
+        <WheelRow
+          label="Birth year"
+          value={String(birthYear)}
+          open={openKey === 'birthYear'}
+          onToggle={() => toggle('birthYear')}
+        >
+          <WheelBand>
+            <NumberWheel
+              min={1930}
+              max={THIS_YEAR - 10}
+              value={birthYear}
+              onChange={(y) => {
+                setBirthYear(y);
+                commitBirthYear(y);
+              }}
+              width={104}
+              showBand={false}
+              accessibilityLabel="Birth year"
+            />
+          </WheelBand>
+        </WheelRow>
+        <WheelRow
+          label="Height"
+          value={heightLabel}
+          open={openKey === 'height'}
+          onToggle={() => toggle('height')}
+        >
+          {metric ? (
+            <WheelBand>
+              <NumberWheel
+                min={120}
+                max={220}
+                value={heightCm}
+                onChange={(cm) => {
+                  setHeightCm(cm);
+                  commitHeight(cm);
+                }}
+                width={88}
+                showBand={false}
+                accessibilityLabel="Height"
+              />
+              <WheelUnit label="cm" />
+            </WheelBand>
+          ) : (
+            <WheelBand>
+              <NumberWheel
+                min={3}
+                max={7}
+                value={heightFt}
+                onChange={(ft) => {
+                  setHeightFt(ft);
+                  commitHeight(ftInToCm(ft, heightIn));
+                }}
+                width={64}
+                showBand={false}
+                accessibilityLabel="Height feet"
+              />
+              <WheelUnit label="ft" />
+              <NumberWheel
+                min={0}
+                max={11}
+                value={heightIn}
+                onChange={(inch) => {
+                  setHeightIn(inch);
+                  commitHeight(ftInToCm(heightFt, inch));
+                }}
+                width={64}
+                showBand={false}
+                accessibilityLabel="Height inches"
+              />
+              <WheelUnit label="in" />
+            </WheelBand>
+          )}
+        </WheelRow>
+        <WheelRow
+          label="Weight"
+          value={weightLabel}
+          open={openKey === 'weight'}
+          onToggle={() => toggle('weight')}
+        >
+          <WheelBand>
+            <NumberWheel
+              min={metric ? 30 : 66}
+              max={metric ? 250 : 550}
+              value={weightInt}
+              onChange={(n) => setWeight(n, weightDec)}
+              width={88}
+              showBand={false}
+              accessibilityLabel="Weight"
+            />
+            <NumberWheel
+              min={0}
+              max={9}
+              value={weightDec}
+              onChange={(n) => setWeight(weightInt, n)}
+              format={(n) => `.${n}`}
+              width={56}
+              showBand={false}
+              accessibilityLabel="Weight decimal"
+            />
+            <WheelUnit label={user.units} />
+          </WheelBand>
+        </WheelRow>
+      </SettingsGroup>
     </SettingsPage>
   );
 }
@@ -242,9 +326,13 @@ const useStyles = makeStyles((t) => ({
     borderWidth: 2,
     borderColor: t.colors.bg,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  hint: { marginTop: spacing.xs },
-  row: { flexDirection: 'row', gap: spacing.sm },
-  rowField: { flex: 1 },
-  footer: { padding: spacing.lg },
+  nameBlock: { marginBottom: spacing.xl },
+  nameHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    marginHorizontal: spacing.xs,
+  },
+  hint: { marginTop: spacing.xs, marginHorizontal: spacing.xs },
 }));

@@ -33,7 +33,7 @@ export function LegalScreen() {
       <View style={styles.body}>
         {sections.map(([heading, text]) => (
           <View key={heading} style={styles.section}>
-            <AppText variant="h3">{heading}</AppText>
+            <AppText variant="bodyMedium">{heading}</AppText>
             <AppText variant="body" color="textSecondary">
               {text}
             </AppText>

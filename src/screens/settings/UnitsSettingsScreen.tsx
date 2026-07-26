@@ -1,6 +1,6 @@
 import { useUser } from '@/context/UserContext';
 import type { Units } from '@/types';
-import { SettingsGroup, SettingsPage, SelectRow } from './SettingsKit';
+import { CheckRow, SettingsGroup, SettingsPage } from './SettingsKit';
 
 const OPTIONS: { id: Units; label: string; sublabel: string }[] = [
   { id: 'lbs', label: 'Pounds', sublabel: 'lb · ft / in' },
@@ -17,10 +17,10 @@ export function UnitsSettingsScreen() {
   };
 
   return (
-    <SettingsPage title="Units" subtitle="How weights and measurements are shown">
-      <SettingsGroup>
+    <SettingsPage title="Units">
+      <SettingsGroup footnote="Applies everywhere — weights, body stats, and your coach's suggestions.">
         {OPTIONS.map((o) => (
-          <SelectRow
+          <CheckRow
             key={o.id}
             label={o.label}
             sublabel={o.sublabel}

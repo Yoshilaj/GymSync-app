@@ -1,5 +1,5 @@
 import { useUser } from '@/context/UserContext';
-import { SettingsGroup, SettingsPage, SelectRow } from './SettingsKit';
+import { CheckRow, SettingsGroup, SettingsPage } from './SettingsKit';
 
 // English is live; the rest are placeholders until translations exist.
 const LANGUAGES = [
@@ -21,10 +21,10 @@ export function LanguageSettingsScreen() {
   };
 
   return (
-    <SettingsPage title="Language" subtitle="More languages are on the way">
-      <SettingsGroup>
+    <SettingsPage title="Language">
+      <SettingsGroup footnote="More languages are on the way.">
         {LANGUAGES.map((l) => (
-          <SelectRow
+          <CheckRow
             key={l.id}
             label={l.id}
             selected={current === l.id}

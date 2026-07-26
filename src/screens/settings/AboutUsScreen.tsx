@@ -3,10 +3,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, spacing, useTheme } from '@/theme';
-import { AppText, Card, ListRow } from '@/components/ui';
+import { AppText } from '@/components/ui';
 import { APP_VERSION, SOCIAL_LINKS } from '@/lib/appInfo';
 import type { SettingsStackParamList } from '@/navigation/SettingsNavigator';
-import { SettingsGroup, SettingsPage, ValueRow } from './SettingsKit';
+import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsKit';
 
 type Nav = NativeStackNavigationProp<SettingsStackParamList, 'AboutUs'>;
 
@@ -28,25 +28,25 @@ export function AboutUsScreen() {
       </View>
 
       <SettingsGroup title="Legal">
-        <ValueRow
+        <SettingsRow
           label="Privacy policy"
           chevron
           onPress={() => nav.navigate('Legal', { kind: 'privacy' })}
         />
-        <ValueRow
+        <SettingsRow
           label="Terms of service"
           chevron
           onPress={() => nav.navigate('Legal', { kind: 'terms' })}
         />
-        <ValueRow label="Version" value={APP_VERSION} />
+        <SettingsRow label="Version" value={APP_VERSION} />
       </SettingsGroup>
 
-      <SettingsGroup title="Follow us">
+      <SettingsGroup title="Follow us" inset>
         {SOCIAL_LINKS.map((s) => (
-          <ListRow
+          <SettingsRow
             key={s.label}
-            title={s.label}
-            left={{ icon: s.icon as keyof typeof Ionicons.glyphMap, tone: 'accent' }}
+            label={s.label}
+            icon={s.icon as keyof typeof Ionicons.glyphMap}
             right={<Ionicons name="open-outline" size={18} color={colors.textTertiary} />}
             onPress={() => void Linking.openURL(s.url)}
           />

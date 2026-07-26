@@ -36,7 +36,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
     <AnimatedPressable onPress={() => setOpen((o) => !o)}>
       <View style={styles.item}>
         <View style={styles.qRow}>
-          <AppText variant="h3" style={{ flex: 1 }}>
+          <AppText variant="bodyMedium" style={{ flex: 1 }}>
             {q}
           </AppText>
           <Ionicons

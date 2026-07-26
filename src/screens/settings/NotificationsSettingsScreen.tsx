@@ -1,5 +1,3 @@
-import { AppText } from '@/components/ui';
-import { spacing } from '@/theme';
 import { useUser } from '@/context/UserContext';
 import { SettingsGroup, SettingsPage, ToggleRow } from './SettingsKit';
 
@@ -33,34 +31,26 @@ export function NotificationsSettingsScreen() {
 
   return (
     <SettingsPage title="Notifications">
-      <SettingsGroup>
+      <SettingsGroup footnote="Push delivery is coming soon — your preferences are saved and will apply automatically once it's live.">
         <ToggleRow
           label="Rest timer"
-          sublabel="Alert when a rest period ends."
+          sublabel="Alert when a rest period ends"
           value={prefs.restTimer}
           onValueChange={set('restTimer')}
         />
         <ToggleRow
           label="Workout reminder"
-          sublabel="A nudge before your planned session."
+          sublabel="A nudge before your planned session"
           value={prefs.workoutReminder}
           onValueChange={set('workoutReminder')}
         />
         <ToggleRow
           label="Monthly report"
-          sublabel="Your progress summary, once a month."
+          sublabel="Your progress summary, once a month"
           value={prefs.monthlyReport}
           onValueChange={set('monthlyReport')}
         />
       </SettingsGroup>
-      <AppText
-        variant="caption"
-        color="textTertiary"
-        style={{ paddingHorizontal: spacing.lg, marginTop: spacing.sm }}
-      >
-        Push delivery is coming soon — your preferences are saved and will apply
-        automatically once it's live.
-      </AppText>
     </SettingsPage>
   );
 }

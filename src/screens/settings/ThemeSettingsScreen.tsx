@@ -1,13 +1,10 @@
 import { useThemePref, type ThemePreference } from '@/theme';
 import { useUser } from '@/context/UserContext';
-import { SettingsGroup, SettingsPage, SelectRow } from './SettingsKit';
+import { CheckRow, SettingsGroup, SettingsPage } from './SettingsKit';
 
-// The app-wide dark migration is complete — Dark/System are live.
-const DARK_ENABLED = true;
-
-const OPTIONS: { id: ThemePreference; label: string; sublabel: string }[] = [
-  { id: 'light', label: 'Light', sublabel: 'Always the light theme' },
-  { id: 'dark', label: 'Dark', sublabel: 'Always the dark theme' },
+const OPTIONS: { id: ThemePreference; label: string; sublabel?: string }[] = [
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
   { id: 'system', label: 'System', sublabel: 'Match your device setting' },
 ];
 
@@ -22,21 +19,17 @@ export function ThemeSettingsScreen() {
   };
 
   return (
-    <SettingsPage title="Theme" subtitle="Light, dark, or follow your device">
-      <SettingsGroup>
-        {OPTIONS.map((o) => {
-          const disabled = o.id !== 'light' && !DARK_ENABLED;
-          return (
-            <SelectRow
-              key={o.id}
-              label={o.label}
-              sublabel={disabled ? 'Coming soon' : o.sublabel}
-              selected={preference === o.id}
-              disabled={disabled}
-              onPress={() => choose(o.id)}
-            />
-          );
-        })}
+    <SettingsPage title="Theme">
+      <SettingsGroup footnote="Your choice syncs to your account and follows you across devices.">
+        {OPTIONS.map((o) => (
+          <CheckRow
+            key={o.id}
+            label={o.label}
+            sublabel={o.sublabel}
+            selected={preference === o.id}
+            onPress={() => choose(o.id)}
+          />
+        ))}
       </SettingsGroup>
     </SettingsPage>
   );

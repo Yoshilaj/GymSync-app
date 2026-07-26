@@ -1,19 +1,23 @@
-import { useCallback } from 'react';
-import { Alert, View } from 'react-native';
-import { makeStyles, spacing } from '@/theme';
-import { AppText, Card, Chip } from '@/components/ui';
-import { SectionHeader } from '@/components/SectionHeader';
+import { useCallback, useState } from 'react';
+import { Alert } from 'react-native';
+import { NumberWheel, WheelRow as WheelBand, WheelUnit } from '@/components/ui';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { updatePersonality } from '@/api/personality';
 import type { CoachPersonality } from '@/types';
 import type { ExperienceLevel } from '@/api/profile';
-import { SettingsPage } from './SettingsKit';
+import {
+  CheckRow,
+  SettingsGroup,
+  SettingsPage,
+  WheelRow,
+  useDebouncedCommit,
+} from './SettingsKit';
 
-const EXPERIENCE: { id: ExperienceLevel; label: string }[] = [
-  { id: 'beginner', label: 'Beginner' },
-  { id: 'intermediate', label: 'Intermediate' },
-  { id: 'advanced', label: 'Advanced' },
+const EXPERIENCE: { id: ExperienceLevel; label: string; sublabel: string }[] = [
+  { id: 'beginner', label: 'Beginner', sublabel: 'New to lifting, or coming back' },
+  { id: 'intermediate', label: 'Intermediate', sublabel: 'Consistent for 6+ months' },
+  { id: 'advanced', label: 'Advanced', sublabel: 'Years of structured training' },
 ];
 const GOALS = [
   { id: 'muscle', label: 'Build muscle' },
@@ -22,29 +26,26 @@ const GOALS = [
   { id: 'general_fitness', label: 'General fitness' },
   { id: 'endurance', label: 'Endurance' },
 ];
-const PERSONALITY: { id: CoachPersonality; label: string }[] = [
-  { id: 'supportive', label: 'Supportive' },
-  { id: 'classic', label: 'Classic' },
-  { id: 'energetic', label: 'Energetic' },
+const PERSONALITY: { id: CoachPersonality; label: string; sublabel: string }[] = [
+  { id: 'supportive', label: 'Supportive', sublabel: 'Warm, patient, celebrates the small wins' },
+  { id: 'classic', label: 'Classic', sublabel: 'Straightforward and to the point' },
+  { id: 'energetic', label: 'Energetic', sublabel: 'High energy, keeps the pace up' },
 ];
-const DAYS = [2, 3, 4, 5, 6];
-const LENGTHS = [30, 45, 60, 75, 90];
-
-function ChipCard({ children }: { children: React.ReactNode }) {
-  const styles = useStyles();
-  return (
-    <Card>
-      <View style={styles.chips}>{children}</View>
-    </Card>
-  );
-}
 
 export function WorkoutSettingsScreen() {
-  const styles = useStyles();
   const { user, profile, setPersonality, saveProfile } = useUser();
   const { getToken } = useAuth();
 
   const goals = profile?.goals ?? [];
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const toggle = (key: string) =>
+    setOpenKey((cur) => (cur === key ? null : key));
+
+  // Optimistic local mirrors so the wheels track instantly.
+  const [days, setDays] = useState(profile?.training_days ?? 4);
+  const [minutes, setMinutes] = useState(profile?.session_minutes ?? 60);
+  const commitDays = useDebouncedCommit((d) => void saveProfile({ training_days: d }));
+  const commitMinutes = useDebouncedCommit((m) => void saveProfile({ session_minutes: m }));
 
   const toggleGoal = (id: string) => {
     const next = goals.includes(id) ? goals.filter((g) => g !== id) : [...goals, id];
@@ -67,79 +68,93 @@ export function WorkoutSettingsScreen() {
   );
 
   return (
-    <SettingsPage title="Workout" subtitle="Tune how your coach programs for you">
-      <SectionHeader title="Experience" />
-      <ChipCard>
+    <SettingsPage title="Workout">
+      <SettingsGroup title="Experience">
         {EXPERIENCE.map((e) => (
-          <Chip
+          <CheckRow
             key={e.id}
             label={e.label}
+            sublabel={e.sublabel}
             selected={profile?.experience === e.id}
-            onPress={() => saveProfile({ experience: e.id })}
+            onPress={() => void saveProfile({ experience: e.id })}
           />
         ))}
-      </ChipCard>
+      </SettingsGroup>
 
-      <SectionHeader title="Goals" subtitle="Pick everything that applies" />
-      <ChipCard>
+      <SettingsGroup title="Goals" footnote="Pick everything that applies.">
         {GOALS.map((g) => (
-          <Chip
+          <CheckRow
             key={g.id}
             label={g.label}
+            multi
             selected={goals.includes(g.id)}
             onPress={() => toggleGoal(g.id)}
           />
         ))}
-      </ChipCard>
+      </SettingsGroup>
 
-      <SectionHeader title="Coach personality" subtitle="How Sync talks to you" />
-      <ChipCard>
+      <SettingsGroup title="Coach personality">
         {PERSONALITY.map((p) => (
-          <Chip
+          <CheckRow
             key={p.id}
             label={p.label}
+            sublabel={p.sublabel}
             selected={user.coachPersonality === p.id}
-            onPress={() => selectPersonality(p.id)}
+            onPress={() => void selectPersonality(p.id)}
           />
         ))}
-      </ChipCard>
+      </SettingsGroup>
 
-      <SectionHeader title="Training days / week" />
-      <ChipCard>
-        {DAYS.map((d) => (
-          <Chip
-            key={d}
-            label={`${d}`}
-            selected={profile?.training_days === d}
-            onPress={() => saveProfile({ training_days: d })}
-          />
-        ))}
-      </ChipCard>
-
-      <SectionHeader title="Session length" />
-      <ChipCard>
-        {LENGTHS.map((m) => (
-          <Chip
-            key={m}
-            label={`${m} min`}
-            selected={profile?.session_minutes === m}
-            onPress={() => saveProfile({ session_minutes: m })}
-          />
-        ))}
-      </ChipCard>
-
-      <AppText
-        variant="caption"
-        color="textTertiary"
-        style={styles.note}
+      <SettingsGroup
+        title="Schedule"
+        footnote="Changes apply the next time your coach builds or adjusts a plan."
       >
-        Changes apply the next time your coach builds or adjusts a plan.
-      </AppText>
+        <WheelRow
+          label="Training days"
+          value={`${days} / week`}
+          open={openKey === 'days'}
+          onToggle={() => toggle('days')}
+        >
+          <WheelBand>
+            <NumberWheel
+              min={1}
+              max={6}
+              value={days}
+              onChange={(d) => {
+                setDays(d);
+                commitDays(d);
+              }}
+              width={64}
+              showBand={false}
+              accessibilityLabel="Training days per week"
+            />
+            <WheelUnit label="days" />
+          </WheelBand>
+        </WheelRow>
+        <WheelRow
+          label="Session length"
+          value={`${minutes} min`}
+          open={openKey === 'minutes'}
+          onToggle={() => toggle('minutes')}
+        >
+          <WheelBand>
+            <NumberWheel
+              min={20}
+              max={120}
+              step={5}
+              value={minutes}
+              onChange={(m) => {
+                setMinutes(m);
+                commitMinutes(m);
+              }}
+              width={96}
+              showBand={false}
+              accessibilityLabel="Session length"
+            />
+            <WheelUnit label="min" />
+          </WheelBand>
+        </WheelRow>
+      </SettingsGroup>
     </SettingsPage>
   );
 }
-
-const useStyles = makeStyles(() => ({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  note: { marginTop: spacing.md },
-}));

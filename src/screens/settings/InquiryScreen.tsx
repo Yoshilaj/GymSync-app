@@ -1,38 +1,43 @@
-import { Linking, View } from 'react-native';
-import { makeStyles, spacing } from '@/theme';
-import { AppText, Button, Card } from '@/components/ui';
-import { SUPPORT_EMAIL } from '@/lib/appInfo';
-import { SettingsPage } from './SettingsKit';
+import { Linking } from 'react-native';
+import { APP_VERSION, SUPPORT_EMAIL } from '@/lib/appInfo';
+import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsKit';
 
-export function InquiryScreen() {
-  const styles = useStyles();
-
-  const email = () => {
-    void Linking.openURL(
-      `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('GymSync support')}`,
-    );
-  };
-
-  return (
-    <SettingsPage title="Inquiry" subtitle="We usually reply within a day">
-      <Card style={styles.card}>
-        <AppText variant="h3">Get in touch</AppText>
-        <AppText variant="body" color="textSecondary">
-          Questions, bugs, feature ideas — anything at all. Email us and a real
-          person will get back to you.
-        </AppText>
-        <View style={styles.action}>
-          <Button title="Email support" icon="mail" onPress={email} />
-        </View>
-        <AppText variant="caption" color="textTertiary" align="center">
-          {SUPPORT_EMAIL}
-        </AppText>
-      </Card>
-    </SettingsPage>
+function mail(subject: string) {
+  const full = `${subject} — GymSync v${APP_VERSION}`;
+  void Linking.openURL(
+    `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(full)}`,
   );
 }
 
-const useStyles = makeStyles(() => ({
-  card: { gap: spacing.sm },
-  action: { marginTop: spacing.sm },
-}));
+export function InquiryScreen() {
+  return (
+    <SettingsPage title="Contact support">
+      <SettingsGroup
+        inset
+        footnote={`Emails go to ${SUPPORT_EMAIL}. A real person usually replies within a day.`}
+      >
+        <SettingsRow
+          label="Ask a question"
+          sublabel="Anything about your plan, account, or the app"
+          icon="chatbubble-ellipses-outline"
+          chevron
+          onPress={() => mail('Question')}
+        />
+        <SettingsRow
+          label="Report a problem"
+          sublabel="Something broken or not behaving right"
+          icon="bug-outline"
+          chevron
+          onPress={() => mail('Problem report')}
+        />
+        <SettingsRow
+          label="Share feedback"
+          sublabel="Ideas and requests — we read all of them"
+          icon="bulb-outline"
+          chevron
+          onPress={() => mail('Feedback')}
+        />
+      </SettingsGroup>
+    </SettingsPage>
+  );
+}
