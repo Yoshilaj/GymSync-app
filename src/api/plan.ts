@@ -10,6 +10,13 @@ import type { PlannedExercise, PlannedWorkout, WeeklyPlan } from '@/types';
 
 const WEEK_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** Defensive mirror of the server's day-label canon (older plans, drift). */
+function canonDayLabel(raw: string): string {
+  const head = raw.trim().slice(0, 3).toLowerCase();
+  const hit = WEEK_LABELS.find((d) => d.toLowerCase() === head);
+  return hit ?? raw;
+}
+
 /** Server plan tree (backend/app/plan_store.py build_plan_tree). */
 interface ServerPlanExercise {
   exercise_id: string | null;
@@ -62,7 +69,7 @@ async function request<T>(
 export function toWeeklyPlan(tree: ServerPlanTree): WeeklyPlan {
   const workouts: PlannedWorkout[] = tree.workouts.map((w) => ({
     id: w.id,
-    dayLabel: w.day_label,
+    dayLabel: canonDayLabel(w.day_label),
     title: w.title,
     estMinutes: w.est_minutes ?? 45,
     exercises: w.exercises.map((ex): PlannedExercise => {

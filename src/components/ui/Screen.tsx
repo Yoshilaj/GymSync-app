@@ -5,7 +5,7 @@ import {
   ScrollView,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { layout, makeStyles, spacing, useTheme } from '@/theme';
 import { useTabBarClearance } from '@/hooks';
@@ -42,7 +42,13 @@ export function Screen({
   const { gradients } = useTheme();
   const styles = useStyles();
   const clearance = useTabBarClearance();
+  const insets = useSafeAreaInsets();
   const bottomPad = tabBarClearance ? clearance.scroll : spacing.xxxl;
+  // A pinned footer must never sit under the floating tab bar (tab screens) or
+  // the home indicator (modal/pushed screens outside the tabs).
+  const footerPad = tabBarClearance
+    ? clearance.pinned
+    : Math.max(insets.bottom, spacing.md);
 
   const inner = scroll ? (
     <ScrollView
@@ -62,7 +68,9 @@ export function Screen({
   let body = (
     <>
       {inner}
-      {footer}
+      {footer != null ? (
+        <View style={{ paddingBottom: footerPad }}>{footer}</View>
+      ) : null}
     </>
   );
 

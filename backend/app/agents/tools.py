@@ -578,6 +578,43 @@ async def execute_tool(
 
 # ── Plan proposals ────────────────────────────────────────────────────────────
 
+# The app matches workouts to weekdays by these exact short labels. The model
+# is told to use them, but normalize defensively ("Monday", "TUES", "Day 1"…).
+_DAY_CANON = {
+    "sun": "Sun", "sunday": "Sun",
+    "mon": "Mon", "monday": "Mon",
+    "tue": "Tue", "tues": "Tue", "tuesday": "Tue",
+    "wed": "Wed", "weds": "Wed", "wednesday": "Wed",
+    "thu": "Thu", "thur": "Thu", "thurs": "Thu", "thursday": "Thu",
+    "fri": "Fri", "friday": "Fri",
+    "sat": "Sat", "saturday": "Sat",
+}
+_DAY_SPREAD = {
+    1: ["Mon"],
+    2: ["Mon", "Thu"],
+    3: ["Mon", "Wed", "Fri"],
+    4: ["Mon", "Tue", "Thu", "Fri"],
+    5: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+    6: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+    7: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+}
+
+
+def _normalize_day_labels(days: list[dict], warnings: list[str]) -> None:
+    """Coerce every day_label to Sun..Sat in place; unknowns get a sensible
+    weekly spread so the app can always resolve 'today's workout'."""
+    spread = _DAY_SPREAD.get(len(days), _DAY_SPREAD[7])
+    for idx, day in enumerate(days):
+        raw = str(day.get("day_label") or "").strip().lower()
+        canon = _DAY_CANON.get(raw)
+        if canon is None:
+            canon = spread[idx % len(spread)]
+            if raw:
+                warnings.append(
+                    f"Day label '{day.get('day_label')}' isn't a weekday — scheduled on {canon}."
+                )
+        day["day_label"] = canon
+
 async def _load_catalog(db: AsyncClient) -> list[dict]:
     res = await db.table("exercises").select(
         "id, name, movement, equipment"
@@ -646,6 +683,7 @@ async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, lis
     }
 
     warnings: list[str] = []
+    _normalize_day_labels(days, warnings)
     training_days = profile.get("training_days")
     if training_days and len(days) != training_days:
         warnings.append(

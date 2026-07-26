@@ -12,11 +12,15 @@ export function ChangeEmailScreen() {
   const nav = useNavigation();
   const { user } = useAuth();
   const [email, setEmail] = useState('');
+  const [confirmEmail, setConfirmEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
 
-  const valid = /.+@.+\..+/.test(email) && email !== user?.email;
+  const valid =
+    /.+@.+\..+/.test(email) &&
+    email !== user?.email &&
+    confirmEmail.trim().toLowerCase() === email.trim().toLowerCase();
 
   const submit = async () => {
     setBusy(true);
@@ -59,15 +63,29 @@ export function ChangeEmailScreen() {
       <AppText variant="caption" color="textSecondary" style={styles.hint}>
         Current: {user?.email ?? '—'}
       </AppText>
-      <Input
-        label="New email"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        placeholder="you@example.com"
-        error={!!error}
-      />
+      <View style={styles.fields}>
+        <Input
+          label="New email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholder="you@example.com"
+          error={!!error}
+        />
+        <Input
+          label="Confirm new email"
+          value={confirmEmail}
+          onChangeText={setConfirmEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholder="Type it again"
+          error={
+            confirmEmail.length > 0 &&
+            confirmEmail.trim().toLowerCase() !== email.trim().toLowerCase()
+          }
+        />
+      </View>
       {error ? (
         <AppText variant="caption" color="dangerText" style={styles.hint}>
           {error}
@@ -79,6 +97,7 @@ export function ChangeEmailScreen() {
 
 const useStyles = makeStyles(() => ({
   hint: { marginTop: spacing.sm },
+  fields: { gap: spacing.md },
   footer: { padding: spacing.lg },
   done: { alignItems: 'center', gap: spacing.md, paddingVertical: spacing.xxl },
 }));

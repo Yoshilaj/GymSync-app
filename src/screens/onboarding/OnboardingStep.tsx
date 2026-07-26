@@ -55,8 +55,14 @@ export function OnboardingStep({
       }
     >
       <View style={styles.top}>
-        {nav.canGoBack() ? (
-          <Pressable onPress={() => nav.goBack()} hitSlop={12} style={styles.back}>
+        {step > 1 ? (
+          <Pressable
+            onPress={() => {
+              if (nav.canGoBack()) nav.goBack();
+            }}
+            hitSlop={12}
+            style={styles.back}
+          >
             <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
           </Pressable>
         ) : (

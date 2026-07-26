@@ -3,7 +3,7 @@ import { Alert, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { makeStyles, spacing, useTheme } from '@/theme';
-import { AppText, Button, Card, Chip, Input } from '@/components/ui';
+import { AppText, Button, Card, Chip, Input, Skeleton } from '@/components/ui';
 import { SectionHeader } from '@/components/SectionHeader';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { useUser } from '@/context/UserContext';
@@ -21,7 +21,29 @@ const SEX_OPTIONS: { id: Sex | 'skip'; label: string }[] = [
 
 const THIS_YEAR = new Date().getFullYear();
 
+/**
+ * Gate: the form's fields initialize from `profile` exactly once, so it must
+ * not mount until the server profile is actually loaded — otherwise the form
+ * starts empty and a Save would overwrite real data with nulls.
+ */
 export function ProfileEditScreen() {
+  const { profileStatus, profile } = useUser();
+  if (profileStatus !== 'ready' || !profile) {
+    return (
+      <SettingsPage title="Profile">
+        <View style={{ gap: spacing.md, paddingTop: spacing.lg }}>
+          <Skeleton width={84} height={84} round style={{ alignSelf: 'center' }} />
+          <Skeleton height={48} />
+          <Skeleton height={48} />
+          <Skeleton height={48} />
+        </View>
+      </SettingsPage>
+    );
+  }
+  return <ProfileEditForm />;
+}
+
+function ProfileEditForm() {
   const styles = useStyles();
   const { colors } = useTheme();
   const nav = useNavigation();

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '@/navigation/OnboardingNavigator';
@@ -26,6 +27,12 @@ export function AboutYouScreen() {
   const nav =
     useNavigation<NativeStackNavigationProp<OnboardingStackParamList>>();
   const { draft, patch } = useOnboarding();
+
+  // Keep the raw text so partial entry ("19…") stays on screen — the numeric
+  // draft value is only committed once a full 4-digit year is typed.
+  const [birthYearText, setBirthYearText] = useState(
+    draft.birthYear ? String(draft.birthYear) : '',
+  );
 
   const birthYearValid =
     draft.birthYear !== null &&
@@ -61,10 +68,12 @@ export function AboutYouScreen() {
         <Input
           keyboardType="number-pad"
           placeholder={`e.g. ${THIS_YEAR - 25}`}
-          value={draft.birthYear ? String(draft.birthYear) : ''}
+          value={birthYearText}
           onChangeText={(t) => {
-            const n = Number(t);
-            patch({ birthYear: t.length === 4 && Number.isFinite(n) ? n : null });
+            const digits = t.replace(/[^0-9]/g, '').slice(0, 4);
+            setBirthYearText(digits);
+            const n = Number(digits);
+            patch({ birthYear: digits.length === 4 && Number.isFinite(n) ? n : null });
           }}
           maxLength={4}
         />

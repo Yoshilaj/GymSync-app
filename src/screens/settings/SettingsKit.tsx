@@ -30,7 +30,9 @@ export function SettingsPage({
 }) {
   const styles = useStyles();
   return (
-    <Screen scroll padded={false} tabBarClearance={false} footer={footer}>
+    // Settings screens live INSIDE the tab navigator, so both the scroll
+    // content and any pinned footer must clear the floating tab bar.
+    <Screen scroll padded={false} footer={footer}>
       <ScreenHeader variant="detail" title={title} subtitle={subtitle} />
       <View style={styles.content}>{children}</View>
     </Screen>

@@ -43,18 +43,39 @@ const UserContext = createContext<UserContextValue | undefined>(undefined);
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile>(mockUser);
   const hydratedRef = useRef(false);
-  const { session, getToken } = useAuth();
+  const hadSessionRef = useRef(false);
+  const { session, getToken, loading: authLoading } = useAuth();
+  const accountId = session?.user?.id ?? null;
 
   const [profile, setProfile] = useState<ServerProfile | null>(null);
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('loading');
 
-  // Restore locally-persisted preferences (units, notifications, personality).
+  // Restore locally-persisted preferences. Two hardening rules:
+  // 1. Caches are per-account (`owner` field) — a previous account's data must
+  //    never bleed into a fresh sign-in.
+  // 2. The overlay only applies LOCAL-ONLY fields (personality, notifications).
+  //    displayName/units are server-owned via the profile and must not be
+  //    clobbered by a stale local copy racing the profile fetch.
   useEffect(() => {
+    if (!accountId) return;
     AsyncStorage.getItem(PREFS_KEY)
       .then((raw) => {
         if (raw) {
-          const saved = JSON.parse(raw) as Partial<UserProfile>;
-          setUser((prev) => ({ ...prev, ...saved }));
+          const saved = JSON.parse(raw) as Partial<UserProfile> & { owner?: string };
+          if (saved.owner && saved.owner !== accountId) {
+            // Different account — drop the stale caches entirely.
+            void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY]);
+            return;
+          }
+          setUser((prev) => ({
+            ...prev,
+            ...(saved.coachPersonality
+              ? { coachPersonality: saved.coachPersonality }
+              : null),
+            ...(saved.notificationsWorkout != null
+              ? { notificationsWorkout: saved.notificationsWorkout }
+              : null),
+          }));
         }
       })
       .catch(() => {
@@ -63,14 +84,17 @@ export function UserProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         hydratedRef.current = true;
       });
-  }, []);
+  }, [accountId]);
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
-    AsyncStorage.setItem(PREFS_KEY, JSON.stringify(user)).catch(() => {
+    if (!hydratedRef.current || !accountId) return;
+    AsyncStorage.setItem(
+      PREFS_KEY,
+      JSON.stringify({ ...user, owner: accountId }),
+    ).catch(() => {
       /* best-effort persistence */
     });
-  }, [user]);
+  }, [user, accountId]);
 
   // Server wins for the fields it owns, once it has them.
   const absorbProfile = useCallback((p: ServerProfile) => {
@@ -103,15 +127,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [getToken, absorbProfile]);
 
   // Hydrate whenever a session appears (login, cold start with session).
+  // On a REAL sign-out (had a session, now gone — not the initial auth-loading
+  // null), clear both caches so the next account starts clean.
   useEffect(() => {
     if (!session) {
       setProfile(null);
       setProfileStatus('loading');
+      if (hadSessionRef.current && !authLoading) {
+        hadSessionRef.current = false;
+        setUser(mockUser);
+        void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY]);
+      }
       return;
     }
+    hadSessionRef.current = true;
     setProfileStatus('loading');
     void refreshProfile();
-  }, [session, refreshProfile]);
+  }, [session, authLoading, refreshProfile]);
 
   const saveProfile = useCallback(
     async (patch: Partial<ServerProfile> & { complete_onboarding?: boolean }) => {
