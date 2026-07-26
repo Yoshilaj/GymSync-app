@@ -16,6 +16,7 @@ export type ExperienceLevel = 'beginner' | 'intermediate' | 'advanced';
 
 export interface ServerProfile {
   display_name: string | null;
+  avatar_url: string | null;
   units: Units;
   experience: ExperienceLevel | null;
   goals: string[];

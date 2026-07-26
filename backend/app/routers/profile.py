@@ -40,6 +40,7 @@ REQUIRED_FOR_ONBOARDING = (
 
 _DEFAULT_PROFILE = {
     "display_name": None,
+    "avatar_url": None,
     "units": "lbs",
     "experience": None,
     "goals": [],
@@ -58,6 +59,7 @@ _DEFAULT_PROFILE = {
 
 class ProfileUpdate(BaseModel):
     display_name: str | None = None
+    avatar_url: str | None = None
     units: Units | None = None
     experience: Experience | None = None
     goals: list[str] | None = None

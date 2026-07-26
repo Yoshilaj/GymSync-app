@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import close_db, init_db
 from app.routers import (
+    account,
     auth,
     chat,
     conversations,
@@ -41,6 +42,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(personality.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(plans.router, prefix="/api")
+app.include_router(account.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
