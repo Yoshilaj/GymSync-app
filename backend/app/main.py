@@ -4,7 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware 
 
 from app.database import close_db, init_db
-from app.routers import auth, chat, conversations, personality, session, voice_ws
+from app.routers import (
+    auth,
+    chat,
+    conversations,
+    personality,
+    plans,
+    profile,
+    session,
+    voice_ws,
+)
 from app.routers.auth import close_auth_client, init_auth_client
 
 #CORSMiddleware: controls which apps can access the API
@@ -30,6 +39,8 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(personality.router, prefix="/api")
+app.include_router(profile.router, prefix="/api")
+app.include_router(plans.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")

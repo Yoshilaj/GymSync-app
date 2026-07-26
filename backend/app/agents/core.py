@@ -56,6 +56,41 @@ async def _load_history(
     return res.data.get("chat_history") or []
 
 
+async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
+    """Compact <user_profile> block prefixed onto every turn (chat AND voice) —
+    who the agent is coaching: goals, constraints, body stats, active injuries."""
+    res = await db.table("profiles").select(
+        "units, experience, goals, preferences, sex, birth_year, height_cm, "
+        "weight_kg, activity_level, training_days, session_minutes, equipment, onboarded_at"
+    ).eq("user_id", user_id).execute()
+    if not res.data:
+        return ""
+    p = res.data[0]
+
+    inj = await db.table("injuries").select(
+        "body_part, severity, avoid_movements"
+    ).eq("user_id", user_id).eq("status", "active").execute()
+
+    lines = []
+    for key in (
+        "experience", "goals", "training_days", "session_minutes", "equipment",
+        "sex", "birth_year", "height_cm", "weight_kg", "activity_level", "units",
+    ):
+        value = p.get(key)
+        if value not in (None, [], ""):
+            lines.append(f"{key}: {json.dumps(value) if isinstance(value, list) else value}")
+    injuries_note = (p.get("preferences") or {}).get("injuries_note")
+    if injuries_note:
+        lines.append(f"injuries_note: {injuries_note}")
+    if inj.data:
+        lines.append(f"active_injuries: {json.dumps(inj.data)}")
+    if not p.get("onboarded_at"):
+        lines.append("onboarding: NOT complete — profile may be missing fields")
+    if not lines:
+        return ""
+    return "<user_profile>\n" + "\n".join(lines) + "\n</user_profile>\n\n"
+
+
 async def _load_session_context(session_id: str | None, db: AsyncClient) -> str:
     if not session_id:
         return ""
@@ -130,6 +165,7 @@ async def _agent_events(
     personality = await _load_personality(user_id, db)
     history = await _load_history(session_id, conversation_id, db)
     session_ctx = await _load_session_context(session_id, db)
+    profile_ctx = await _load_profile_context(user_id, db)
 
     system_text = build_system_prompt(
         personality["preset_id"], personality.get("system_prompt_override")
@@ -142,7 +178,7 @@ async def _agent_events(
     # JSONB path keeps its original last-10 replay window.
     replay = history if conversation_id else history[-10:]
     messages: list[dict] = [{"role": m["role"], "content": m["content"]} for m in replay]
-    full_user_message = session_ctx + user_message
+    full_user_message = profile_ctx + session_ctx + user_message
     messages.append({"role": "user", "content": full_user_message})
 
     assistant_text_parts: list[str] = []
@@ -155,7 +191,9 @@ async def _agent_events(
                 system=system,
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
-                max_tokens=1024,
+                # 4096: a full propose_workout_plan tool call alone exceeds 1024
+                # tokens and would truncate mid-tool_use (stop_reason max_tokens).
+                max_tokens=4096,
             ) as stream:
                 async for chunk in stream.text_stream:
                     assistant_text_parts.append(chunk)

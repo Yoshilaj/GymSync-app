@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -185,6 +186,67 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "propose_workout_plan",
+        "description": (
+            "Propose a complete new weekly workout plan for the user's review. This shows an "
+            "interactive card in the chat — it does NOT save the plan; the user must tap "
+            "Accept. Ground programming decisions with search_knowledge first, and respect "
+            "the user's profile (training_days, session_minutes, equipment, active injuries). "
+            "To revise after feedback, call this again with the FULL updated plan."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["name", "days"],
+            "properties": {
+                "name": {"type": "string", "description": "Short plan name, e.g. '4-Day Upper/Lower'."},
+                "split_type": {
+                    "type": "string",
+                    "description": "e.g. push/pull/legs, upper/lower, full-body",
+                },
+                "rationale": {
+                    "type": "string",
+                    "description": "1-3 sentences on why this plan fits the user.",
+                },
+                "days": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 7,
+                    "items": {
+                        "type": "object",
+                        "required": ["day_label", "title", "exercises"],
+                        "properties": {
+                            "day_label": {
+                                "type": "string",
+                                "description": "Weekday short label: Mon, Tue, Wed, Thu, Fri, Sat, Sun.",
+                            },
+                            "title": {"type": "string"},
+                            "est_minutes": {"type": "integer"},
+                            "exercises": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "object",
+                                    "required": ["exercise_name", "sets", "reps_low"],
+                                    "properties": {
+                                        "exercise_id": {
+                                            "type": "string",
+                                            "description": "Catalog id if known, e.g. ex-bench.",
+                                        },
+                                        "exercise_name": {"type": "string"},
+                                        "sets": {"type": "integer", "minimum": 1, "maximum": 10},
+                                        "reps_low": {"type": "integer", "minimum": 1},
+                                        "reps_high": {"type": "integer"},
+                                        "note": {"type": "string"},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+    {
         "name": "escalate_to_reasoning",
         "description": (
             "Hand off to the deeper reasoning model BEFORE answering. Call this for: "
@@ -195,6 +257,36 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "required": ["reason"],
             "properties": {"reason": {"type": "string"}},
+        },
+    },
+    {
+        "name": "list_exercises",
+        "description": (
+            "List the exercise catalog (ids, names, muscle groups, equipment). Call this "
+            "BEFORE propose_workout_plan and use the exact exercise_id values so every "
+            "exercise links to its full detail page in the app."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "search_knowledge",
+        "description": (
+            "Search the fitness & health research corpus for evidence to ground an answer "
+            "about training, technique, programming, nutrition, or injury/recovery. Prefer "
+            "this (usually after escalating to reasoning) over answering substantive "
+            "knowledge questions from memory. Returns cited passages."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "A focused natural-language query."},
+                "doc_type": {
+                    "type": "string",
+                    "enum": ["study", "review", "guideline"],
+                    "description": "Optional filter to a source type.",
+                },
+            },
         },
     },
 ]
@@ -208,6 +300,7 @@ UI_ACTION_TOOLS = {
     "add_exercise_to_session",
     "swap_exercise",
     "modify_plan",
+    "propose_workout_plan",  # emits {"type": "plan_proposal", ...}
 }
 
 # Internal routing tool handled in the agent loop, not by execute_tool.
@@ -367,12 +460,24 @@ async def execute_tool(
         }, []
 
     if name == "get_workout_plan":
-        if not ctx.session_id:
-            return {"plan": None}, []
-        res = await ctx.db.table("workout_sessions").select("plan_snapshot").eq(
-            "id", ctx.session_id
-        ).single().execute()
-        return {"plan": (res.data or {}).get("plan_snapshot")}, []
+        # In-session snapshot first (stable for the workout), then the durable
+        # active plan, then an explicit "no plan" the model can act on.
+        if ctx.session_id:
+            res = await ctx.db.table("workout_sessions").select("plan_snapshot").eq(
+                "id", ctx.session_id
+            ).single().execute()
+            snapshot = (res.data or {}).get("plan_snapshot")
+            if snapshot:
+                return {"plan": snapshot, "source": "session_snapshot"}, []
+        from app.plan_store import get_active_plan_tree
+
+        plan = await get_active_plan_tree(ctx.user_id, ctx.db)
+        if plan:
+            return {"plan": plan, "source": "active_plan"}, []
+        return {"plan": None, "note": "User has no plan yet — offer to create one."}, []
+
+    if name == "propose_workout_plan":
+        return await _propose_workout_plan(args, ctx)
 
     if name == "report_injury":
         row: dict = {"user_id": ctx.user_id, "body_part": args["body_part"], "status": "active"}
@@ -455,7 +560,167 @@ async def execute_tool(
         ctx.app_actions.append({"type": "app_action", "action": "modify_plan", "changes": changes})
         return {"status": "plan_modified", "applied": changes}, ctx.app_actions
 
+    if name == "list_exercises":
+        res = await ctx.db.table("exercises").select(
+            "id, name, muscle_group, equipment"
+        ).eq("is_active", True).order("muscle_group").execute()
+        return {"exercises": res.data or []}, []
+
+    if name == "search_knowledge":
+        # Knowledge RAG. Read-only, no UI action. Fault-tolerant inside pipeline.search;
+        # lazy import keeps boot cheap (embedder/reranker models load on first call).
+        from app.rag import pipeline
+
+        return await pipeline.search(args, ctx), []
+
     return {"error": f"Unknown tool: {name}"}, []
+
+
+# ── Plan proposals ────────────────────────────────────────────────────────────
+
+async def _load_catalog(db: AsyncClient) -> list[dict]:
+    res = await db.table("exercises").select(
+        "id, name, movement, equipment"
+    ).eq("is_active", True).execute()
+    return res.data or []
+
+
+def _name_tokens(name: str) -> frozenset[str]:
+    """Normalized word set: lowercase, punctuation-stripped, naive de-plural
+    (triceps/tricep, dumbbells/dumbbell)."""
+    words = re.sub(r"[^a-z0-9 ]", " ", name.lower()).split()
+    return frozenset(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words)
+
+
+def _match_exercise(catalog: list[dict], exercise_id: str | None, name: str) -> dict | None:
+    """Resolve a proposed exercise against the catalog: trust-but-verify the
+    model-supplied id, then token-set matching so word order ("Cable Seated
+    Row" vs "Seated Cable Row") and qualifiers ("Barbell Back Squat" vs "Back
+    Squat") still resolve. Ambiguous names stay unmatched (saved as free text)
+    rather than guessing a different exercise."""
+    if exercise_id:
+        for row in catalog:
+            if row["id"] == exercise_id:
+                return row
+    needle = _name_tokens(name)
+    if not needle:
+        return None
+
+    # The movement noun is usually the last word ("... Curl" vs "... Press") —
+    # a fuzzy match that changes it is a different exercise, not a variant.
+    head = _name_tokens(name.split()[-1]) if name.split() else frozenset()
+
+    best: tuple[float, dict] | None = None
+    for row in catalog:
+        tokens = _name_tokens(row["name"])
+        if tokens == needle:
+            return row
+        # Subset either way = one side just adds qualifiers → strong match.
+        subset = tokens <= needle or needle <= tokens
+        jaccard = len(tokens & needle) / len(tokens | needle)
+        score = 1.0 if subset else jaccard
+        if not subset and head and not (head & tokens):
+            continue
+        if score >= 0.5 and (best is None or score > best[0]):
+            best = (score, row)
+    return best[1] if best else None
+
+
+async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, list[dict]]:
+    """Validate + normalize the proposed plan, stash it durably, emit the card
+    packet. Does NOT write the plan tables — acceptance does (plan_store)."""
+    days = args.get("days") or []
+    if not days:
+        return {"error": "A plan needs at least one day."}, []
+
+    profile_res = await ctx.db.table("profiles").select(
+        "training_days, session_minutes, equipment"
+    ).eq("user_id", ctx.user_id).execute()
+    profile = profile_res.data[0] if profile_res.data else {}
+
+    injuries_res = await ctx.db.table("injuries").select(
+        "body_part, avoid_movements"
+    ).eq("user_id", ctx.user_id).eq("status", "active").execute()
+    avoid_movements = {
+        m for row in (injuries_res.data or []) for m in (row.get("avoid_movements") or [])
+    }
+
+    warnings: list[str] = []
+    training_days = profile.get("training_days")
+    if training_days and len(days) != training_days:
+        warnings.append(
+            f"Plan has {len(days)} days but the user asked for {training_days}/week."
+        )
+
+    user_equipment = set(profile.get("equipment") or [])
+    session_minutes = profile.get("session_minutes")
+
+    catalog = await _load_catalog(ctx.db)
+    normalized_days = []
+    for day in days:
+        norm_exercises = []
+        for ex in day.get("exercises") or []:
+            resolved = _match_exercise(
+                catalog, ex.get("exercise_id"), ex.get("exercise_name") or ""
+            )
+            if resolved:
+                ex = {**ex, "exercise_id": resolved["id"], "exercise_name": resolved["name"]}
+                if user_equipment and resolved.get("equipment") not in (
+                    user_equipment | {"Bodyweight", None}
+                ):
+                    warnings.append(
+                        f"{resolved['name']} needs {resolved.get('equipment')} — "
+                        "not in the user's equipment."
+                    )
+                if resolved.get("movement") in avoid_movements:
+                    warnings.append(
+                        f"{resolved['name']} is a {resolved.get('movement')} movement, "
+                        "which an active injury says to avoid."
+                    )
+            else:
+                ex = {**ex, "exercise_id": None}
+                warnings.append(
+                    f"'{ex.get('exercise_name')}' isn't in the catalog — it will be "
+                    "saved by name only."
+                )
+            norm_exercises.append(ex)
+        if session_minutes and day.get("est_minutes") and day["est_minutes"] > session_minutes * 1.5:
+            warnings.append(
+                f"{day.get('title')} is ~{day['est_minutes']}min vs the user's "
+                f"{session_minutes}min sessions."
+            )
+        normalized_days.append({**day, "exercises": norm_exercises})
+
+    payload = {
+        "name": args.get("name") or "My plan",
+        "split_type": args.get("split_type") or "",
+        "rationale": args.get("rationale") or "",
+        "days": normalized_days,
+    }
+
+    # One pending proposal at a time — a fresh one supersedes stale drafts.
+    await ctx.db.table("plan_proposals").update({"status": "superseded", "updated_at": utcnow()}).eq(
+        "user_id", ctx.user_id
+    ).eq("status", "pending").execute()
+    ins = await ctx.db.table("plan_proposals").insert(
+        {"user_id": ctx.user_id, "payload": payload, "status": "pending"}
+    ).execute()
+    proposal_id = ins.data[0]["id"]
+
+    ctx.app_actions.append(
+        {
+            "type": "plan_proposal",
+            "proposal_id": proposal_id,
+            "plan": payload,
+            "warnings": warnings,
+        }
+    )
+    return {
+        "status": "proposal_shown",
+        "proposal_id": proposal_id,
+        "warnings": warnings,
+        "note": "The user sees the plan card now and must tap Accept — do not claim it is saved.",
+    }, ctx.app_actions
 
 
 def blocks_to_dicts(content: list) -> list[dict]:

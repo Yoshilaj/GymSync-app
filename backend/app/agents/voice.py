@@ -255,7 +255,7 @@ class VoiceSession:
                 for sentence in sentences:
                     await _speak(sentence)
 
-            elif event["type"] in ("app_action", "error"):
+            elif event["type"] in ("app_action", "plan_proposal", "error"):
                 async with self._ws_lock:
                     await self._ws.send_json(event)
 

@@ -54,3 +54,4 @@ yarn-error.*
 
 # Claude Code local settings + skills (per-machine, not part of the app)
 .claude/
+.fastembed_cache/

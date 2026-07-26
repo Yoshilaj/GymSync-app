@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from supabase import AsyncClient
 
+from app import plan_store
 from app.agents.tools import utcnow
 from app.auth import get_current_user_id
 from app.database import get_db
@@ -28,35 +29,12 @@ async def _end_existing_active_sessions(user_id: str, db: AsyncClient) -> None:
 
 
 async def _build_plan_snapshot(plan_id: str, user_id: str, db: AsyncClient) -> dict:
-    """Reconstruct a self-contained plan snapshot from the normalized plan tables,
-    so the session is unaffected if the user later edits the plan."""
-    plan = await db.table("workout_plans").select("id, name").eq(
-        "id", plan_id
-    ).eq("user_id", user_id).single().execute()
-    if not plan.data:
+    """Self-contained plan snapshot (plan_store owns the tree shape), so the
+    session is unaffected if the user later edits the plan."""
+    tree = await plan_store.build_plan_tree(plan_id, user_id, db)
+    if tree is None:
         raise HTTPException(status_code=404, detail="Plan not found")
-
-    workouts = await db.table("plan_workouts").select(
-        "id, day_label, title, est_minutes, sort_order"
-    ).eq("plan_id", plan_id).eq("user_id", user_id).order("sort_order").execute()
-
-    workout_ids = [w["id"] for w in (workouts.data or [])]
-    exercises_by_workout: dict[str, list] = {}
-    if workout_ids:
-        ex = await db.table("plan_exercises").select(
-            "plan_workout_id, exercise_id, exercise_name, target_sets, note, sort_order"
-        ).in_("plan_workout_id", workout_ids).order("sort_order").execute()
-        for row in ex.data or []:
-            exercises_by_workout.setdefault(row["plan_workout_id"], []).append(row)
-
-    return {
-        "plan_id": plan.data["id"],
-        "name": plan.data["name"],
-        "workouts": [
-            {**w, "exercises": exercises_by_workout.get(w["id"], [])}
-            for w in (workouts.data or [])
-        ],
-    }
+    return tree
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -83,9 +61,12 @@ async def start_session(
     # Close any existing active session first (one active session per user).
     await _end_existing_active_sessions(user_id, db)
 
+    # No explicit plan_id → fall back to the user's active plan, so the coach
+    # always sees the real program even for clients that don't pass one.
+    plan_id = body.plan_id or await plan_store.get_active_plan_id(user_id, db)
     plan_snapshot = None
-    if body.plan_id:
-        plan_snapshot = await _build_plan_snapshot(body.plan_id, user_id, db)
+    if plan_id:
+        plan_snapshot = await _build_plan_snapshot(plan_id, user_id, db)
 
     res = await db.table("workout_sessions").insert(
         {
