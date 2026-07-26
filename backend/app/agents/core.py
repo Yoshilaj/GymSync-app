@@ -4,6 +4,7 @@ _agent_events()  — core loop, yields plain dicts (shared by SSE and WebSocket)
 run_chat_agent() — SSE wrapper for POST /api/chat
 LangGraph state machine (Step 11) will wrap _agent_events with state routing.
 """
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 
@@ -151,6 +152,7 @@ async def _agent_events(
     user_id: str,
     db: AsyncClient,
     conversation_id: str | None = None,
+    model: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Core agent loop. Yields plain event dicts:
@@ -182,7 +184,7 @@ async def _agent_events(
     messages.append({"role": "user", "content": full_user_message})
 
     assistant_text_parts: list[str] = []
-    model = MODEL_FAST  # escalate_to_reasoning bumps this to MODEL_REASONING
+    model = model or MODEL_FAST  # escalate_to_reasoning bumps this to MODEL_REASONING
 
     try:
         while True:
@@ -252,3 +254,51 @@ async def run_chat_agent(
     """SSE wrapper around _agent_events for POST /api/chat."""
     async for event in _agent_events(user_message, session_id, user_id, db):
         yield f"data: {json.dumps(event)}\n\n"
+
+
+# ── One-shot plan generation (onboarding) ─────────────────────────────────────
+
+class PlanGenerationError(Exception):
+    """The agent didn't produce a plan proposal."""
+
+
+GENERATION_MESSAGE = (
+    "Create my first weekly workout plan now, based only on my profile. "
+    "Call list_exercises to review the catalog, then call propose_workout_plan. "
+    "Do not ask questions and do not add commentary — produce the plan."
+)
+
+
+async def run_plan_generation(user_id: str, db: AsyncClient) -> dict:
+    """
+    Chat-free plan generation for onboarding. Drives the normal agent loop on
+    the reasoning model, swallows text, and returns the plan_proposal packet
+    (the tool has already persisted the plan_proposals row by then). No
+    session/conversation ids → zero chat side effects. One internal retry.
+    """
+    last_error: str | None = None
+    for _attempt in range(2):
+        gen = _agent_events(
+            GENERATION_MESSAGE,
+            session_id=None,
+            user_id=user_id,
+            db=db,
+            model=MODEL_REASONING,
+        )
+        try:
+            async with asyncio.timeout(90):
+                async for event in gen:
+                    if event["type"] == "plan_proposal":
+                        return event
+                    if event["type"] == "error":
+                        last_error = event["message"]
+                        break
+                    # text_delta / app_action swallowed; a bare "done" without
+                    # a proposal falls through to the retry.
+        except TimeoutError:
+            last_error = "Plan generation timed out."
+        finally:
+            # Stop the loop — the captured packet is all we need; this skips
+            # the model's post-tool follow-up turn entirely.
+            await gen.aclose()
+    raise PlanGenerationError(last_error or "The coach didn't produce a plan.")

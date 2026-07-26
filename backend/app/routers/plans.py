@@ -13,10 +13,28 @@ from fastapi import APIRouter, Depends, HTTPException
 from supabase import AsyncClient
 
 from app import plan_store
+from app.agents.core import PlanGenerationError, run_plan_generation
 from app.auth import get_current_user_id
 from app.database import get_db
 
 router = APIRouter(tags=["plans"])
+
+
+@router.post("/plans/generate")
+async def generate_plan(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncClient = Depends(get_db),
+) -> dict:
+    """One-shot, chat-free plan generation (onboarding's final step)."""
+    try:
+        event = await run_plan_generation(user_id, db)
+    except PlanGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "proposal_id": event["proposal_id"],
+        "plan": event["plan"],
+        "warnings": event.get("warnings", []),
+    }
 
 
 def _utcnow() -> str:

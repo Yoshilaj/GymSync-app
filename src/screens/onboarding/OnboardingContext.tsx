@@ -1,8 +1,9 @@
 /**
  * Draft state for the onboarding flow. Values live here in the user's chosen
- * units; submit() converts to canonical metric, PUTs the whole profile (which
- * stamps onboarded_at server-side), and requests the plan-kickoff handoff so
- * RootNavigator opens on Sync and auto-sends the first-plan message.
+ * units. saveProfileDraft() converts to canonical metric and PUTs the profile
+ * WITHOUT the completion flag (the gate must stay put while BuildingPlan
+ * generates); completeOnboarding() repeats the write WITH the flag once the
+ * plan is accepted (or skipped), which flips RootGate into the app.
  */
 import React, {
   createContext,
@@ -16,7 +17,6 @@ import type { Units } from '@/types';
 import type { ActivityLevel, ExperienceLevel, Sex } from '@/api/profile';
 import { useUser } from '@/context/UserContext';
 import { ftInToCm, lbsToKg } from '@/lib/units';
-import { requestPlanKickoff } from '@/lib/planKickoff';
 
 export interface OnboardingDraft {
   goals: string[];
@@ -66,7 +66,13 @@ interface OnboardingContextValue {
   weightKgValue: number | null;
   submitting: boolean;
   submitError: string | null;
-  submit: () => Promise<boolean>;
+  /**
+   * Persist the profile WITHOUT completing onboarding — the gate must not
+   * flip while the BuildingPlan step is still generating.
+   */
+  saveProfileDraft: () => Promise<boolean>;
+  /** Final write WITH the completion flag — flips the gate into the app. */
+  completeOnboarding: () => Promise<boolean>;
 }
 
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
@@ -115,42 +121,52 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     return kg >= 25 && kg <= 350 ? kg : null;
   }, [draft.units, draft.weight]);
 
-  const submit = useCallback(async (): Promise<boolean> => {
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await saveProfile({
-        goals: draft.goals,
-        experience: draft.experience,
-        training_days: draft.trainingDays,
-        session_minutes: draft.sessionMinutes,
-        equipment: draft.equipment,
-        sex: draft.sex,
-        birth_year: draft.birthYear,
-        activity_level: draft.activityLevel,
-        height_cm: heightCmValue,
-        weight_kg: weightKgValue,
-        units: draft.units,
-        preferences: {
-          ...(profile?.preferences ?? {}),
-          ...(draft.injuriesNote.trim()
-            ? { injuries_note: draft.injuriesNote.trim() }
-            : null),
-        },
-        complete_onboarding: true,
-      });
-      setUnits(draft.units);
-      requestPlanKickoff();
-      return true;
-    } catch (e) {
-      setSubmitError(
-        e instanceof Error ? e.message : 'Could not save your profile.',
-      );
-      return false;
-    } finally {
-      setSubmitting(false);
-    }
-  }, [draft, heightCmValue, weightKgValue, profile, saveProfile, setUnits]);
+  const buildPayload = useCallback(
+    (complete: boolean) => ({
+      goals: draft.goals,
+      experience: draft.experience,
+      training_days: draft.trainingDays,
+      session_minutes: draft.sessionMinutes,
+      equipment: draft.equipment,
+      sex: draft.sex,
+      birth_year: draft.birthYear,
+      activity_level: draft.activityLevel,
+      height_cm: heightCmValue,
+      weight_kg: weightKgValue,
+      units: draft.units,
+      preferences: {
+        ...(profile?.preferences ?? {}),
+        ...(draft.injuriesNote.trim()
+          ? { injuries_note: draft.injuriesNote.trim() }
+          : null),
+      },
+      complete_onboarding: complete,
+    }),
+    [draft, heightCmValue, weightKgValue, profile],
+  );
+
+  const save = useCallback(
+    async (complete: boolean): Promise<boolean> => {
+      setSubmitting(true);
+      setSubmitError(null);
+      try {
+        await saveProfile(buildPayload(complete));
+        setUnits(draft.units);
+        return true;
+      } catch (e) {
+        setSubmitError(
+          e instanceof Error ? e.message : 'Could not save your profile.',
+        );
+        return false;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [buildPayload, draft.units, saveProfile, setUnits],
+  );
+
+  const saveProfileDraft = useCallback(() => save(false), [save]);
+  const completeOnboarding = useCallback(() => save(true), [save]);
 
   const value: OnboardingContextValue = {
     draft,
@@ -160,7 +176,8 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     weightKgValue,
     submitting,
     submitError,
-    submit,
+    saveProfileDraft,
+    completeOnboarding,
   };
 
   return (

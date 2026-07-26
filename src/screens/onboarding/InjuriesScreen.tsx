@@ -1,11 +1,17 @@
 import { StyleSheet } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { OnboardingStackParamList } from '@/navigation/OnboardingNavigator';
 import { AppText, Chip, Input } from '@/components/ui';
 import { spacing } from '@/theme';
 import { OnboardingStep, StepSection } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
 
 export function InjuriesScreen() {
-  const { draft, patch, submitting, submitError, submit } = useOnboarding();
+  const nav =
+    useNavigation<NativeStackNavigationProp<OnboardingStackParamList>>();
+  const { draft, patch, submitting, submitError, saveProfileDraft } =
+    useOnboarding();
 
   const none = draft.injuriesNote === '';
   // Always valid — injuries are the one optional step ("None" is an answer).
@@ -18,7 +24,11 @@ export function InjuriesScreen() {
       valid={!submitting}
       continueLabel="Save & build my plan"
       continueLoading={submitting}
-      onContinue={() => void submit()}
+      onContinue={() =>
+        void saveProfileDraft().then((ok) => {
+          if (ok) nav.navigate('BuildingPlan');
+        })
+      }
     >
       <StepSection label="Injuries or limitations">
         <Chip

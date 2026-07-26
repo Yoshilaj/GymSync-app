@@ -4,10 +4,11 @@
  * disabled until the step is valid.
  */
 import { ReactNode } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useNavigation } from '@react-navigation/native';
-import { makeStyles, spacing, useTheme } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Chip, ProgressBar, Screen } from '@/components/ui';
 
 export const TOTAL_STEPS = 6;
@@ -126,6 +127,47 @@ export function StepSection({ label, children }: { label: string; children: Reac
   );
 }
 
+/** Segmented control — small uniform option sets (days/week, unit systems). */
+export function SegmentRow<T extends string | number>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T | null;
+  onChange: (v: T) => void;
+}) {
+  const styles = useStyles();
+  return (
+    <View style={styles.segmentTrack}>
+      {options.map((opt) => {
+        const selected = opt.value === value;
+        return (
+          <Pressable
+            key={String(opt.value)}
+            onPress={() => {
+              if (!selected) {
+                void Haptics.selectionAsync();
+                onChange(opt.value);
+              }
+            }}
+            style={[styles.segmentCell, selected && styles.segmentCellSelected]}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+          >
+            <AppText
+              variant="bodyMedium"
+              color={selected ? 'textPrimary' : 'textSecondary'}
+            >
+              {opt.label}
+            </AppText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 const useStyles = makeStyles((t) => ({
   top: {
     flexDirection: 'row',
@@ -159,5 +201,29 @@ const useStyles = makeStyles((t) => ({
     paddingBottom: spacing.lg,
     paddingTop: spacing.sm,
     backgroundColor: t.colors.bg,
+  },
+  segmentTrack: {
+    flexDirection: 'row',
+    backgroundColor: t.colors.bgSubtle,
+    borderRadius: radius.md,
+    padding: spacing.xxs,
+    gap: spacing.xxs,
+  },
+  segmentCell: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm + 2,
+  },
+  segmentCellSelected: {
+    backgroundColor: t.colors.card,
+    ...t.shadows.xs,
+    ...(t.scheme === 'dark'
+      ? {
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: t.colors.borderStrong,
+        }
+      : null),
   },
 }));

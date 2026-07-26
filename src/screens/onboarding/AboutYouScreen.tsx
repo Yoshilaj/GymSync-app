@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { OnboardingStackParamList } from '@/navigation/OnboardingNavigator';
 import type { ActivityLevel, Sex } from '@/api/profile';
-import { Input } from '@/components/ui';
+import { NumberWheel, WheelRow } from '@/components/ui';
 import { ChipGrid, OnboardingStep, StepSection } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
 
@@ -28,11 +28,11 @@ export function AboutYouScreen() {
     useNavigation<NativeStackNavigationProp<OnboardingStackParamList>>();
   const { draft, patch } = useOnboarding();
 
-  // Keep the raw text so partial entry ("19…") stays on screen — the numeric
-  // draft value is only committed once a full 4-digit year is typed.
-  const [birthYearText, setBirthYearText] = useState(
-    draft.birthYear ? String(draft.birthYear) : '',
-  );
+  // Seed the wheel default so the step validates without a scroll.
+  useEffect(() => {
+    if (draft.birthYear === null) patch({ birthYear: THIS_YEAR - 27 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const birthYearValid =
     draft.birthYear !== null &&
@@ -65,18 +65,17 @@ export function AboutYouScreen() {
         />
       </StepSection>
       <StepSection label="Birth year">
-        <Input
-          keyboardType="number-pad"
-          placeholder={`e.g. ${THIS_YEAR - 25}`}
-          value={birthYearText}
-          onChangeText={(t) => {
-            const digits = t.replace(/[^0-9]/g, '').slice(0, 4);
-            setBirthYearText(digits);
-            const n = Number(digits);
-            patch({ birthYear: digits.length === 4 && Number.isFinite(n) ? n : null });
-          }}
-          maxLength={4}
-        />
+        <WheelRow>
+          <NumberWheel
+            min={1930}
+            max={THIS_YEAR - 10}
+            value={draft.birthYear ?? THIS_YEAR - 27}
+            onChange={(y) => patch({ birthYear: y })}
+            width={104}
+            showBand={false}
+            accessibilityLabel="Birth year"
+          />
+        </WheelRow>
       </StepSection>
       <StepSection label="Day-to-day activity (outside the gym)">
         <ChipGrid

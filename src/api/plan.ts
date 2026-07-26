@@ -7,6 +7,7 @@
  */
 import { voiceConfig } from '@/voice/config';
 import type { PlannedExercise, PlannedWorkout, WeeklyPlan } from '@/types';
+import type { PlanProposalWire } from '@/voice/protocol';
 
 const WEEK_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -115,4 +116,40 @@ export async function acceptPlanProposal(
     `/plans/proposals/${proposalId}/accept`,
   );
   return toWeeklyPlan(data.plan);
+}
+
+export interface GeneratedProposal {
+  proposal_id: string;
+  plan: PlanProposalWire;
+  warnings: string[];
+}
+
+/** One-shot plan generation (onboarding). Long-running — generous timeout. */
+export async function generatePlan(token: string): Promise<GeneratedProposal> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(`${voiceConfig.apiBaseUrl}/api/plans/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Plan generation failed (HTTP ${res.status})`);
+    return (await res.json()) as GeneratedProposal;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** The still-pending proposal, if any (crash/reload recovery in onboarding). */
+export async function fetchLatestProposal(
+  token: string,
+): Promise<{ id: string; payload: PlanProposalWire } | null> {
+  const data = await request<{
+    proposal: { id: string; payload: PlanProposalWire } | null;
+  }>(token, 'GET', '/plans/proposals/latest');
+  return data.proposal;
 }

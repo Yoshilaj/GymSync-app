@@ -1,8 +1,8 @@
 /**
  * First-run onboarding — mounted by RootGate when the session exists but the
- * profile has no onboarded_at. The final step PUTs the profile (stamping
- * onboarded_at), which flips the gate into the app; a plan-kickoff flag makes
- * RootNavigator open on Sync to build the first plan.
+ * profile has no onboarded_at. The Injuries step saves the profile (without
+ * completing), then BuildingPlan generates and accepts the first plan in
+ * place; completeOnboarding() stamps onboarded_at and flips the gate.
  */
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { OnboardingProvider } from '@/screens/onboarding/OnboardingContext';
@@ -12,6 +12,7 @@ import { EquipmentScreen } from '@/screens/onboarding/EquipmentScreen';
 import { AboutYouScreen } from '@/screens/onboarding/AboutYouScreen';
 import { BodyMetricsScreen } from '@/screens/onboarding/BodyMetricsScreen';
 import { InjuriesScreen } from '@/screens/onboarding/InjuriesScreen';
+import { BuildingPlanScreen } from '@/screens/onboarding/BuildingPlanScreen';
 
 export type OnboardingStackParamList = {
   Goals: undefined;
@@ -20,6 +21,7 @@ export type OnboardingStackParamList = {
   AboutYou: undefined;
   BodyMetrics: undefined;
   Injuries: undefined;
+  BuildingPlan: undefined;
 };
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -37,6 +39,11 @@ export function OnboardingNavigator() {
         <Stack.Screen name="AboutYou" component={AboutYouScreen} />
         <Stack.Screen name="BodyMetrics" component={BodyMetricsScreen} />
         <Stack.Screen name="Injuries" component={InjuriesScreen} />
+        <Stack.Screen
+          name="BuildingPlan"
+          component={BuildingPlanScreen}
+          options={{ gestureEnabled: false }}
+        />
       </Stack.Navigator>
     </OnboardingProvider>
   );
