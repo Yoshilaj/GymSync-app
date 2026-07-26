@@ -1,5 +1,5 @@
-import { View, StyleSheet } from 'react-native';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { View } from 'react-native';
+import { makeStyles, radius, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
 import { ChatMessage } from '@/types';
 
@@ -10,6 +10,7 @@ interface Props {
 }
 
 export function ChatBubble({ message, streaming = false }: Props) {
+  const styles = useStyles();
   const isUser = message.author === 'user';
   return (
     <View style={[styles.row, isUser ? styles.rowRight : styles.rowLeft]}>
@@ -30,7 +31,7 @@ export function ChatBubble({ message, streaming = false }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     marginBottom: spacing.sm,
@@ -44,15 +45,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
   },
   userBubble: {
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
     borderBottomRightRadius: spacing.xs,
   },
   syncBubble: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderBottomLeftRadius: spacing.xs,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   authorLabel: {
     marginBottom: 4,
   },
-});
+}));

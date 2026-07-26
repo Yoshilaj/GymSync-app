@@ -1,13 +1,12 @@
 import {
   ActivityIndicator,
   Pressable,
-  StyleSheet,
   StyleProp,
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'live';
@@ -27,14 +26,6 @@ interface Props {
 
 const HEIGHTS: Record<Size, number> = { lg: 52, md: 44, sm: 36 };
 
-const LABEL_COLOR: Record<Variant, string> = {
-  primary: colors.textInverse,
-  secondary: colors.textPrimary,
-  ghost: colors.accentText,
-  danger: colors.textInverse,
-  live: colors.textInverse,
-};
-
 export function Button({
   title,
   onPress,
@@ -46,8 +37,17 @@ export function Button({
   full = true,
   style,
 }: Props) {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
   const isDisabled = disabled || loading;
-  const labelColor = LABEL_COLOR[variant];
+
+  const labelColor: string = {
+    primary: colors.textInverse,
+    secondary: colors.textPrimary,
+    ghost: colors.accentText,
+    danger: colors.textInverse,
+    live: colors.textInverse,
+  }[variant];
 
   const content = loading ? (
     <ActivityIndicator color={labelColor} />
@@ -122,7 +122,7 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -132,16 +132,16 @@ const styles = StyleSheet.create({
   },
   baseSm: { paddingHorizontal: spacing.md, borderRadius: radius.sm },
   full: { alignSelf: 'stretch' },
-  primaryShadow: { ...shadows.glow, borderRadius: radius.md },
+  primaryShadow: { ...t.shadows.glow, borderRadius: radius.md },
   secondary: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
-  danger: { backgroundColor: colors.danger },
-  live: { backgroundColor: colors.live },
+  danger: { backgroundColor: t.colors.danger },
+  live: { backgroundColor: t.colors.live },
   icon: { marginRight: spacing.sm },
   labelSm: { fontSize: 15 },
   pressed: { opacity: 0.85 },
   disabled: { opacity: 0.4 },
-});
+}));

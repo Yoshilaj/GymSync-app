@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, Chip } from '@/components/ui';
 import { SetRow } from '@/components/SetRow';
 import { VoiceButton } from '@/components/VoiceButton';
@@ -74,6 +74,8 @@ function matchesName(candidate: string, target: string): boolean {
 }
 
 export function WorkoutSessionScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteP>();
   const { user } = useUser();
@@ -801,8 +803,8 @@ export function WorkoutSessionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   flex: { flex: 1 },
   tabular: { fontVariant: ['tabular-nums'] },
   header: {
@@ -817,11 +819,11 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   headerTitleWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -834,17 +836,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm + 2,
     paddingVertical: spacing.xs + 1,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
     minHeight: 30,
   },
   restChipLive: {
-    backgroundColor: colors.accentFaint,
-    borderColor: colors.accentSoft,
+    backgroundColor: t.colors.accentFaint,
+    borderColor: t.colors.accentSoft,
   },
   restScrim: {
     ...StyleSheet.absoluteFillObject,
@@ -857,11 +859,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
-    ...shadows.lg,
+    ...t.shadows.lg,
   },
   segmentsRow: {
     flexDirection: 'row',
@@ -873,7 +875,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 4,
     borderRadius: radius.pill,
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     overflow: 'hidden',
   },
   segmentFill: {
@@ -883,7 +885,7 @@ const styles = StyleSheet.create({
   planBanner: {
     marginHorizontal: layout.SCREEN_H_PADDING,
     marginBottom: spacing.sm,
-    backgroundColor: colors.accentFaint,
+    backgroundColor: t.colors.accentFaint,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -939,7 +941,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
     borderStyle: 'dashed',
   },
   upNext: {
@@ -950,17 +952,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.md,
     padding: spacing.sm + 2,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   nextBtn: { marginTop: spacing.lg },
   dock: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingVertical: spacing.md,
-    ...shadows.lg,
+    ...t.shadows.lg,
     shadowOffset: { width: 0, height: -8 },
   },
   dockIdleRow: {
@@ -985,4 +987,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-});
+}));

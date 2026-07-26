@@ -2,7 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SignInScreen } from '@/screens/auth/SignInScreen';
 import { SignUpScreen } from '@/screens/auth/SignUpScreen';
 import { ForgotPasswordScreen } from '@/screens/auth/ForgotPasswordScreen';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 
 export type AuthStackParamList = {
   SignIn: undefined;
@@ -14,6 +14,7 @@ const Stack = createNativeStackNavigator<AuthStackParamList>();
 
 /** Logged-out flow: sign-in, account creation, password reset. */
 export function AuthNavigator() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{

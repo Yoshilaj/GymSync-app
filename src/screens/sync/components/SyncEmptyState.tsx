@@ -1,6 +1,6 @@
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { STARTERS, Starter } from '../starters';
 
@@ -15,6 +15,8 @@ interface Props {
  * card chrome.
  */
 export function SyncEmptyState({ greeting, onStarter }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.wrap}>
       <View style={styles.greetingBlock}>
@@ -44,7 +46,7 @@ export function SyncEmptyState({ greeting, onStarter }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     flex: 1,
     justifyContent: 'center',
@@ -65,16 +67,16 @@ const styles = StyleSheet.create({
     paddingRight: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
-    ...shadows.xs,
+    backgroundColor: t.colors.card,
+    ...t.shadows.xs,
   },
-  pillPressed: { backgroundColor: colors.accentFaint },
+  pillPressed: { backgroundColor: t.colors.accentFaint },
   pillIcon: {
     width: 32,
     height: 32,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentFaint,
+    backgroundColor: t.colors.accentFaint,
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

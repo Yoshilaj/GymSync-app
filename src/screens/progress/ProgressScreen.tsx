@@ -22,7 +22,7 @@ import {
   RouteProp,
 } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, defaultLineChartProps, gradients, layout, radius, spacing } from '@/theme';
+import { defaultLineChartProps, layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Card, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
@@ -58,6 +58,7 @@ function monthAtOffset(offset: number) {
 }
 
 export function ProgressScreen() {
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
 
@@ -120,6 +121,8 @@ const AVATAR_SIZE = 68;
  * display-type name, and bare typographic stats. No boxes, no bands.
  */
 function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
   const { user } = useUser();
   const insets = useSafeAreaInsets();
 
@@ -235,6 +238,8 @@ function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
 }
 
 function CalendarBlock() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const listRef = useRef<FlatList<number>>(null);
   const [activeOffset, setActiveOffset] = useState(CENTER_INDEX);
@@ -309,6 +314,7 @@ function MonthView({
   offset: number;
   onPressDate: (iso: string) => void;
 }) {
+  const styles = useStyles();
   const { plan } = usePlan();
   const d = monthAtOffset(offset);
   const year = d.getFullYear();
@@ -375,6 +381,8 @@ function ExerciseTrends({
   onMetricChange: (m: Metric) => void;
   onPickExercise: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const ex = getExerciseById(exerciseId) ?? mockExercises[0];
 
   // Deterministic synthetic series until a real history endpoint exists —
@@ -460,6 +468,8 @@ function ExerciseTrends({
 }
 
 function BodyWeightBlock() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const data = useMemo(
     () =>
       mockProgress.bodyweight.map((p, i) => ({
@@ -506,8 +516,8 @@ function BodyWeightBlock() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   content: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
     gap: spacing.lg,
@@ -562,7 +572,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
   },
   weekdayRow: {
     flexDirection: 'row',
@@ -586,7 +596,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayBubbleToday: { backgroundColor: colors.accent },
+  dayBubbleToday: { backgroundColor: t.colors.accent },
   dayNum: { fontFamily: 'Inter_600SemiBold', fontSize: 14 },
   markRow: {
     marginTop: 3,
@@ -598,7 +608,7 @@ const styles = StyleSheet.create({
     width: 5,
     height: 5,
     borderRadius: 3,
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
   },
   trendControls: {
     flexDirection: 'row',
@@ -608,7 +618,7 @@ const styles = StyleSheet.create({
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     borderRadius: radius.pill,
     padding: 3,
   },
@@ -618,7 +628,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   segmentActive: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
   },
   trendBadge: {
     flexDirection: 'row',
@@ -634,7 +644,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
     borderRadius: radius.md,
     marginBottom: spacing.sm,
   },
@@ -647,4 +657,4 @@ const styles = StyleSheet.create({
   chartWrap: {
     marginLeft: -6,
   },
-});
+}));

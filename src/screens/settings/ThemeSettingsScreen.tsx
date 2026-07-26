@@ -2,9 +2,8 @@ import { useThemePref, type ThemePreference } from '@/theme';
 import { useUser } from '@/context/UserContext';
 import { SettingsGroup, SettingsPage, SelectRow } from './SettingsKit';
 
-// Flipped to true once the app-wide dark migration lands (Phase 4). Until then
-// Dark/System render disabled so users never see a half-dark app.
-const DARK_ENABLED = false;
+// The app-wide dark migration is complete — Dark/System are live.
+const DARK_ENABLED = true;
 
 const OPTIONS: { id: ThemePreference; label: string; sublabel: string }[] = [
   { id: 'light', label: 'Light', sublabel: 'Always the light theme' },

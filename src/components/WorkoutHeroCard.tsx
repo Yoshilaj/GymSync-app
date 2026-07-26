@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Chip } from '@/components/ui';
 
 export interface HeroStat {
@@ -36,6 +36,8 @@ export function WorkoutHeroCard({
   action,
   tone = 'upcoming',
 }: Props) {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
   const onGradient = tone === 'upcoming';
   const fg = onGradient ? colors.textInverse : colors.textPrimary;
   const fgSoft = onGradient ? 'rgba(255,255,255,0.85)' : colors.textSecondary;
@@ -144,14 +146,14 @@ export function WorkoutHeroCard({
   );
 }
 
-const styles = StyleSheet.create({
-  shadowWrap: { ...shadows.md, borderRadius: radius.xl },
+const useStyles = makeStyles((t) => ({
+  shadowWrap: { ...t.shadows.md, borderRadius: radius.xl },
   card: {
     borderRadius: radius.xl,
     padding: spacing.lg,
     overflow: 'hidden',
   },
-  cardCompleted: { backgroundColor: colors.card },
+  cardCompleted: { backgroundColor: t.colors.card },
   glow: {
     position: 'absolute',
     top: -40,
@@ -175,7 +177,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: radius.pill,
   },
-  badgeCompleted: { backgroundColor: colors.successSoft },
+  badgeCompleted: { backgroundColor: t.colors.successSoft },
   title: { marginTop: spacing.md },
   muscles: {
     flexDirection: 'row',
@@ -191,9 +193,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.14)',
     borderRadius: radius.lg,
   },
-  statsRowCompleted: { backgroundColor: colors.bgSubtle },
+  statsRowCompleted: { backgroundColor: t.colors.bgSubtle },
   statCell: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   statDivider: { width: StyleSheet.hairlineWidth, alignSelf: 'stretch' },
   statInner: { flex: 1, alignItems: 'center', gap: 2 },
   action: { marginTop: spacing.lg },
-});
+}));

@@ -5,12 +5,11 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, shadows, spacing } from '@/theme';
+import { makeStyles, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 
 interface Props {
@@ -32,6 +31,8 @@ export function AuthLayout({
   onBack,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
+  const styles = useStyles();
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'bottom', 'left', 'right']}>
@@ -76,8 +77,8 @@ export function AuthLayout({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  root: { flex: 1, backgroundColor: t.colors.bg },
   flex: { flex: 1 },
   back: {
     position: 'absolute',
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xxl,
   },
   logoShadow: {
-    ...shadows.glow,
+    ...t.shadows.glow,
     // iOS app-icon squircle ratio (~22.5% of size) so the mark reads as the icon.
     borderRadius: 14,
     marginBottom: spacing.md,
@@ -105,4 +106,4 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 14,
   },
-});
+}));

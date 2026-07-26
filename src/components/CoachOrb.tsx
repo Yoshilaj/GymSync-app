@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients } from '@/theme';
+import { useTheme } from '@/theme';
 import type { VoicePhase } from '@/voice/protocol';
 
 interface Props {
@@ -27,6 +27,7 @@ const BAR_COUNT = 4;
  * thinking ripples the bars low, speaking animates them tall.
  */
 export function CoachOrb({ phase, size = 160, intensity = 1, level }: Props) {
+  const { colors, gradients } = useTheme();
   const breath = useRef(new Animated.Value(0)).current;
   const ring = useRef(new Animated.Value(0)).current;
   const bars = useRef(

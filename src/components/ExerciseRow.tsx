@@ -1,5 +1,5 @@
-import { StyleSheet, View } from 'react-native';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { View } from 'react-native';
+import { makeStyles, radius, spacing } from '@/theme';
 import { AnimatedPressable, AppText } from '@/components/ui';
 import { ExerciseImage } from '@/components/ExerciseImage';
 import { Exercise, PlannedSet, Units } from '@/types';
@@ -13,6 +13,7 @@ interface Props {
 
 /** A planned exercise in a workout list: photo, name, one summary line. */
 export function ExerciseRow({ exercise, sets, units, onPress }: Props) {
+  const styles = useStyles();
   const reps = sets[0]?.targetReps ?? 0;
   const weight = sets[0]?.weight ?? 0;
   const load = weight > 0 ? `${weight} ${units}` : 'Bodyweight';
@@ -40,15 +41,15 @@ export function ExerciseRow({ exercise, sets, units, onPress }: Props) {
   return <AnimatedPressable onPress={onPress}>{body}</AnimatedPressable>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.lg,
     padding: spacing.md,
     gap: spacing.md,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   textBlock: { flex: 1, gap: 2 },
-});
+}));

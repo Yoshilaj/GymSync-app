@@ -7,7 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { formatClock } from '@/voice';
 
@@ -32,6 +32,7 @@ export function RestRing({
   size = 64,
   showClock = true,
 }: Props) {
+  const { colors } = useTheme();
   const strokeWidth = size < 40 ? 3 : 4;
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, radius, shadows } from '@/theme';
+import { makeStyles, spacing, radius, useTheme } from '@/theme';
 import { AppText, Button } from '@/components/ui';
 import { useVoiceSession } from '@/voice';
 import type { VoicePhase, ServerMessage } from '@/voice';
@@ -12,16 +12,17 @@ import type { VoicePhase, ServerMessage } from '@/voice';
  * be watched without audio, Supabase, or the real backend. Run the mock first:
  *   node tools/mock-voice-server.mjs
  */
-const PHASE_COLOR: Record<VoicePhase, string> = {
-  idle: colors.textTertiary,
-  connecting: colors.warning,
-  listening: colors.accent,
-  thinking: colors.warning,
-  coach_speaking: colors.success,
-  error: colors.danger,
-};
-
 export function VoiceDevScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
+  const phaseColor: Record<VoicePhase, string> = {
+    idle: colors.textTertiary,
+    connecting: colors.warning,
+    listening: colors.accent,
+    thinking: colors.warning,
+    coach_speaking: colors.success,
+    error: colors.danger,
+  };
   const [log, setLog] = useState<string[]>([]);
   const append = useCallback((line: string) => {
     setLog((prev) => [...prev, line]);
@@ -61,7 +62,7 @@ export function VoiceDevScreen() {
 
       <View style={styles.phaseBox}>
         <AppText variant="label">Phase</AppText>
-        <AppText variant="stat" color={PHASE_COLOR[phase]} style={styles.phase}>
+        <AppText variant="stat" color={phaseColor[phase]} style={styles.phase}>
           {phase}
         </AppText>
         <AppText variant="caption" style={styles.meta}>
@@ -104,30 +105,30 @@ export function VoiceDevScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: spacing.lg },
+const useStyles = makeStyles((t) => ({
+  root: { flex: 1, backgroundColor: t.colors.bg, padding: spacing.lg },
   label: { marginTop: spacing.md, marginBottom: spacing.sm },
   phaseBox: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.lg,
     padding: spacing.lg,
-    ...shadows.sm,
+    ...t.shadows.sm,
   },
   phase: { marginTop: spacing.xs },
   meta: { marginTop: spacing.sm },
   metaTight: { marginTop: spacing.xs },
   logBox: {
     flex: 1,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.lg,
-    ...shadows.sm,
+    ...t.shadows.sm,
   },
   logContent: { padding: spacing.md },
   logLine: {
     fontFamily: 'Courier',
     fontSize: 13,
-    color: colors.textPrimary,
+    color: t.colors.textPrimary,
     marginBottom: 2,
   },
   buttons: { gap: spacing.sm, marginTop: spacing.md },
-});
+}));

@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AnimatedPressable, AppText, Entering } from '@/components/ui';
 
 type Provider = 'Apple' | 'Google';
 
 /** "or continue with" separator between the email form and the social buttons. */
 export function OrDivider() {
+  const styles = useStyles();
   return (
     <View style={styles.divider}>
       <View style={styles.dividerLine} />
@@ -24,6 +25,8 @@ export function OrDivider() {
  * WorkOS integration, so taps surface a friendly inline notice instead.
  */
 export function SocialAuthButtons() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const [notice, setNotice] = useState<Provider | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -79,7 +82,7 @@ const row = {
   borderRadius: radius.md,
 };
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   stack: { gap: spacing.sm },
   divider: {
     flexDirection: 'row',
@@ -87,23 +90,23 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginVertical: spacing.lg,
   },
-  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerLine: { flex: 1, height: 1, backgroundColor: t.colors.border },
   // Apple HIG requires the black button — deliberate hex, not a theme token.
   apple: { ...row, backgroundColor: '#000000' },
   google: {
     ...row,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: t.colors.accentSoft,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
   noticeText: { flex: 1 },
-});
+}));

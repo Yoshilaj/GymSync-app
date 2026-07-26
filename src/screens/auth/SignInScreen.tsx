@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
@@ -15,6 +15,8 @@ export function SignInScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signIn } = useAuth();
+  const { colors } = useTheme();
+  const styles = useStyles();
   const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -108,14 +110,14 @@ export function SignInScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   form: { gap: spacing.md },
   forgot: { alignSelf: 'flex-end' },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.dangerSoft,
+    backgroundColor: t.colors.dangerSoft,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -129,4 +131,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   footerLink: { fontFamily: 'Inter_600SemiBold' },
-});
+}));

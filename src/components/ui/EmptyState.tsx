@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 import { Button } from './Button';
 
@@ -12,6 +12,8 @@ interface Props {
 }
 
 export function EmptyState({ title, message, icon, action }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.wrap}>
       {icon ? (
@@ -41,7 +43,7 @@ export function EmptyState({ title, message, icon, action }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     alignItems: 'center',
     paddingVertical: spacing.xxl,
@@ -52,11 +54,11 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: radius.pill,
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
   message: { maxWidth: 260 },
   action: { marginTop: spacing.md },
-});
+}));

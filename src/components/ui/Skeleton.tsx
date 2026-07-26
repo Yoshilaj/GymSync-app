@@ -6,7 +6,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius } from '@/theme';
+import { radius, useTheme } from '@/theme';
 
 interface Props {
   width?: number | `${number}%`;
@@ -17,6 +17,7 @@ interface Props {
 
 /** Loading placeholder block with a gentle opacity pulse. */
 export function Skeleton({ width = '100%', height = 14, round = false, style }: Props) {
+  const { colors } = useTheme();
   const opacity = useSharedValue(0.4);
 
   useEffect(() => {

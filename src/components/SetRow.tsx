@@ -1,6 +1,6 @@
-import { View, StyleSheet, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { Units } from '@/types';
 
@@ -32,6 +32,8 @@ export function SetRow({
   onChangeReps,
   onToggleComplete,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const reps = achievedReps ?? targetReps;
 
   const step = (delta: number) => {
@@ -109,25 +111,25 @@ export function SetRow({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.md,
     marginBottom: spacing.sm,
     gap: spacing.md,
     borderWidth: 1.5,
     borderColor: 'transparent',
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   rowCompleted: {
-    backgroundColor: colors.successSoft,
+    backgroundColor: t.colors.successSoft,
   },
   rowCurrent: {
-    borderColor: colors.accent,
+    borderColor: t.colors.accent,
   },
   rowUpcoming: {
     opacity: 0.65,
@@ -136,17 +138,17 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: radius.pill,
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  setNumCompleted: { backgroundColor: colors.success },
+  setNumCompleted: { backgroundColor: t.colors.success },
   loadBlock: { flex: 1, gap: 1 },
   tabular: { fontVariant: ['tabular-nums'] },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
@@ -155,10 +157,10 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   repsValue: {
     minWidth: 34,
@@ -171,11 +173,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
+    borderColor: t.colors.border,
+    backgroundColor: t.colors.card,
   },
   checkDone: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
+    backgroundColor: t.colors.success,
+    borderColor: t.colors.success,
   },
-});
+}));

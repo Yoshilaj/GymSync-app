@@ -1,13 +1,14 @@
 import { ReactNode } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { StyleProp, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme, type Theme } from '@/theme';
 import { AppText } from './AppText';
 import { AnimatedPressable } from './AnimatedPressable';
 
+type Tone = 'default' | 'accent' | 'success' | 'live' | 'warning' | 'danger';
 type LeftIcon = {
   icon: keyof typeof Ionicons.glyphMap;
-  tone?: 'default' | 'accent' | 'success' | 'live' | 'warning' | 'danger';
+  tone?: Tone;
 };
 
 interface Props {
@@ -21,14 +22,17 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
-const TONE_COLORS = {
-  default: { fg: colors.textSecondary, bg: colors.sunken },
-  accent: { fg: colors.accentText, bg: colors.accentSoft },
-  success: { fg: colors.successText, bg: colors.successSoft },
-  live: { fg: colors.liveText, bg: colors.liveSoft },
-  warning: { fg: colors.warningText, bg: colors.warningSoft },
-  danger: { fg: colors.dangerText, bg: colors.dangerSoft },
-} as const;
+function toneColors(t: Theme): Record<Tone, { fg: string; bg: string }> {
+  const c = t.colors;
+  return {
+    default: { fg: c.textSecondary, bg: c.sunken },
+    accent: { fg: c.accentText, bg: c.accentSoft },
+    success: { fg: c.successText, bg: c.successSoft },
+    live: { fg: c.liveText, bg: c.liveSoft },
+    warning: { fg: c.warningText, bg: c.warningSoft },
+    danger: { fg: c.dangerText, bg: c.dangerSoft },
+  };
+}
 
 function isLeftIcon(left: Props['left']): left is LeftIcon {
   return !!left && typeof left === 'object' && 'icon' in (left as object);
@@ -44,17 +48,21 @@ export function ListRow({
   selected = false,
   style,
 }: Props) {
+  const theme = useTheme();
+  const { colors } = theme;
+  const styles = useStyles();
+
   const leftNode = isLeftIcon(left) ? (
     <View
       style={[
         styles.iconWell,
-        { backgroundColor: TONE_COLORS[left.tone ?? 'default'].bg },
+        { backgroundColor: toneColors(theme)[left.tone ?? 'default'].bg },
       ]}
     >
       <Ionicons
         name={left.icon}
         size={17}
-        color={TONE_COLORS[left.tone ?? 'default'].fg}
+        color={toneColors(theme)[left.tone ?? 'default'].fg}
       />
     </View>
   ) : (
@@ -87,7 +95,7 @@ export function ListRow({
   return <AnimatedPressable onPress={onPress}>{body}</AnimatedPressable>;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -96,7 +104,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.lg,
   },
-  selected: { backgroundColor: colors.accentFaint },
+  selected: { backgroundColor: t.colors.accentFaint },
   iconWell: {
     width: 34,
     height: 34,
@@ -105,4 +113,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textBlock: { flex: 1, gap: spacing.xxs },
-});
+}));

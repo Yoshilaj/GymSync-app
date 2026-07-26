@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
@@ -17,6 +17,8 @@ export function SignUpScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signUp } = useAuth();
+  const { colors } = useTheme();
+  const styles = useStyles();
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
   const [name, setName] = useState('');
@@ -161,14 +163,14 @@ export function SignUpScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   form: { gap: spacing.md },
   hint: { marginTop: spacing.xs },
   errorCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.dangerSoft,
+    backgroundColor: t.colors.dangerSoft,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
@@ -187,10 +189,10 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: t.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,
   },
   confirmButton: { marginTop: spacing.md },
-});
+}));

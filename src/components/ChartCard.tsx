@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { spacing, colors } from '@/theme';
+import { spacing, useTheme } from '@/theme';
 import { AppText, Card, Chip } from '@/components/ui';
 
 interface Props {
@@ -16,6 +16,7 @@ interface Props {
 
 /** Themed wrapper for react-native-gifted-charts blocks. */
 export function ChartCard({ title, subtitle, action, chip, children }: Props) {
+  const { colors } = useTheme();
   return (
     <Card>
       <View style={styles.header}>

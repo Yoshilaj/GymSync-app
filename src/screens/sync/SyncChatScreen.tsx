@@ -5,7 +5,6 @@ import {
   Keyboard,
   Linking,
   Pressable,
-  StyleSheet,
   TextInput,
   View,
 } from 'react-native';
@@ -24,7 +23,7 @@ import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
-import { colors, layout, radius, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { ChatBubble } from '@/components/ChatBubble';
 import { ChatInputBar } from '@/components/ChatInputBar';
@@ -68,6 +67,8 @@ function dayLabel(d: Date, now: Date): string {
  * clearing the floating tab bar.
  */
 export function SyncChatScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const [input, setInput] = useState('');
   const nav = useNavigation();
   const kickoffDoneRef = useRef(false);
@@ -469,8 +470,8 @@ export function SyncChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -488,18 +489,18 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   menuGlyph: { gap: 3.5 },
   menuLine: {
     width: 14,
     height: 1.6,
     borderRadius: 1,
-    backgroundColor: colors.textPrimary,
+    backgroundColor: t.colors.textPrimary,
   },
   emptyWrap: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
@@ -514,7 +515,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: colors.successSoft,
+    backgroundColor: t.colors.successSoft,
     borderRadius: radius.pill,
     paddingVertical: spacing.xs + 1,
     paddingHorizontal: spacing.md,
@@ -527,11 +528,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.warningSoft,
+    backgroundColor: t.colors.warningSoft,
     marginHorizontal: layout.SCREEN_H_PADDING,
     borderRadius: radius.md,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-});
+}));

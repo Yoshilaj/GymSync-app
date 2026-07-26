@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, layout, radius, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Card, Chip, EmptyState } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ExerciseImage } from '@/components/ExerciseImage';
@@ -44,6 +44,8 @@ function formatSupporting(muscles: string[]): string {
 }
 
 export function ExerciseDetailScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const route = useRoute<Rt>();
   const nav = useNavigation<Nav>();
   const clearance = useTabBarClearance();
@@ -212,8 +214,8 @@ export function ExerciseDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   content: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
   },
@@ -236,7 +238,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.lg,
     marginTop: spacing.sm,
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
     borderRadius: radius.md,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
@@ -246,11 +248,11 @@ const styles = StyleSheet.create({
   targetDivider: {
     width: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
-    backgroundColor: colors.border,
+    backgroundColor: t.colors.border,
   },
   segmented: {
     flexDirection: 'row',
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     borderRadius: radius.pill,
     padding: 3,
     marginTop: spacing.lg,
@@ -262,7 +264,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   segmentActive: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
   },
   sectionCard: { marginTop: spacing.md },
   steps: { gap: spacing.md },
@@ -275,7 +277,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
   },
   // One notch under `body` so a full step fits a single line on small phones.
   stepText: {
@@ -291,4 +293,4 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     padding: spacing.md,
   },
-});
+}));

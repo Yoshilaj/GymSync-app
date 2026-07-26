@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, layout, radius, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, TimerDisplay } from '@/components/ui';
 import { VoiceButton } from '@/components/VoiceButton';
 import { VoiceWaveform } from '@/components/VoiceWaveform';
@@ -43,6 +43,8 @@ const HINT: Record<VoicePhase, string> = {
 };
 
 export function VoiceCoachScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const nav = useNavigation();
   const { user: authUser, getToken } = useAuth();
   const { user } = useUser();
@@ -359,10 +361,10 @@ export function VoiceCoachScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   safe: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: t.colors.bg,
     paddingHorizontal: layout.SCREEN_H_PADDING,
   },
   grabber: {
@@ -370,7 +372,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: radius.pill,
-    backgroundColor: colors.borderStrong,
+    backgroundColor: t.colors.borderStrong,
     marginTop: spacing.sm,
   },
   header: {
@@ -384,11 +386,11 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   scroll: { flex: 1 },
   scrollContent: { paddingVertical: spacing.lg, gap: spacing.md },
@@ -408,9 +410,9 @@ const styles = StyleSheet.create({
   quoteBar: {
     width: 3,
     borderRadius: 2,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: t.colors.accentSoft,
   },
-  coachBar: { backgroundColor: colors.successSoft },
+  coachBar: { backgroundColor: t.colors.successSoft },
   noticeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,7 +420,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
-    backgroundColor: colors.warningSoft,
+    backgroundColor: t.colors.warningSoft,
   },
   feedCard: { paddingVertical: spacing.sm },
   feedHeading: {
@@ -445,7 +447,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentFaint,
+    backgroundColor: t.colors.accentFaint,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
@@ -456,4 +458,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     gap: spacing.sm,
   },
-});
+}));

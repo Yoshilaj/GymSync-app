@@ -1,5 +1,5 @@
 import { RefObject, useEffect } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, {
   Easing,
@@ -9,10 +9,11 @@ import Animated, {
   withRepeat,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 
 /** Soft expanding ring behind the mic while dictation is live. */
 function MicPulse() {
+  const styles = useStyles();
   const pulse = useSharedValue(0);
 
   useEffect(() => {
@@ -60,6 +61,8 @@ export function ChatInputBar({
   bottomInset,
   inputRef,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const canSend = !!value.trim();
   return (
     <View style={[styles.wrap, bottomInset != null && { paddingBottom: bottomInset }]}>
@@ -108,7 +111,7 @@ export function ChatInputBar({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.sm,
@@ -116,18 +119,18 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     gap: spacing.xs,
-    ...shadows.md,
+    ...t.shadows.md,
   },
   input: {
     flex: 1,
     fontSize: 16,
     fontFamily: 'Inter_400Regular',
-    color: colors.textPrimary,
+    color: t.colors.textPrimary,
     paddingVertical: 8,
     paddingHorizontal: spacing.md,
   },
@@ -142,29 +145,29 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
   },
   micBtn: {
     width: 36,
     height: 36,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
   },
   micBtnActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
+    backgroundColor: t.colors.accent,
+    borderColor: t.colors.accent,
   },
   sendBtn: {
     width: 36,
     height: 36,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnDisabled: { backgroundColor: colors.accentSoft },
-});
+  sendBtnDisabled: { backgroundColor: t.colors.accentSoft },
+}));

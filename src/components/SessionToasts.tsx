@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Animated, { FadeOut, SlideInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 
 export interface SessionToast {
@@ -30,6 +30,8 @@ export function SessionToasts({
   durationMs = 2500,
   maxVisible = 2,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const visible = toasts.slice(-maxVisible);
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export function SessionToasts({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   stack: {
     position: 'absolute',
     top: spacing.sm,
@@ -79,11 +81,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.pill,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     maxWidth: '100%',
-    ...shadows.md,
+    ...t.shadows.md,
   },
-});
+}));

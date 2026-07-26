@@ -17,7 +17,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius } from '@/theme';
+import { radius } from '@/theme';
 import type { WaveformSource } from '@/voice/levels';
 
 const BAR_WIDTH = 3;

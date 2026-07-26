@@ -2,7 +2,7 @@ import { Platform, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import Animated, { FadeInDown, FadeOutDown } from 'react-native-reanimated';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 
 interface Props {
   onPress: () => void;
@@ -10,6 +10,8 @@ interface Props {
 
 /** Floating glass chevron that jumps the thread back to the newest message. */
 export function ScrollToBottomButton({ onPress }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const icon = <Ionicons name="chevron-down" size={18} color={colors.textPrimary} />;
   return (
     <Animated.View
@@ -35,13 +37,13 @@ export function ScrollToBottomButton({ onPress }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     position: 'absolute',
     alignSelf: 'center',
     bottom: spacing.md,
     borderRadius: radius.pill,
-    ...shadows.md,
+    ...t.shadows.md,
   },
   btn: {
     width: 36,
@@ -51,8 +53,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
     backgroundColor: 'rgba(255,255,255,0.6)',
   },
-  solid: { backgroundColor: colors.card },
-});
+  solid: { backgroundColor: t.colors.card },
+}));

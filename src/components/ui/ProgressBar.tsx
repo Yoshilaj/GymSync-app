@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients, radius } from '@/theme';
+import { makeStyles, radius, useTheme } from '@/theme';
 
 type Tone = 'accent' | 'success' | 'live';
 
@@ -13,18 +13,19 @@ interface Props {
   gradient?: boolean;
 }
 
-const TONE_FILL: Record<Tone, string> = {
-  accent: colors.accent,
-  success: colors.success,
-  live: colors.live,
-};
-
 export function ProgressBar({
   value,
   height = 6,
   tone = 'accent',
   gradient = false,
 }: Props) {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
+  const toneFill: Record<Tone, string> = {
+    accent: colors.accent,
+    success: colors.success,
+    live: colors.live,
+  };
   const width = `${Math.min(100, Math.max(0, value * 100))}%` as const;
   return (
     <View style={[styles.track, { height, borderRadius: height / 2 }]}>
@@ -39,7 +40,7 @@ export function ProgressBar({
         <View
           style={[
             styles.fill,
-            { width, borderRadius: height / 2, backgroundColor: TONE_FILL[tone] },
+            { width, borderRadius: height / 2, backgroundColor: toneFill[tone] },
           ]}
         />
       )}
@@ -47,11 +48,11 @@ export function ProgressBar({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   track: {
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     overflow: 'hidden',
     borderRadius: radius.pill,
   },
   fill: { height: '100%' },
-});
+}));

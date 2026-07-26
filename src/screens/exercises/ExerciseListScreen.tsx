@@ -3,7 +3,6 @@ import {
   FlatList,
   Pressable,
   ScrollView,
-  StyleSheet,
   TextInput,
   View,
 } from 'react-native';
@@ -11,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, EmptyState, Entering } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ExerciseImage } from '@/components/ExerciseImage';
@@ -40,6 +39,8 @@ type Rt = RouteProp<ExerciseListParams, 'ExerciseList'>;
 const ALL: Category | 'All' = 'All';
 
 export function ExerciseListScreen() {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const mode = route.params?.mode ?? 'browse';
@@ -196,6 +197,7 @@ function FilterChip({
   active: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles();
   return (
     <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
       <AppText variant="caption" color={active ? 'textInverse' : 'textPrimary'}>
@@ -212,24 +214,24 @@ function FilterChip({
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     marginHorizontal: layout.SCREEN_H_PADDING,
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
     borderRadius: radius.pill,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     fontFamily: 'Inter_400Regular',
-    color: colors.textPrimary,
+    color: t.colors.textPrimary,
     padding: 0,
   },
   filterScroll: {
@@ -250,11 +252,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     marginRight: spacing.sm,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
-  chipActive: { backgroundColor: colors.accent },
+  chipActive: { backgroundColor: t.colors.accent },
   chipCount: { fontSize: 12 },
   listContent: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
@@ -263,12 +265,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     padding: spacing.md,
     borderRadius: radius.lg,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
-  rowPressed: { backgroundColor: colors.accentFaint },
+  rowPressed: { backgroundColor: t.colors.accentFaint },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -279,6 +281,6 @@ const styles = StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 2,
-    backgroundColor: colors.textTertiary,
+    backgroundColor: t.colors.textTertiary,
   },
-});
+}));

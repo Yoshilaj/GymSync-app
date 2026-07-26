@@ -4,10 +4,10 @@
  * disabled until the step is valid.
  */
 import { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { colors, spacing } from '@/theme';
+import { makeStyles, spacing, useTheme } from '@/theme';
 import { AppText, Button, Chip, ProgressBar, Screen } from '@/components/ui';
 
 export const TOTAL_STEPS = 6;
@@ -34,6 +34,8 @@ export function OnboardingStep({
   children,
 }: Props) {
   const nav = useNavigation();
+  const { colors } = useTheme();
+  const styles = useStyles();
 
   return (
     <Screen
@@ -92,6 +94,7 @@ export function ChipGrid({
   selected: string[];
   onToggle: (value: string) => void;
 }) {
+  const styles = useStyles();
   return (
     <View style={styles.chipGrid}>
       {options.map((opt) => (
@@ -108,6 +111,7 @@ export function ChipGrid({
 
 /** Uppercase section label above a question cluster. */
 export function StepSection({ label, children }: { label: string; children: ReactNode }) {
+  const styles = useStyles();
   return (
     <View style={styles.section}>
       <AppText variant="label">{label}</AppText>
@@ -116,7 +120,7 @@ export function StepSection({ label, children }: { label: string; children: Reac
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   top: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -148,6 +152,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     paddingTop: spacing.sm,
-    backgroundColor: colors.bg,
+    backgroundColor: t.colors.bg,
   },
-});
+}));

@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import { colors, radius as radiusTokens, shadows, spacing } from '@/theme';
+import { makeStyles, radius as radiusTokens, spacing } from '@/theme';
 import { AnimatedPressable } from './AnimatedPressable';
 
 interface Props {
@@ -13,7 +13,10 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
-/** White surface with real elevation — no borders (borders are for inputs). */
+/**
+ * Elevated surface. Light: white + shadow, no border. Dark: shadows barely
+ * read, so raised/floating cards gain a hairline border to carry elevation.
+ */
 export function Card({
   children,
   onPress,
@@ -22,6 +25,7 @@ export function Card({
   radius = 'lg',
   style,
 }: Props) {
+  const styles = useStyles();
   const containerStyle: StyleProp<ViewStyle> = [
     styles.base,
     { borderRadius: radiusTokens[radius] },
@@ -41,10 +45,16 @@ export function Card({
   return <View style={containerStyle}>{children}</View>;
 }
 
-const styles = StyleSheet.create({
-  base: { backgroundColor: colors.card },
-  flat: { backgroundColor: colors.bgSubtle },
-  raised: { ...shadows.sm },
-  floating: { ...shadows.md },
-  padded: { padding: spacing.lg },
+const useStyles = makeStyles((t) => {
+  const darkElev =
+    t.scheme === 'dark'
+      ? { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }
+      : null;
+  return {
+    base: { backgroundColor: t.colors.card },
+    flat: { backgroundColor: t.colors.bgSubtle },
+    raised: { ...t.shadows.sm, ...darkElev },
+    floating: { ...t.shadows.md, ...darkElev },
+    padded: { padding: spacing.lg },
+  };
 });

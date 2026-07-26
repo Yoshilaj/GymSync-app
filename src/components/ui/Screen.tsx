@@ -3,12 +3,11 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients, layout, spacing } from '@/theme';
+import { layout, makeStyles, spacing, useTheme } from '@/theme';
 import { useTabBarClearance } from '@/hooks';
 
 interface Props {
@@ -40,6 +39,8 @@ export function Screen({
   wash = false,
   tabBarClearance = true,
 }: Props) {
+  const { gradients } = useTheme();
+  const styles = useStyles();
   const clearance = useTabBarClearance();
   const bottomPad = tabBarClearance ? clearance.scroll : spacing.xxxl;
 
@@ -96,8 +97,8 @@ export function Screen({
   return safe;
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   flex: { flex: 1 },
-  bg: { backgroundColor: colors.bg },
+  bg: { backgroundColor: t.colors.bg },
   padded: { paddingHorizontal: layout.SCREEN_H_PADDING },
-});
+}));

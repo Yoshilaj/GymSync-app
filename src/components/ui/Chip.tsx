@@ -1,6 +1,6 @@
 import { Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 
 interface Props {
@@ -25,6 +25,9 @@ export function Chip({
   tone = 'default',
   style,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
+
   const labelColor =
     tone === 'onAccent'
       ? colors.textInverse
@@ -75,7 +78,7 @@ export function Chip({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -87,13 +90,13 @@ const styles = StyleSheet.create({
   },
   sm: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm + 2 },
   default: {
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
-  accent: { backgroundColor: colors.accentSoft },
+  accent: { backgroundColor: t.colors.accentSoft },
   onAccent: { backgroundColor: 'rgba(255,255,255,0.18)' },
-  selected: { backgroundColor: colors.accent },
+  selected: { backgroundColor: t.colors.accent },
   labelSm: { fontSize: 13 },
   pressed: { opacity: 0.8 },
-});
+}));

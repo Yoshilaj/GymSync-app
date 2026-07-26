@@ -7,9 +7,9 @@
  * Superseded proposals (a newer draft arrived) render dimmed and collapsed.
  */
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, Chip } from '@/components/ui';
 import type { PlanProposalDay, PlanProposalWire } from '@/voice';
 import type { ProposalStatus } from '@/voice/useTextChat';
@@ -36,6 +36,8 @@ function DayRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.day}>
       <Pressable onPress={onToggle} style={styles.dayHeader} hitSlop={6}>
@@ -88,6 +90,8 @@ export function PlanProposalCard({
   onRequestChanges,
   onViewPlan,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const [openDay, setOpenDay] = useState(0);
   const superseded = status === 'superseded';
 
@@ -164,7 +168,7 @@ export function PlanProposalCard({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   card: {
     gap: spacing.sm,
   },
@@ -185,7 +189,7 @@ const styles = StyleSheet.create({
   },
   day: {
     borderRadius: radius.md,
-    backgroundColor: colors.bgSubtle,
+    backgroundColor: t.colors.bgSubtle,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
@@ -217,4 +221,4 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     justifyContent: 'center',
   },
-});
+}));

@@ -4,7 +4,7 @@ import { WorkoutSessionScreen } from '@/screens/plan/WorkoutSessionScreen';
 import { LiveWorkoutStartScreen } from '@/screens/plan/LiveWorkoutStartScreen';
 import { ExerciseDetailScreen } from '@/screens/exercises/ExerciseDetailScreen';
 import { ExerciseListScreen } from '@/screens/exercises/ExerciseListScreen';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 
 export type PlanStackParamList = {
   PlanHome: undefined;
@@ -17,6 +17,7 @@ export type PlanStackParamList = {
 const Stack = createNativeStackNavigator<PlanStackParamList>();
 
 export function PlanStack() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{

@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 import { Card } from './Card';
 
@@ -15,16 +15,17 @@ interface Props {
   trend?: { delta: string; direction: 'up' | 'down' };
 }
 
-const TONE_COLORS: Record<Tone, { fg: string; bg: string }> = {
-  default: { fg: colors.textSecondary, bg: colors.sunken },
-  accent: { fg: colors.accentText, bg: colors.accentSoft },
-  success: { fg: colors.successText, bg: colors.successSoft },
-  live: { fg: colors.liveText, bg: colors.liveSoft },
-  warning: { fg: colors.warningText, bg: colors.warningSoft },
-};
-
 export function StatTile({ label, value, unit, icon, tone = 'default', trend }: Props) {
-  const toneColor = TONE_COLORS[tone];
+  const { colors } = useTheme();
+  const styles = useStyles();
+  const toneColors: Record<Tone, { fg: string; bg: string }> = {
+    default: { fg: colors.textSecondary, bg: colors.sunken },
+    accent: { fg: colors.accentText, bg: colors.accentSoft },
+    success: { fg: colors.successText, bg: colors.successSoft },
+    live: { fg: colors.liveText, bg: colors.liveSoft },
+    warning: { fg: colors.warningText, bg: colors.warningSoft },
+  };
+  const toneColor = toneColors[tone];
   return (
     <Card style={styles.tile} padded={false}>
       {icon ? (
@@ -53,7 +54,7 @@ export function StatTile({ label, value, unit, icon, tone = 'default', trend }: 
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles(() => ({
   tile: {
     flex: 1,
     padding: spacing.md,
@@ -74,4 +75,4 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   unit: { marginBottom: 2 },
-});
+}));

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -10,9 +10,10 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing } from '@/theme';
 
 function Dot({ delay }: { delay: number }) {
+  const styles = useStyles();
   const t = useSharedValue(0);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ function Dot({ delay }: { delay: number }) {
 
 /** Coach-side "thinking" bubble shown between send and the first token. */
 export function TypingDots() {
+  const styles = useStyles();
   return (
     <View style={styles.row}>
       <View style={styles.bubble}>
@@ -52,7 +54,7 @@ export function TypingDots() {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
@@ -62,17 +64,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.lg,
     borderBottomLeftRadius: spacing.xs,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    ...shadows.xs,
+    ...t.shadows.xs,
   },
   dot: {
     width: 7,
     height: 7,
     borderRadius: radius.pill,
-    backgroundColor: colors.textTertiary,
+    backgroundColor: t.colors.textTertiary,
   },
-});
+}));

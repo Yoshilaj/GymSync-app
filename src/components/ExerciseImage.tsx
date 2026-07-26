@@ -1,5 +1,5 @@
 import { Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import { colors, radius as radiusTokens } from '@/theme';
+import { makeStyles, radius as radiusTokens, useTheme } from '@/theme';
 import { MuscleIcon } from '@/components/MuscleIcon';
 import { getExerciseImage } from '@/data/exerciseImages';
 import { getExerciseById } from '@/data/mockExercises';
@@ -29,11 +29,14 @@ export function ExerciseImage({
   size,
   aspectRatio = 3 / 2,
   radius = 'lg',
-  fallbackTint = colors.accentFaint,
+  fallbackTint,
   style,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const image = getExerciseImage(exerciseId);
   const borderRadius = typeof radius === 'number' ? radius : radiusTokens[radius];
+  const tint = fallbackTint ?? colors.accentFaint;
 
   if (!image) {
     const s = size ?? 64;
@@ -41,7 +44,7 @@ export function ExerciseImage({
       <View
         style={[
           styles.fallback,
-          { width: s, height: s, borderRadius: s / 2, backgroundColor: fallbackTint },
+          { width: s, height: s, borderRadius: s / 2, backgroundColor: tint },
           style,
         ]}
       >
@@ -66,16 +69,16 @@ export function ExerciseImage({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   frame: {
     overflow: 'hidden',
-    backgroundColor: colors.sunken,
+    backgroundColor: t.colors.sunken,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   img: { width: '100%', height: '100%' },
   fallback: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

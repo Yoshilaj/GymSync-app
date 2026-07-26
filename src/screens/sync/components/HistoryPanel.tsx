@@ -20,7 +20,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { ConversationSummary } from '@/api/conversations';
 
@@ -79,6 +79,8 @@ export function HistoryPanel({
   onDelete,
   onNewChat,
 }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const panelWidth = Math.min(320, width * 0.78);
@@ -238,7 +240,7 @@ export function HistoryPanel({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   scrim: { backgroundColor: '#000' },
   panel: {
     position: 'absolute',
@@ -248,7 +250,7 @@ const styles = StyleSheet.create({
   },
   surface: { flex: 1 },
   frostVeil: { backgroundColor: 'rgba(255,255,255,0.78)' },
-  solid: { backgroundColor: colors.card },
+  solid: { backgroundColor: t.colors.card },
   panelInner: {
     flex: 1,
     paddingHorizontal: spacing.md,
@@ -272,11 +274,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
   },
-  rowActive: { backgroundColor: colors.accentFaint },
-  rowPressed: { backgroundColor: colors.accentFaint },
+  rowActive: { backgroundColor: t.colors.accentFaint },
+  rowPressed: { backgroundColor: t.colors.accentFaint },
   rowText: { gap: 2 },
   stateNote: {
     paddingHorizontal: spacing.sm,
     marginTop: spacing.md,
   },
-});
+}));

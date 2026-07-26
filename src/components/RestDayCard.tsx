@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, gradients, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AnimatedPressable, AppText } from '@/components/ui';
 
 export interface NextWorkoutPreview {
@@ -33,6 +33,8 @@ interface Props {
  * a night-sky decoration layer, recovery tips, and a peek at the next session.
  */
 export function RestDayCard({ nextWorkout, onPressNextWorkout }: Props) {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.shadowWrap}>
       <LinearGradient
@@ -159,8 +161,8 @@ function NightSky() {
   );
 }
 
-const styles = StyleSheet.create({
-  shadowWrap: { ...shadows.md, borderRadius: radius.xl },
+const useStyles = makeStyles((t) => ({
+  shadowWrap: { ...t.shadows.md, borderRadius: radius.xl },
   card: {
     borderRadius: radius.xl,
     padding: spacing.lg,
@@ -201,7 +203,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     marginTop: spacing.md,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.lg,
     padding: spacing.md,
   },
@@ -209,9 +211,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.sm + 2,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: t.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   nextTextCol: { flex: 1, gap: 2 },
-});
+}));

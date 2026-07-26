@@ -2,14 +2,13 @@ import { forwardRef, useState } from 'react';
 import {
   Pressable,
   StyleProp,
-  StyleSheet,
   TextInput,
   TextInputProps,
   View,
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 
 interface Props extends Omit<TextInputProps, 'style'> {
@@ -28,6 +27,8 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   { label, icon, secure = false, error = false, containerStyle, ...rest },
   ref,
 ) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const [hidden, setHidden] = useState(true);
 
   return (
@@ -60,24 +61,24 @@ export const Input = forwardRef<TextInput, Props>(function Input(
   );
 });
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   label: { marginBottom: spacing.xs },
   wrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
     paddingHorizontal: spacing.md,
   },
-  wrapError: { borderColor: colors.danger },
+  wrapError: { borderColor: t.colors.danger },
   input: {
     flex: 1,
     paddingVertical: spacing.md,
     fontSize: 16,
     fontFamily: 'Inter_400Regular',
-    color: colors.textPrimary,
+    color: t.colors.textPrimary,
   },
-});
+}));

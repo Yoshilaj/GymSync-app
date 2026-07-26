@@ -1,8 +1,8 @@
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, layout, spacing } from '@/theme';
+import { layout, makeStyles, spacing } from '@/theme';
 import { AppText, EmptyState } from '@/components/ui';
 import { RestDayCard } from '@/components/RestDayCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
@@ -39,6 +39,7 @@ function dayStatus(date: Date): DayStatus {
 }
 
 export function DayDetailScreen() {
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const { user } = useUser();
@@ -99,6 +100,7 @@ function DayWorkout({
   units: Units;
   onOpenExercise: (exerciseId: string) => void;
 }) {
+  const styles = useStyles();
   const totalSets = workout.exercises.reduce((a, e) => a + e.sets.length, 0);
   const volume = workout.exercises.reduce(
     (sum, pe) => sum + pe.sets.reduce((s, set) => s + set.targetReps * set.weight, 0),
@@ -157,11 +159,11 @@ function DayWorkout({
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   content: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingTop: spacing.sm,
   },
   listHeading: { marginLeft: spacing.xs },
-});
+}));

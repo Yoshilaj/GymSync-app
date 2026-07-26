@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BottomTabBarHeightCallbackContext } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, gradients, layout, shadows } from '@/theme';
+import { layout, makeStyles, useTheme } from '@/theme';
 import { GlassLozenge, TabBarSurface } from '@/components/TabBarSurface';
 import { usePlan } from '@/context/PlanContext';
 
@@ -52,6 +52,8 @@ export function AppTabBar({
   const insets = useSafeAreaInsets();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
   const { todaysWorkout } = usePlan();
+  const { colors } = useTheme();
+  const styles = useStyles();
 
   const barBottom = Math.max(insets.bottom, layout.TAB_BAR_BOTTOM_MIN);
 
@@ -320,6 +322,8 @@ function FabButton({
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
 }) {
+  const { gradients } = useTheme();
+  const styles = useStyles();
   return (
     <Pressable onPress={onPress} style={[styles.fabSlot, style]} hitSlop={6}>
       <View style={styles.fabShadow}>
@@ -390,7 +394,7 @@ const liveStyles = StyleSheet.create({
   },
 });
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   wrap: {
     position: 'absolute',
     left: layout.TAB_BAR_H_INSET,
@@ -423,7 +427,7 @@ const styles = StyleSheet.create({
     right: 0,
   },
   fabShadow: {
-    ...shadows.glow,
+    ...t.shadows.glow,
     borderRadius: layout.TAB_FAB_SIZE / 2 + 1,
   },
   fab: {
@@ -435,4 +439,4 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: 'rgba(255,255,255,0.9)',
   },
-});
+}));

@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, View } from 'react-native';
-import { colors, layout, radius, shadows, spacing } from '@/theme';
+import { Pressable, View } from 'react-native';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 
 const WEEK: { letter: string; long: string }[] = [
@@ -42,6 +42,8 @@ interface Props {
 }
 
 export function DayStrip({ week, selected, today, onSelect, markedDays = [] }: Props) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   return (
     <View style={styles.row}>
       {week.map((d) => {
@@ -94,7 +96,7 @@ export function DayStrip({ week, selected, today, onSelect, markedDays = [] }: P
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -114,8 +116,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   capsuleActive: {
-    backgroundColor: colors.accent,
-    ...shadows.glow,
+    backgroundColor: t.colors.accent,
+    ...t.shadows.glow,
   },
   dot: {
     width: 5,
@@ -123,6 +125,6 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: 'transparent',
   },
-  dotMarked: { backgroundColor: colors.borderStrong },
-  dotToday: { backgroundColor: colors.accent },
-});
+  dotMarked: { backgroundColor: t.colors.borderStrong },
+  dotToday: { backgroundColor: t.colors.accent },
+}));

@@ -2,7 +2,7 @@ import { ReactNode } from 'react';
 import { Platform, StyleSheet, View, ViewStyle, StyleProp } from 'react-native';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
-import { colors, layout, shadows } from '@/theme';
+import { layout, makeStyles, useTheme } from '@/theme';
 
 interface Props {
   children: ReactNode;
@@ -21,6 +21,8 @@ const glassAvailable = isLiquidGlassAvailable();
  * clip their children, so the rounded/clipped surface can't carry it.
  */
 export function TabBarSurface({ children, style }: Props) {
+  const { scheme } = useTheme();
+  const styles = useStyles();
   if (Platform.OS === 'ios' && glassAvailable) {
     return (
       <View style={[styles.glassShadow, style]}>
@@ -34,7 +36,11 @@ export function TabBarSurface({ children, style }: Props) {
   if (Platform.OS === 'ios') {
     return (
       <View style={[styles.shadow, style]}>
-        <BlurView tint="light" intensity={80} style={styles.surface}>
+        <BlurView
+          tint={scheme === 'dark' ? 'dark' : 'light'}
+          intensity={80}
+          style={styles.surface}
+        >
           <View style={[StyleSheet.absoluteFill, styles.frostVeil]} />
           {children}
         </BlurView>
@@ -55,6 +61,8 @@ export function TabBarSurface({ children, style }: Props) {
  * responds while held. Falls back to a soft accent pill.
  */
 export function GlassLozenge({ style }: { style?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
+  const lozengeStyles = useLozengeStyles();
   if (Platform.OS === 'ios' && glassAvailable) {
     return (
       <GlassView
@@ -68,22 +76,22 @@ export function GlassLozenge({ style }: { style?: StyleProp<ViewStyle> }) {
   return <View style={[lozengeStyles.base, lozengeStyles.fallback, style]} />;
 }
 
-const lozengeStyles = StyleSheet.create({
+const useLozengeStyles = makeStyles((t) => ({
   base: {
     borderRadius: layout.TAB_BAR_RADIUS,
     overflow: 'hidden',
   },
-  fallback: { backgroundColor: colors.accentSoft },
-});
+  fallback: { backgroundColor: t.colors.accentSoft },
+}));
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   shadow: {
-    ...shadows.lg,
+    ...t.shadows.lg,
     borderRadius: layout.TAB_BAR_RADIUS,
   },
   // Clear glass should read as glass, not a floating card — lighter shadow.
   glassShadow: {
-    ...shadows.md,
+    ...t.shadows.md,
     borderRadius: layout.TAB_BAR_RADIUS,
   },
   surface: {
@@ -91,6 +99,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flex: 1,
   },
-  frostVeil: { backgroundColor: 'rgba(255,255,255,0.70)' },
-  solid: { backgroundColor: colors.card },
-});
+  // Frosted veil over the blur so labels stay legible — light in light mode,
+  // a translucent dark-navy (the dark card color) in dark mode.
+  frostVeil: {
+    backgroundColor:
+      t.scheme === 'dark' ? 'rgba(22,35,58,0.70)' : 'rgba(255,255,255,0.70)',
+  },
+  solid: { backgroundColor: t.colors.card },
+}));

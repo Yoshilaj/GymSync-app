@@ -4,7 +4,7 @@ import { DayDetailScreen } from '@/screens/progress/DayDetailScreen';
 import { ExerciseListScreen } from '@/screens/exercises/ExerciseListScreen';
 import { ExerciseDetailScreen } from '@/screens/exercises/ExerciseDetailScreen';
 import { SettingsNavigator } from '@/navigation/SettingsNavigator';
-import { colors } from '@/theme';
+import { useTheme } from '@/theme';
 
 export type ProgressStackParamList = {
   ProgressHome:
@@ -25,6 +25,7 @@ export type ProgressStackParamList = {
 const Stack = createNativeStackNavigator<ProgressStackParamList>();
 
 export function ProgressStack() {
+  const { colors } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{

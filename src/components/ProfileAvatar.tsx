@@ -1,6 +1,6 @@
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { gradients, shadows } from '@/theme';
+import { makeStyles, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
  * Shadow lives on the wrapper — the disc clips its gradient.
  */
 export function ProfileAvatar({ name, size = 64 }: Props) {
+  const { gradients } = useTheme();
+  const styles = useStyles();
   const initial = (name?.[0] ?? 'Y').toUpperCase();
   return (
     <View style={[styles.shadow, { borderRadius: size / 2 }]}>
@@ -36,8 +38,8 @@ export function ProfileAvatar({ name, size = 64 }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  shadow: { ...shadows.sm },
+const useStyles = makeStyles((t) => ({
+  shadow: { ...t.shadows.sm },
   disc: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -45,4 +47,4 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.9)',
     overflow: 'hidden',
   },
-});
+}));

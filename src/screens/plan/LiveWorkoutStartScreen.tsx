@@ -11,7 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors, gradients, radius, shadows, spacing } from '@/theme';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
 import { usePlan } from '@/context/PlanContext';
 import { PlanStackParamList } from '@/navigation/PlanStack';
@@ -28,6 +28,8 @@ const BAR_COUNT = 5;
 const BAR_HEIGHTS = [28, 44, 56, 36, 20];
 
 export function LiveWorkoutStartScreen() {
+  const { colors, gradients } = useTheme();
+  const styles = useStyles();
   const nav = useNavigation<Nav>();
   const route = useRoute<Rt>();
   const { todaysWorkout, getWorkoutById } = usePlan();
@@ -171,8 +173,8 @@ export function LiveWorkoutStartScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.colors.bg },
   content: {
     flex: 1,
     alignItems: 'center',
@@ -190,7 +192,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   iconRingInner: {
-    ...shadows.glow,
+    ...t.shadows.glow,
     borderRadius: 36,
   },
   iconGrad: {
@@ -200,7 +202,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: colors.bg,
+    borderColor: t.colors.bg,
   },
   eyebrow: { letterSpacing: 2.5 },
   waveform: {
@@ -213,14 +215,14 @@ const styles = StyleSheet.create({
   waveBar: {
     width: 5,
     borderRadius: 3,
-    backgroundColor: colors.accent,
+    backgroundColor: t.colors.accent,
     opacity: 0.85,
   },
   progressTrack: {
     width: width - spacing.xl * 4,
     height: 6,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: t.colors.accentSoft,
     overflow: 'hidden',
   },
   progressFill: {
@@ -237,8 +239,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
-    ...shadows.xs,
+    backgroundColor: t.colors.card,
+    ...t.shadows.xs,
   },
   cancelBtnPressed: { opacity: 0.6 },
-});
+}));

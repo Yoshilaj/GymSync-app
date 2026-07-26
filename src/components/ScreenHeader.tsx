@@ -1,8 +1,8 @@
 import { ReactNode } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { colors, layout, radius, spacing } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui/AppText';
 
 interface Props {
@@ -24,6 +24,8 @@ export function ScreenHeader({
   onBack,
 }: Props) {
   const nav = useNavigation<any>();
+  const { colors } = useTheme();
+  const styles = useStyles();
 
   if (variant === 'detail') {
     return (
@@ -63,7 +65,7 @@ export function ScreenHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -79,11 +81,11 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: t.colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: t.colors.border,
   },
   rightSlot: { width: 34, alignItems: 'flex-end' },
-});
+}));
