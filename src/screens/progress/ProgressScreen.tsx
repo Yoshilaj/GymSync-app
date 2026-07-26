@@ -9,7 +9,6 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { LineChart } from 'react-native-gifted-charts';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Circle, Ellipse } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,7 +21,8 @@ import {
   RouteProp,
 } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { defaultLineChartProps, layout, makeStyles, radius, spacing, useTheme } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
+import { TrendChart } from '@/components/TrendChart';
 import { AppText, Card, EmptyState, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
@@ -415,20 +415,25 @@ function ExerciseTrends({
   const styles = useStyles();
   const ex = getExerciseById(exerciseId) ?? mockExercises[0];
 
-  // Real logged history only. Label every ~3rd point with MM-DD.
-  const data = useMemo(
-    () =>
-      series.map((p, i) => ({
-        value: Math.round(p.value),
-        label: i % 3 === 0 ? p.date.slice(5) : '',
-      })),
+  // Real logged history only, as daily points for the interactive chart.
+  const points = useMemo(
+    () => series.map((p) => ({ day: p.date, value: p.value })),
     [series],
   );
 
-  const hasEnough = data.length >= 2;
-  const diff = hasEnough ? data[data.length - 1].value - data[0].value : 0;
+  const hasEnough = points.length >= 2;
+  const diff = hasEnough
+    ? Math.round(points[points.length - 1].value - points[0].value)
+    : 0;
   const up = diff >= 0;
   const unit = 'lbs';
+
+  // 1RMs move by pounds, volume by hundreds — the pad scales with the series.
+  const values = points.map((d) => d.value);
+  const pad =
+    metric === 'strength'
+      ? 10
+      : Math.max(200, (Math.max(...values, 0) - Math.min(...values, 0)) * 0.1);
 
   return (
     <ChartCard
@@ -483,16 +488,15 @@ function ExerciseTrends({
       </Pressable>
 
       {hasEnough ? (
-        <View style={styles.chartWrap}>
-          <LineChart
-            {...defaultLineChartProps(metric === 'strength' ? 'primary' : 'secondary')}
-            data={data}
-            width={CHART_W}
-            height={160}
-            maxValue={Math.max(...data.map((d) => d.value)) + 6}
-            yAxisOffset={Math.max(0, Math.min(...data.map((d) => d.value)) - 6)}
-          />
-        </View>
+        <TrendChart
+          points={points}
+          tone={metric === 'strength' ? 'primary' : 'secondary'}
+          width={CHART_W}
+          height={160}
+          pad={pad}
+          formatValue={(v) => `${Math.round(v).toLocaleString()} ${unit}`}
+          aggregate={metric === 'strength' ? 'max' : 'avg'}
+        />
       ) : (
         <EmptyState
           icon="trending-up"
@@ -512,9 +516,9 @@ function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
 
   const data = useMemo(
     () =>
-      points.map((p, i) => ({
-        value: metricUnits ? p.weight_kg : kgToLbs(p.weight_kg),
-        label: i % 3 === 0 ? p.day.slice(5) : '',
+      points.map((p) => ({
+        day: p.day,
+        value: +(metricUnits ? p.weight_kg : kgToLbs(p.weight_kg)).toFixed(1),
       })),
     [points, metricUnits],
   );
@@ -527,7 +531,7 @@ function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
   return (
     <ChartCard
       title="Body weight"
-      subtitle={latest != null ? `${latest.toFixed(1)} ${user.units} latest` : 'Track your weight over time'}
+      subtitle={hasEnough ? undefined : 'Track your weight over time'}
     >
       {hasEnough ? (
         <>
@@ -545,15 +549,15 @@ function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
               </AppText>
             </View>
           </View>
-          <View style={styles.chartWrap}>
-            <LineChart
-              {...defaultLineChartProps('hot')}
-              data={data}
-              width={CHART_W}
-              height={140}
-              noOfSections={3}
-            />
-          </View>
+          <TrendChart
+            points={data}
+            tone="hot"
+            width={CHART_W}
+            height={140}
+            pad={metricUnits ? 10 : 20}
+            formatValue={(v) => `${v.toFixed(1)} ${user.units}`}
+            aggregate="avg"
+          />
         </>
       ) : latest != null ? (
         // Exactly one entry: acknowledge it and say what draws the line.
@@ -710,8 +714,5 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: 8,
     flex: 1,
-  },
-  chartWrap: {
-    marginLeft: -6,
   },
 }));

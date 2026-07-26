@@ -15,6 +15,12 @@ import {
   type SeriesPoint,
 } from '@/api/progress';
 
+// Fetch the full useful window once — the interactive chart pans/zooms
+// client-side. Body weight is a years-long story; exercise history caps at a
+// year (it resets with plan changes).
+const BODY_WEIGHT_DAYS = 1095;
+const EXERCISE_DAYS = 365;
+
 export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
   const { session, getToken } = useAuth();
   const focused = useIsFocused();
@@ -29,14 +35,8 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     (async () => {
       try {
         const token = await getToken();
-        const [s, bw] = await Promise.all([
-          fetchProgressSummary(token),
-          fetchBodyWeightSeries(token),
-        ]);
-        if (!cancelled) {
-          setSummary(s);
-          setBodyWeight(bw);
-        }
+        const s = await fetchProgressSummary(token);
+        if (!cancelled) setSummary(s);
       } catch {
         /* offline — keep last known values */
       }
@@ -52,7 +52,24 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     (async () => {
       try {
         const token = await getToken();
-        const points = await fetchExerciseSeries(token, exerciseId, metric);
+        const bw = await fetchBodyWeightSeries(token, BODY_WEIGHT_DAYS);
+        if (!cancelled) setBodyWeight(bw);
+      } catch {
+        /* offline — keep last known values */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, focused, getToken]);
+
+  useEffect(() => {
+    if (!session || !focused) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const points = await fetchExerciseSeries(token, exerciseId, metric, EXERCISE_DAYS);
         if (!cancelled) setSeries(points);
       } catch {
         /* offline — keep last known values */
