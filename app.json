@@ -48,6 +48,12 @@
       "expo-asset",
       "onnxruntime-react-native",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "GymSync uses your photos so you can set a profile picture."
+        }
+      ],
+      [
         "expo-speech-recognition",
         {
           "microphonePermission": "GymSync uses your microphone so you can dictate messages and talk to your AI coach.",

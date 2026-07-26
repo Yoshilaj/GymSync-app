@@ -123,7 +123,7 @@ const AVATAR_SIZE = 68;
 function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
   const { colors, gradients } = useTheme();
   const styles = useStyles();
-  const { user } = useUser();
+  const { user, profile } = useUser();
   const insets = useSafeAreaInsets();
 
   // The ring is data: how much of this week's plan is already trained.
@@ -193,7 +193,7 @@ function ProfileHeader({ onOpenSettings }: { onOpenSettings: () => void }) {
               transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
             />
           </Svg>
-          <ProfileAvatar name={user.displayName} size={AVATAR_SIZE} />
+          <ProfileAvatar name={user.displayName} size={AVATAR_SIZE} uri={profile?.avatar_url} />
         </View>
 
         <AppText variant="display" color="textInverse" align="center">

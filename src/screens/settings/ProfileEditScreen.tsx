@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { makeStyles, spacing } from '@/theme';
+import { makeStyles, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, Chip, Input } from '@/components/ui';
 import { SectionHeader } from '@/components/SectionHeader';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
+import { pickAvatar, uploadAvatar } from '@/api/avatar';
 import { cmToFtIn, ftInToCm, kgToLbs, lbsToKg } from '@/lib/units';
 import type { Sex } from '@/api/profile';
 import { SettingsPage } from './SettingsKit';
@@ -21,10 +23,32 @@ const THIS_YEAR = new Date().getFullYear();
 
 export function ProfileEditScreen() {
   const styles = useStyles();
+  const { colors } = useTheme();
   const nav = useNavigation();
   const { user, profile, setDisplayName, saveProfile } = useUser();
   const { user: authUser } = useAuth();
   const metric = user.units === 'kg';
+
+  const [avatarUri, setAvatarUri] = useState<string | null>(profile?.avatar_url ?? null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  const changePhoto = async () => {
+    if (!authUser?.id) return;
+    try {
+      const picked = await pickAvatar();
+      if (!picked) return;
+      setAvatarUri(picked.uri); // instant local preview
+      setUploadingPhoto(true);
+      const url = await uploadAvatar(authUser.id, picked);
+      await saveProfile({ avatar_url: url });
+      setAvatarUri(url);
+    } catch {
+      Alert.alert("Couldn't update photo", 'Check your connection and try again.');
+      setAvatarUri(profile?.avatar_url ?? null);
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const [name, setName] = useState(user.displayName);
   const [sex, setSex] = useState<Sex | 'skip'>(profile?.sex ?? 'skip');
@@ -97,10 +121,17 @@ export function ProfileEditScreen() {
       }
     >
       <View style={styles.avatarBlock}>
-        <ProfileAvatar name={name || 'Y'} size={84} />
-        <AppText variant="caption" color="textTertiary">
-          Photo upload coming soon
-        </AppText>
+        <Pressable onPress={changePhoto} disabled={uploadingPhoto}>
+          <ProfileAvatar name={name || 'Y'} size={84} uri={avatarUri} />
+          <View style={styles.avatarBadge}>
+            <Ionicons name="camera" size={14} color={colors.textInverse} />
+          </View>
+        </Pressable>
+        <Pressable onPress={changePhoto} disabled={uploadingPhoto}>
+          <AppText variant="caption" color="accentText">
+            {uploadingPhoto ? 'Uploading…' : 'Change photo'}
+          </AppText>
+        </Pressable>
       </View>
 
       <SectionHeader title="Name" />
@@ -174,8 +205,21 @@ export function ProfileEditScreen() {
   );
 }
 
-const useStyles = makeStyles(() => ({
+const useStyles = makeStyles((t) => ({
   avatarBlock: { alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  avatarBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: t.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: t.colors.bg,
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   hint: { marginTop: spacing.xs },
   row: { flexDirection: 'row', gap: spacing.sm },
