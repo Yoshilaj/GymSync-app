@@ -1,5 +1,11 @@
 import { Text, TextProps, TextStyle } from 'react-native';
-import { colors, textVariants, ColorKey, TextVariant } from '@/theme';
+import {
+  textVariants,
+  variantColorToken,
+  useTheme,
+  type ColorKey,
+  type TextVariant,
+} from '@/theme';
 
 interface Props extends TextProps {
   variant?: TextVariant;
@@ -9,8 +15,9 @@ interface Props extends TextProps {
 }
 
 /**
- * The only Text the app renders. Variants own font family, size, and default
- * color so screens can't drift back to hardcoded type styles.
+ * The only Text the app renders. Variants own font family/size; the color is
+ * resolved from the ACTIVE theme (a token by default, or the passed override)
+ * so every AppText flips with light/dark automatically.
  */
 export function AppText({
   variant = 'body',
@@ -19,8 +26,10 @@ export function AppText({
   style,
   ...rest
 }: Props) {
+  const { colors } = useTheme();
+  const base = colors[variantColorToken[variant]];
   const resolved =
-    color && color in colors ? colors[color as ColorKey] : color;
+    color != null ? (color in colors ? colors[color as ColorKey] : color) : base;
   return (
     <Text
       // Cap OS text scaling so fixed-height chrome (tab bar, day strip)
@@ -29,7 +38,7 @@ export function AppText({
       {...rest}
       style={[
         textVariants[variant],
-        resolved != null && { color: resolved },
+        { color: resolved },
         align != null && { textAlign: align },
         style,
       ]}

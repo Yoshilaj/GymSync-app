@@ -1,18 +1,20 @@
 import { ViewStyle } from 'react-native';
 import { palette } from './palette';
 
-type ShadowPreset = Pick<
+export type ShadowPreset = Pick<
   ViewStyle,
   'shadowColor' | 'shadowOpacity' | 'shadowRadius' | 'shadowOffset' | 'elevation'
 >;
 
 /**
- * Elevation presets — navy-tinted (pure black looks dirty on the blue-tinted
- * background). Each bundles iOS shadow + Android elevation.
+ * Elevation presets. Light shadows are navy-tinted (pure black looks dirty on
+ * the blue background). On dark, shadows barely read, so they go pure-black at
+ * higher opacity and cards additionally carry a hairline border for elevation.
  *
- * Depth language: cards get shadow + white bg, no border.
+ * `shadows` (below) stays exported as the LIGHT set for unmigrated files;
+ * migrated files read `useTheme().shadows`.
  */
-export const shadows = {
+export const lightShadows = {
   /** Chips, list rows, AI chat bubble. */
   xs: {
     shadowColor: palette.navy[900],
@@ -63,4 +65,16 @@ export const shadows = {
   },
 } as const satisfies Record<string, ShadowPreset>;
 
-export type ShadowKey = keyof typeof shadows;
+export type ShadowKey = keyof typeof lightShadows;
+
+export const darkShadows: Record<ShadowKey, ShadowPreset> = {
+  xs: { shadowColor: '#000000', shadowOpacity: 0.35, shadowRadius: 3, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
+  sm: { shadowColor: '#000000', shadowOpacity: 0.4, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  md: { shadowColor: '#000000', shadowOpacity: 0.45, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
+  lg: { shadowColor: '#000000', shadowOpacity: 0.55, shadowRadius: 28, shadowOffset: { width: 0, height: 14 }, elevation: 10 },
+  glow: { shadowColor: '#2E90EA', shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  glowLive: { shadowColor: '#FF7A45', shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+};
+
+/** Legacy export = light set. */
+export const shadows = lightShadows;

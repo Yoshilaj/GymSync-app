@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import { useEffect, useRef } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
@@ -19,57 +20,75 @@ import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
 import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
-import { colors } from '@/theme';
-
-const navTheme = {
-  ...DefaultTheme,
-  dark: false,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: colors.accent,
-    background: colors.bg,
-    card: colors.card,
-    text: colors.textPrimary,
-    border: colors.border,
-    notification: colors.accent,
-  },
-};
+import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
 
 function Splash() {
+  const { colors } = useTheme();
   return (
-    <View style={styles.splash}>
+    <View style={[styles.splash, { backgroundColor: colors.bg }]}>
       <ActivityIndicator color={colors.accent} />
     </View>
   );
 }
 
 /**
+ * Adopt the theme preference stored on the server profile once, when it
+ * hydrates — so the choice syncs across devices. A local in-session change
+ * (which also persists) wins because we only adopt one time per app run.
+ */
+function useAdoptServerTheme() {
+  const { profile } = useUser();
+  const { setThemePreference } = useThemePref();
+  const adopted = useRef(false);
+  const serverTheme = profile?.preferences?.theme as ThemePreference | undefined;
+  useEffect(() => {
+    if (adopted.current) return;
+    if (serverTheme === 'light' || serverTheme === 'dark' || serverTheme === 'system') {
+      adopted.current = true;
+      setThemePreference(serverTheme);
+    }
+  }, [serverTheme, setThemePreference]);
+}
+
+/**
  * Auth + first-run gate: splash while loading, auth flow when logged out,
- * onboarding until the profile has onboarded_at, then the app. If the profile
- * can't be fetched at all (offline, server down) we fail OPEN into the app —
- * never lock a user out over a flag lookup.
+ * onboarding until the profile has onboarded_at, then the app. Fails OPEN
+ * into the app if the profile can't be fetched (never lock a user out).
  */
 function RootGate() {
   const { loading, session } = useAuth();
   const { profile, profileStatus } = useUser();
+  const { colors, scheme } = useTheme();
+  useAdoptServerTheme();
 
-  if (loading || (session && profileStatus === 'loading')) {
-    return <Splash />;
-  }
+  const navTheme = {
+    ...DefaultTheme,
+    dark: scheme === 'dark',
+    colors: {
+      ...DefaultTheme.colors,
+      primary: colors.accent,
+      background: colors.bg,
+      card: colors.card,
+      text: colors.textPrimary,
+      border: colors.border,
+      notification: colors.accent,
+    },
+  };
 
-  const needsOnboarding =
-    !!session && profileStatus === 'ready' && !profile?.onboarded_at;
+  const content = () => {
+    if (loading || (session && profileStatus === 'loading')) return <Splash />;
+    const needsOnboarding =
+      !!session && profileStatus === 'ready' && !profile?.onboarded_at;
+    if (!session) return <AuthNavigator />;
+    if (needsOnboarding) return <OnboardingNavigator />;
+    return <RootNavigator />;
+  };
 
   return (
-    <NavigationContainer theme={navTheme}>
-      {!session ? (
-        <AuthNavigator />
-      ) : needsOnboarding ? (
-        <OnboardingNavigator />
-      ) : (
-        <RootNavigator />
-      )}
-    </NavigationContainer>
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <NavigationContainer theme={navTheme}>{content()}</NavigationContainer>
+    </>
   );
 }
 
@@ -88,10 +107,11 @@ export default function App() {
         <SafeAreaProvider>
           <AuthProvider>
             <UserProvider>
-              <PlanProvider>
-                <StatusBar style="dark" />
-                {fontsLoaded ? <RootGate /> : <Splash />}
-              </PlanProvider>
+              <ThemeProvider>
+                <PlanProvider>
+                  {fontsLoaded ? <RootGate /> : <Splash />}
+                </PlanProvider>
+              </ThemeProvider>
             </UserProvider>
           </AuthProvider>
         </SafeAreaProvider>
@@ -106,6 +126,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.bg,
   },
 });
