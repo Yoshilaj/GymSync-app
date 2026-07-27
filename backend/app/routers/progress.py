@@ -58,7 +58,11 @@ async def log_set(
     if body.weight is not None:
         row["weight"] = body.weight
         row["weight_unit"] = body.weight_unit
-    res = await db.table("completed_sets").insert(row).execute()
+    # Upsert on the slot key (migration 012): re-toggling a set updates the
+    # existing row instead of stacking duplicates.
+    res = await db.table("completed_sets").upsert(
+        row, on_conflict="session_id,exercise_name,set_index"
+    ).execute()
     return {"set": res.data[0] if res.data else row}
 
 

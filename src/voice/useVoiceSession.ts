@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState } from 'react-native';
+import { Animated, AppState, Platform } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import {
@@ -22,6 +23,21 @@ const RECONNECT_DELAY_MS = 500;
 const WATCHDOG_INTERVAL_MS = 1200;
 /** Watchdog: re-arm attempts per listening entry before giving up. */
 const WATCHDOG_MAX_REARMS = 3;
+/**
+ * Kill switch for barge-in (interrupting the coach mid-speech). Detection is
+ * thresholded hard in MicGate (speaker echo could self-trigger without AEC);
+ * flip this off if it misfires in the gym.
+ */
+const BARGE_IN_ENABLED = true;
+/**
+ * EXPERIMENT (default off): re-assert iOS voice processing (hardware AEC)
+ * during coach playback. The mic lib sets AVAudioSession mode .voiceChat on
+ * every recorder start, but expo-audio player creation can clobber the mode
+ * mid-turn — exactly when barge-in needs echo-cancelled input. Restarting the
+ * recorder as the coach starts speaking re-applies .voiceChat, at the cost of
+ * a ~100ms capture gap. Try this first if speaker self-barge shows up.
+ */
+const IOS_AEC_REARM_ON_PLAYBACK = false;
 
 export interface UseVoiceSessionArgs {
   /** Supabase user id — the {user_id} path segment on the voice socket. */
@@ -75,6 +91,12 @@ export interface VoiceSessionApi {
    * end the workout).
    */
   stop: () => Promise<void>;
+  /**
+   * The rest timer hit zero — ask the server for a spoken "rest's over" cue.
+   * Safe to call anytime; ignored unless the session is live. If a turn is in
+   * flight the server queues the cue until after it.
+   */
+  notifyTimerDone: () => void;
 }
 
 /**
@@ -115,34 +137,84 @@ export function useVoiceSession({
   const callbacksRef = useRef({ onTranscript, onAppAction, onText });
   callbacksRef.current = { onTranscript, onAppAction, onText };
 
+  // The gate is created before handleBargeIn exists (hook declaration order) —
+  // route its event through a ref that handleBargeIn fills in below.
+  const bargeInRef = useRef<() => void>(() => {});
+
+  // Stable frame handler shared by start, re-arm, and the watchdog. Stamps
+  // the arrival time so a dead recorder is detectable — but only for frames
+  // with signal in them: an AudioQueue whose session was deactivated under it
+  // (expo-audio player teardown, Siri) can keep delivering all-zero buffers,
+  // and a live mic always has a noise floor, so exact zeros = zombie capture.
+  const lastFrameAtRef = useRef(0);
+  const handleFrame = useCallback((frame: ArrayBuffer) => {
+    const bytes = new Uint8Array(frame);
+    for (let i = 0; i < bytes.length; i++) {
+      if (bytes[i] !== 0) {
+        lastFrameAtRef.current = Date.now();
+        break;
+      }
+    }
+    gateRef.current?.pushFrame(frame);
+  }, []);
+
   // Set both the ref (for reads inside callbacks) and the state (for renders).
   const goto = useCallback((next: VoicePhase) => {
-    // Half-duplex: the gate is muted in every phase except `listening`. Muting
-    // (not resetting) keeps the pre-roll ring rolling, so words spoken just
-    // before the phase flips back to listening still reach the server.
-    gateRef.current?.setMuted(next !== 'listening');
+    // Half-duplex, widened: the gate is live during `listening` AND `thinking`
+    // — nothing is playing yet in `thinking` (the first ack byte flips to
+    // coach_speaking, which re-mutes), so speech continuing past a premature
+    // finalization is captured instead of lost. Muting (not resetting) keeps
+    // the pre-roll ring rolling for the phases that do mute.
+    gateRef.current?.setMuted(next !== 'listening' && next !== 'thinking');
+    // Barge-in detection runs only while the coach is actually speaking.
+    gateRef.current?.setBargeMonitor(
+      BARGE_IN_ENABLED && next === 'coach_speaking',
+    );
+    if (
+      IOS_AEC_REARM_ON_PLAYBACK &&
+      Platform.OS === 'ios' &&
+      next === 'coach_speaking' &&
+      phaseRef.current !== 'coach_speaking'
+    ) {
+      // Recorder restart re-applies AVAudioSession .voiceChat (AEC) after the
+      // coach's player creation may have clobbered it. See the flag's docs.
+      void voiceMic.restart(handleFrame);
+    }
     phaseRef.current = next;
     if (mountedRef.current) setPhase(next);
-  }, []);
+  }, [handleFrame]);
 
   // The gate is half-duplex Machine B: frames route through it only while
   // `listening`. Silero loads in the background; until it resolves the gate
   // runs in passthrough (continuous streaming), then upgrades in place.
   const ensureGate = useCallback((): MicGate => {
     if (!gateRef.current) {
+      // Capture flows in listening AND thinking (see goto) — the same phases
+      // the gate itself is unmuted for.
+      const canSend = () =>
+        phaseRef.current === 'listening' || phaseRef.current === 'thinking';
       gateRef.current = new MicGate({
         send: (frames) => {
           const sock = socketRef.current;
-          if (sock?.isOpen && phaseRef.current === 'listening') {
+          if (sock?.isOpen && canSend()) {
             for (const f of frames) sock.sendBinary(f);
           }
         },
         keepalive: () => {
           const sock = socketRef.current;
-          if (sock?.isOpen && phaseRef.current === 'listening') {
+          if (sock?.isOpen && canSend()) {
             sock.send({ type: 'keepalive' });
           }
         },
+        utteranceEnd: () => {
+          // Gate closed after speech: the audio frames stop, so Deepgram's
+          // endpointing stalls — tell the server to finalize the utterance.
+          const sock = socketRef.current;
+          if (sock?.isOpen && canSend()) {
+            sock.send({ type: 'utterance_end' });
+          }
+        },
+        bargeIn: () => bargeInRef.current(),
         speakingChanged: (s) => {
           if (mountedRef.current) setSpeaking(s);
         },
@@ -170,6 +242,14 @@ export function useVoiceSession({
     if (mountedRef.current) setMicMutedState(muted);
   }, []);
 
+  const notifyTimerDone = useCallback(() => {
+    const sock = socketRef.current;
+    const p = phaseRef.current;
+    if (sock?.isOpen && p !== 'idle' && p !== 'error' && p !== 'connecting') {
+      sock.send({ type: 'timer_done' });
+    }
+  }, []);
+
   // Non-fatal problem (TTS down, one turn lost): surface it without leaving
   // the session — the server always follows with `done`, so the phase machine
   // recovers on its own.
@@ -181,23 +261,6 @@ export function useVoiceSession({
       noticeTimerRef.current = null;
       if (mountedRef.current) setNotice(null);
     }, NOTICE_MS);
-  }, []);
-
-  // Stable frame handler shared by start, re-arm, and the watchdog. Stamps
-  // the arrival time so a dead recorder is detectable — but only for frames
-  // with signal in them: an AudioQueue whose session was deactivated under it
-  // (expo-audio player teardown, Siri) can keep delivering all-zero buffers,
-  // and a live mic always has a noise floor, so exact zeros = zombie capture.
-  const lastFrameAtRef = useRef(0);
-  const handleFrame = useCallback((frame: ArrayBuffer) => {
-    const bytes = new Uint8Array(frame);
-    for (let i = 0; i < bytes.length; i++) {
-      if (bytes[i] !== 0) {
-        lastFrameAtRef.current = Date.now();
-        break;
-      }
-    }
-    gateRef.current?.pushFrame(frame);
   }, []);
 
   // Start mic capture and route EVERY frame through the gate, in all phases —
@@ -243,9 +306,29 @@ export function useVoiceSession({
       // Don't override a deliberate stop() or an error that landed mid-playback.
       if (phaseRef.current !== 'idle' && phaseRef.current !== 'error') {
         goto('listening');
+        // "Your turn now" — a subtle tick so the user knows the mic is live
+        // without watching the screen (distinct from the timer's Success buzz).
+        if (AppState.currentState === 'active') void Haptics.selectionAsync();
       }
     }
   }, [goto, rearmMic]);
+
+  // Barge-in: the user spoke over the coach. Stop playback instantly, tell the
+  // server to abandon the in-flight turn, and go back to listening — the gate's
+  // pre-roll ring still holds the words that triggered this, so they flush to
+  // the server with the first gate-open.
+  const handleBargeIn = useCallback(() => {
+    if (phaseRef.current !== 'coach_speaking') return;
+    void voicePlayer.stop();
+    const sock = socketRef.current;
+    if (sock?.isOpen) sock.send({ type: 'barge_in' });
+    // Player teardown can disturb the shared audio session (same reason
+    // finishTurn re-arms); the listening watchdog backstops a failed re-arm.
+    void rearmMic();
+    goto('listening');
+    if (AppState.currentState === 'active') void Haptics.selectionAsync();
+  }, [goto, rearmMic]);
+  bargeInRef.current = handleBargeIn;
 
   const handleMessage = useCallback(
     (msg: ServerMessage) => {
@@ -272,14 +355,26 @@ export function useVoiceSession({
           if (phaseRef.current === 'thinking') goto('coach_speaking');
           cb.onText?.(msg.text);
           break;
+        case 'coach_announce':
+          // Unsolicited coach speech (rest-timer cue): MP3 + segment_end +
+          // done follow on the normal rails — just flip into coach_speaking.
+          if (phaseRef.current === 'listening') goto('coach_speaking');
+          break;
         case 'segment_end':
           // One complete MP3 (the ack, or a sentence) — play it now, while the
-          // rest of the reply is still being generated.
-          voicePlayer.endSegment();
+          // rest of the reply is still being generated. After a barge-in the
+          // phase is already back in `listening`; drop the straggler.
+          if (
+            phaseRef.current === 'thinking' ||
+            phaseRef.current === 'coach_speaking'
+          ) {
+            voicePlayer.endSegment();
+          }
           break;
         case 'done':
           // Turn finished — drain remaining coach audio, then back to listening.
-          void finishTurn();
+          // Already listening = a barged-in turn's trailing done; nothing to do.
+          if (phaseRef.current !== 'listening') void finishTurn();
           break;
         case 'error':
           // fatal:true = session dead. Anything else is a per-turn problem the
@@ -318,6 +413,9 @@ export function useVoiceSession({
           onBinary: (data) => {
             // First audio artifact of the turn → the coach is now speaking.
             if (phaseRef.current === 'thinking') goto('coach_speaking');
+            // Straggler audio from a barged-in (cancelled) turn arrives after
+            // we've returned to listening — never let it into the queue.
+            if (phaseRef.current !== 'coach_speaking') return;
             voicePlayer.enqueue(data);
           },
           onError: () => {
@@ -487,5 +585,6 @@ export function useVoiceSession({
     setMicMuted,
     start,
     stop,
+    notifyTimerDone,
   };
 }

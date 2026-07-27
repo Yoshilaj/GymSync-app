@@ -16,6 +16,14 @@ Client → Server:
   {"type": "message", "text": "..."}        ← text chat (voice=false or no session)
   {"type": "keepalive"}                     ← client VAD gate closed; keeps the idle
                                               Deepgram socket warm (voice mode)
+  {"type": "utterance_end"}                 ← client VAD gate closed AFTER speech;
+                                              forces Deepgram to finalize the
+                                              buffered transcript now
+  {"type": "barge_in"}                      ← user spoke over the coach; abandon
+                                              the in-flight turn (client already
+                                              stopped playback)
+  {"type": "timer_done"}                    ← client rest timer hit zero; server
+                                              speaks a short canned cue
   <binary>                                  ← Linear16 PCM 16kHz audio (voice=true)
 
 Server → Client:
@@ -24,6 +32,9 @@ Server → Client:
                                             ← once, before the first text_delta, when a
                                               conversation is lazily created
   {"type": "transcript",  "text": "..."}   ← STT result (voice mode)
+  {"type": "coach_announce"}                ← unsolicited coach speech (rest-timer
+                                              cue) follows as binary MP3 +
+                                              segment_end + done
   {"type": "text_delta",  "text": "..."}   ← LLM streaming (text mode); in voice mode
                                               only as the TTS-failure text fallback
   {"type": "app_action",  "action": "..."}
@@ -159,6 +170,21 @@ async def voice_ws(
             elif msg_type == "keepalive":
                 if voice_session:
                     await voice_session.keepalive()
+
+            # ── utterance_end (client gate closed after speech → flush STT) ───
+            elif msg_type == "utterance_end":
+                if voice_session:
+                    await voice_session.finalize_utterance()
+
+            # ── barge_in (user spoke over the coach → abandon the turn) ───────
+            elif msg_type == "barge_in":
+                if voice_session:
+                    voice_session.request_cancel()
+
+            # ── timer_done (rest over → speak a canned cue) ───────────────────
+            elif msg_type == "timer_done":
+                if voice_session:
+                    await voice_session.announce_timer_done()
 
             # ── session_end ───────────────────────────────────────────────────
             elif msg_type == "session_end":

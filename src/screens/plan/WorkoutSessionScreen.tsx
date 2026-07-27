@@ -141,16 +141,6 @@ export function WorkoutSessionScreen() {
   const actions = useSessionActions();
   const { timer } = actions.state;
 
-  // A gentle nudge when the rest countdown runs out on its own (not on skip).
-  const prevTimerRef = useRef(timer);
-  useEffect(() => {
-    const prev = prevTimerRef.current;
-    prevTimerRef.current = timer;
-    if (prev.status === 'running' && timer.status === 'idle' && prev.remaining <= 1) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-  }, [timer]);
-
   const pushToast = useCallback(
     (text: string, icon?: SessionToast['icon']) => {
       setToasts((prev) => [
@@ -195,9 +185,13 @@ export function WorkoutSessionScreen() {
         }
         return prev.map((ex, i) => {
           if (i !== idx) return ex;
+          // The server's set_index is authoritative — it's the slot the DB row
+          // was actually written to (and re-writing the same slot is naturally
+          // idempotent). Older servers omit it; fall back to first-open.
           const firstOpen = ex.sets.findIndex((s) => !s.completed);
-          if (firstOpen === -1) {
-            // All planned sets done — the coach logged a bonus set.
+          const target = action.set_index ?? firstOpen;
+          if (target < 0 || target >= ex.sets.length) {
+            // Beyond the planned rows — the coach logged a bonus set.
             const last = ex.sets[ex.sets.length - 1];
             return {
               ...ex,
@@ -217,7 +211,7 @@ export function WorkoutSessionScreen() {
           return {
             ...ex,
             sets: ex.sets.map((s, si) =>
-              si === firstOpen
+              si === target
                 ? {
                     ...s,
                     achievedReps: action.reps,
@@ -229,11 +223,17 @@ export function WorkoutSessionScreen() {
           };
         });
       });
-      actions.startRest(DEFAULT_REST_SECONDS);
-      pushToast(
+      const corrected = action.mode === 'corrected';
+      // A correction rewrites history — the user isn't starting a new rest.
+      if (!corrected) actions.startRest(DEFAULT_REST_SECONDS);
+      const detail =
         action.weight != null
-          ? `${action.exercise} — ${action.reps} × ${action.weight}`
-          : `${action.exercise} — ${action.reps} reps`,
+          ? `${action.reps} × ${action.weight}`
+          : `${action.reps} reps`;
+      pushToast(
+        corrected
+          ? `Fixed set ${(action.set_index ?? 0) + 1} — ${detail}`
+          : `${action.exercise} — ${detail}`,
       );
     },
     [actions.startRest, pushToast],
@@ -416,6 +416,19 @@ export function WorkoutSessionScreen() {
   });
 
   const voiceLive = voice.phase !== 'idle' && voice.phase !== 'error';
+
+  // A gentle nudge when the rest countdown runs out on its own (not on skip) —
+  // haptic plus, when voice is live, a spoken "rest's over" cue from the coach.
+  // (Lives below the useVoiceSession call so it can reach voice.notifyTimerDone.)
+  const prevTimerRef = useRef(timer);
+  useEffect(() => {
+    const prev = prevTimerRef.current;
+    prevTimerRef.current = timer;
+    if (prev.status === 'running' && timer.status === 'idle' && prev.remaining <= 1) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      voice.notifyTimerDone();
+    }
+  }, [timer, voice.notifyTimerDone]);
 
   const enableVoice = useCallback(async () => {
     if (!authUser?.id) return;

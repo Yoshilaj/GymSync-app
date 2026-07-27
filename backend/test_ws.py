@@ -21,13 +21,26 @@ async def test_voice():
             loop.call_soon_threadsafe(audio_q.put_nowait, pcm)
 
         print("🎤  Speak now — say something to your coach (Ctrl+C to stop)…")
+        print("    keys+Enter: [u]tterance_end  [b]arge_in  [t]imer_done")
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
                             blocksize=CHUNK_FRAMES, callback=mic_callback):
             async def send_audio():
                 while True:
                     await ws.send(await audio_q.get())
 
+            async def send_commands():
+                # Simulates the mobile client's control messages without the app:
+                # u = VAD gate closed (force Deepgram finalize), b = user spoke
+                # over the coach, t = rest timer hit zero.
+                keys = {"u": "utterance_end", "b": "barge_in", "t": "timer_done"}
+                while True:
+                    line = (await asyncio.to_thread(input)).strip().lower()
+                    if line in keys:
+                        await ws.send(json.dumps({"type": keys[line]}))
+                        print(f"→ sent {keys[line]}")
+
             send_task = asyncio.create_task(send_audio())
+            cmd_task = asyncio.create_task(send_commands())
             try:
                 while True:
                     msg = await ws.recv()
@@ -38,5 +51,6 @@ async def test_voice():
                         print(data)
             except (KeyboardInterrupt, Exception):
                 send_task.cancel()
+                cmd_task.cancel()
 
 asyncio.run(test_voice())

@@ -120,20 +120,73 @@ _ACK_PHRASES: dict[str, list[str]] = {
         "Boom! One second, lining up your next move!",
     ],
 }
+# Spoken when the client reports its rest timer hit zero — same contract as
+# acks: canned, cached, audio-only, best-effort. Never a full agent turn.
+_TIMER_PHRASES: dict[str, list[str]] = {
+    "classic": [
+        "Rest's up — back to it.",
+        "Time. Next set whenever you're ready.",
+        "That's your rest — let's continue.",
+    ],
+    "supportive": [
+        "Time's up! Ready when you are.",
+        "Rest's done — you've got this next one.",
+        "Okay, break's over — back to it when you're set!",
+    ],
+    "energetic": [
+        "REST'S OVER — LET'S GO!",
+        "TIME! Back on it!",
+        "Break's DONE — hit it!",
+    ],
+}
+
 # (preset_id, phrase) → MP3 bytes, cached for the process lifetime (~20KB each).
 # Benign race if two sessions warm the same key concurrently — last write wins.
-_ack_cache: dict[tuple[str, str], bytes] = {}
+_phrase_cache: dict[tuple[str, str], bytes] = {}
 
 
-async def _ack_audio(preset_id: str, phrase: str) -> bytes | None:
+async def _cached_phrase_audio(preset_id: str, phrase: str) -> bytes | None:
     key = (preset_id, phrase)
-    if key not in _ack_cache:
+    if key not in _phrase_cache:
         try:
-            _ack_cache[key] = b"".join([c async for c in synthesize(phrase, preset_id)])
-        except Exception:  # incl. TTSError — acks are best-effort by contract
-            logger.warning("ack synthesis failed for %s", key, exc_info=True)
+            _phrase_cache[key] = b"".join(
+                [c async for c in synthesize(phrase, preset_id)]
+            )
+        except Exception:  # incl. TTSError — canned phrases are best-effort
+            logger.warning("phrase synthesis failed for %s", key, exc_info=True)
             return None
-    return _ack_cache[key]
+    return _phrase_cache[key]
+
+
+class UtteranceAggregator:
+    """Accumulates Deepgram `is_final` fragments until an utterance boundary.
+
+    Deepgram advances endpointing/UtteranceEnd on AUDIO time, and the client
+    gate stops sending frames the moment it closes — so a short utterance can
+    sit in Deepgram's buffer with no boundary ever firing. Fragments collect
+    here and are released by whichever boundary arrives first: speech_final,
+    a Finalize response (from_finalize), UtteranceEnd, or the post-Finalize
+    force-flush.
+    """
+
+    def __init__(self) -> None:
+        self._parts: list[str] = []
+        # Bumped on every flush — lets a delayed force-flush detect that a
+        # real boundary already handled the utterance.
+        self.generation = 0
+
+    def add_final(self, text: str) -> None:
+        text = text.strip()
+        if text:
+            self._parts.append(text)
+
+    def flush(self) -> str | None:
+        self.generation += 1
+        if not self._parts:
+            return None
+        text = " ".join(self._parts)
+        self._parts.clear()
+        return text
 
 
 class VoiceSession:
@@ -150,12 +203,21 @@ class VoiceSession:
         self._session_id = session_id
         self._db = db
         self._dg = None
-        self._transcript_q: asyncio.Queue[str | None] = asyncio.Queue()
+        # Tagged commands: ("utterance", text) | ("timer_done", None) | None sentinel.
+        self._transcript_q: asyncio.Queue[tuple[str, str | None] | None] = asyncio.Queue()
         self._processor_task: asyncio.Task | None = None
         # Single lock prevents interleaved sends from the main loop and the processor task.
         self._ws_lock = asyncio.Lock()
-        # Drop incoming transcripts while the agent is already responding.
+        # True while a turn is in flight — gates barge-in cancellation.
         self._busy = False
+        # Set by the client's barge_in message; checked throughout the turn.
+        self._cancel_turn = asyncio.Event()
+        # is_final fragments waiting for an utterance boundary.
+        self._agg = UtteranceAggregator()
+        # Collapse stacked timer_done requests into one queued announcement.
+        self._timer_queued = False
+        # Strong refs to fire-and-forget tasks (the loop only keeps weak ones).
+        self._bg_tasks: set[asyncio.Task] = set()
         # Deepgram lifecycle: _stopping silences the Close handler during a
         # deliberate teardown; the other two bound recovery to one restart.
         self._stopping = False
@@ -188,6 +250,51 @@ class VoiceSession:
         if self._dg and not self._stopping:
             await self._dg.keep_alive()
 
+    async def finalize_utterance(self) -> None:
+        """Client VAD gate closed after speech: force Deepgram to flush NOW.
+
+        Gate close stops audio frames, and Deepgram's endpointing runs on audio
+        time — without this nudge a short utterance ("65 kg") can sit in its
+        buffer indefinitely. Finalize makes Deepgram emit the buffered
+        transcript with from_finalize set; a delayed force-flush covers a lost
+        Finalize response.
+        """
+        if self._dg is None or self._stopping:
+            return
+        gen_at_request = self._agg.generation
+        try:
+            finalize = getattr(self._dg, "finalize", None)
+            if finalize is not None:
+                await finalize()
+        except Exception:
+            logger.warning("Deepgram finalize failed", exc_info=True)
+
+        async def _force_flush() -> None:
+            await asyncio.sleep(2.0)
+            # Only if no boundary flushed since we asked.
+            if self._agg.generation == gen_at_request:
+                text = self._agg.flush()
+                if text:
+                    await self._transcript_q.put(("utterance", text))
+
+        task = asyncio.create_task(_force_flush())
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    def request_cancel(self) -> None:
+        """Client barge-in: abandon the in-flight turn (no-op between turns —
+        the client already stopped playback and went back to listening)."""
+        if self._busy:
+            self._cancel_turn.set()
+
+    async def announce_timer_done(self) -> None:
+        """Client rest timer hit zero — queue a spoken cue. Ordered behind any
+        in-flight turn by the queue; stacked requests collapse into one."""
+        if self._timer_queued:
+            return
+        self._timer_queued = True
+        await self._transcript_q.put(("timer_done", None))
+
     async def stop(self) -> None:
         """Tear down the Deepgram connection and wait for the processor to finish."""
         self._stopping = True
@@ -217,11 +324,24 @@ class VoiceSession:
         outer = self
 
         async def _on_transcript(self_dg, result, **kwargs):
-            # speech_final = Deepgram VAD detected end of utterance (endpointing).
-            if result.speech_final:
-                text = result.channel.alternatives[0].transcript.strip()
+            # interim_results=True: everything lands here, but only is_final
+            # fragments accumulate. An utterance boundary — speech_final from
+            # endpointing, or from_finalize answering our Finalize — releases
+            # the joined transcript.
+            if not getattr(result, "is_final", False):
+                return
+            outer._agg.add_final(result.channel.alternatives[0].transcript)
+            if result.speech_final or getattr(result, "from_finalize", False):
+                text = outer._agg.flush()
                 if text:
-                    await outer._transcript_q.put(text)
+                    await outer._transcript_q.put(("utterance", text))
+
+        async def _on_utterance_end(self_dg, utterance_end, **kwargs):
+            # Safety net for utterances Deepgram never marks speech_final
+            # (noisy gyms): fires after utterance_end_ms of audio-time silence.
+            text = outer._agg.flush()
+            if text:
+                await outer._transcript_q.put(("utterance", text))
 
         async def _on_error(self_dg, error, **kwargs):
             logger.warning("Deepgram error: %s", error)
@@ -231,19 +351,22 @@ class VoiceSession:
             await outer._on_dg_dead()
 
         self._dg.on(LiveTranscriptionEvents.Transcript, _on_transcript)
+        self._dg.on(LiveTranscriptionEvents.UtteranceEnd, _on_utterance_end)
         self._dg.on(LiveTranscriptionEvents.Error, _on_error)
         self._dg.on(LiveTranscriptionEvents.Close, _on_close)
 
-        # Optional hardening (not needed yet): interim_results=True +
-        # utterance_end_ms=1000 + an UtteranceEnd handler would catch utterances
-        # Deepgram never marks speech_final. The client gate's ≥700ms hangover
-        # guarantees ≥300ms trailing silence, so endpointing=300 always fires.
+        # End-of-turn authority is the CLIENT's VAD gate: its utterance_end
+        # message triggers a Deepgram Finalize (finalize_utterance below).
+        # endpointing is deliberately slow — a fallback for passthrough mode
+        # (no client VAD) — so it stops cutting users off mid-sentence pause.
         options = LiveOptions(
             model="nova-3",
             encoding="linear16",
             sample_rate=16000,
             channels=1,
-            endpointing=300,   # ms of silence → speech_final
+            interim_results=True,      # required for UtteranceEnd + Finalize flow
+            utterance_end_ms="1000",   # audio-time silence → UtteranceEnd safety net
+            endpointing=800,           # slow fallback, no longer the authority
             smart_format=True,
         )
         if not await self._dg.start(options):
@@ -299,15 +422,17 @@ class VoiceSession:
 
     async def _prewarm_acks(self) -> None:
         preset_id = self._preset_id or "supportive"
-        phrases = _ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"])
-        await asyncio.gather(*(_ack_audio(preset_id, p) for p in phrases))
+        phrases = _ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"]) + _TIMER_PHRASES.get(
+            preset_id, _TIMER_PHRASES["classic"]
+        )
+        await asyncio.gather(*(_cached_phrase_audio(preset_id, p) for p in phrases))
 
     async def _send_ack(self, preset_id: str) -> None:
         """Instant spoken acknowledgment — the turn's first audio segment.
         Best-effort: any failure is swallowed and the turn proceeds silently."""
         try:
             phrase = random.choice(_ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"]))
-            audio = await _ack_audio(preset_id, phrase)
+            audio = await _cached_phrase_audio(preset_id, phrase)
             if not audio:
                 return
             async with self._ws_lock:
@@ -317,15 +442,39 @@ class VoiceSession:
             logger.warning("ack send failed", exc_info=True)
 
     async def _process_transcripts(self) -> None:
-        while True:
-            transcript = await self._transcript_q.get()
-            if transcript is None:
+        stopped = False
+        while not stopped:
+            item = await self._transcript_q.get()
+            if item is None:
                 break
-            if self._busy:
-                continue   # agent already responding — drop the overlapping utterance
+            kind, payload = item
+
+            if kind == "timer_done":
+                await self._announce_timer_done()
+                continue
+
+            # An utterance. Drain whatever else is already queued: rapid-fire
+            # finalizations (Finalize flush + UtteranceEnd + speech continuing
+            # into the thinking phase) merge into ONE agent turn instead of N
+            # stale-context replies. A queued timer cue plays after the turn.
+            texts = [payload]
+            timer_pending = False
+            while True:
+                try:
+                    nxt = self._transcript_q.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                if nxt is None:
+                    stopped = True
+                    break
+                if nxt[0] == "utterance":
+                    texts.append(nxt[1])
+                elif nxt[0] == "timer_done":
+                    timer_pending = True
+
             self._busy = True
             try:
-                await self._handle_utterance(transcript)
+                await self._handle_utterance(" ".join(texts))
             except Exception as exc:
                 logger.exception("Voice turn failed")
                 # Non-fatal error + done so the client returns to listening
@@ -342,7 +491,39 @@ class VoiceSession:
             finally:
                 self._busy = False
 
+            if timer_pending and not stopped:
+                await self._announce_timer_done()
+
+    async def _announce_timer_done(self) -> None:
+        """Speak a canned rest-over cue: coach_announce → MP3 → segment_end →
+        done, riding the client's normal playback rails. Best-effort like acks,
+        but once coach_announce is out the client is in coach_speaking and MUST
+        get a done."""
+        self._timer_queued = False
+        announced = False
+        try:
+            preset_id = await self._preset()
+            phrases = _TIMER_PHRASES.get(preset_id, _TIMER_PHRASES["classic"])
+            audio = await _cached_phrase_audio(preset_id, random.choice(phrases))
+            if not audio:
+                return
+            async with self._ws_lock:
+                await self._ws.send_json({"type": "coach_announce"})
+                announced = True
+                await self._ws.send_bytes(audio)
+                await self._ws.send_json({"type": "segment_end"})
+        except Exception:
+            logger.warning("timer announcement failed", exc_info=True)
+        finally:
+            if announced:
+                try:
+                    async with self._ws_lock:
+                        await self._ws.send_json({"type": "done"})
+                except Exception:
+                    pass  # client may already be gone
+
     async def _handle_utterance(self, transcript: str) -> None:
+        self._cancel_turn.clear()
         async with self._ws_lock:
             await self._ws.send_json({"type": "transcript", "text": transcript})
 
@@ -356,7 +537,7 @@ class VoiceSession:
         async def _speak(sentence: str) -> None:
             """TTS a sentence; after the first TTSError, degrade the turn to text."""
             nonlocal tts_failed
-            if not sentence.strip():
+            if not sentence.strip() or self._cancel_turn.is_set():
                 return
             if not tts_failed:
                 try:
@@ -383,7 +564,13 @@ class VoiceSession:
                 )
 
         done_sent = False
-        async for event in _agent_events(transcript, self._session_id, self._user_id, self._db):
+        cancelled = False
+        gen = _agent_events(transcript, self._session_id, self._user_id, self._db)
+        async for event in gen:
+            if self._cancel_turn.is_set():
+                cancelled = True
+                break
+
             if event["type"] == "text_delta":
                 tts_buffer += event["text"]
                 sentences, tts_buffer = _pop_sentences(tts_buffer)
@@ -400,6 +587,12 @@ class VoiceSession:
                     await self._ws.send_json({"type": "done"})
                 done_sent = True
 
+        if cancelled:
+            # Barge-in: kill the upstream LLM stream and drop unspoken text —
+            # the client already stopped playback and is listening again.
+            await gen.aclose()
+            tts_buffer = ""
+
         # Structural invariant: every turn ends with `done`, even if an upstream
         # generator ends early without one — the client's phase machine depends
         # on it to leave `thinking`/`coach_speaking`. (Raised exceptions are
@@ -413,6 +606,8 @@ class VoiceSession:
         sent_any = False
         try:
             async for chunk in synthesize(text, preset_id):
+                if self._cancel_turn.is_set():
+                    break  # barge-in mid-sentence: stop streaming immediately
                 sent_any = True
                 async with self._ws_lock:
                     await self._ws.send_bytes(chunk)

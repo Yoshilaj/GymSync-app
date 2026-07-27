@@ -17,6 +17,14 @@ import {
 
 export type PcmFrameHandler = (frame: ArrayBuffer) => void;
 
+/**
+ * EXPERIMENT (default off): Android hardware echo cancellation via
+ * VOICE_COMMUNICATION (audioSource 7) instead of VOICE_RECOGNITION (6).
+ * Engages the platform echo canceller for barge-in, but also changes
+ * gain/noise processing — A/B Deepgram accuracy on-device before keeping.
+ */
+const ANDROID_HW_AEC_EXPERIMENT = false;
+
 // MUST match backend/app/agents/voice.py:
 //   LiveOptions(encoding="linear16", sample_rate=16000, channels=1)
 // A drift here yields garbled or silent audio with no error (§7).
@@ -24,7 +32,10 @@ const CAPTURE_OPTIONS = {
   sampleRate: 16000,
   channels: 1,
   bitsPerSample: 16,
-  audioSource: 6, // Android VOICE_RECOGNITION (noise-suppressed); ignored on iOS
+  // Android capture source; ignored on iOS. On iOS the lib itself sets
+  // AVAudioSession mode .voiceChat (voice processing incl. AEC) on every
+  // recorder start — see useVoiceSession's IOS_AEC_REARM_ON_PLAYBACK.
+  audioSource: ANDROID_HW_AEC_EXPERIMENT ? 7 : 6,
   // 2048 bytes = 1024 samples = 64ms/frame: exactly 2 Silero VAD windows, and
   // half the gate-open latency of the old 4096. (M5)
   bufferSize: 2048,

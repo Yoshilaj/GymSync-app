@@ -125,6 +125,38 @@ def _fmt_target(target_sets: list) -> str:
     return f"{n}x{reps}-{high}" if high else f"{n}x{reps}"
 
 
+def _render_current_sets(target_sets: list, rows: list[dict]) -> list[str]:
+    """Numbered per-set sub-lines for the CURRENT exercise, so spoken ordinals
+    ("the first set") ground to a set_number the model can pass to log_set.
+    Rows land by their set_index when sane; legacy/duplicate indexes fall back
+    to the first free slot. Other exercises keep the aggregate line — this
+    detail is only worth the tokens where the conversation actually is."""
+    planned = len(target_sets or [])
+    by_slot: dict[int, dict] = {}
+    seq = 0
+    for row in rows:
+        idx = row.get("set_index")
+        if not isinstance(idx, int) or idx < 0 or idx in by_slot:
+            idx = seq
+            while idx in by_slot:
+                idx += 1
+        by_slot[idx] = row
+        seq = idx + 1
+    total = max(planned, (max(by_slot) + 1) if by_slot else 0)
+    out: list[str] = []
+    for slot in range(total):
+        row = by_slot.get(slot)
+        if row:
+            out.append(f"   set {slot + 1}: {_fmt_set(row)} — done")
+            continue
+        target = (target_sets[slot] or {}) if slot < planned else {}
+        reps = target.get("targetReps")
+        high = target.get("repsHigh")
+        tgt = f"target {reps}-{high}" if reps and high else (f"target {reps}" if reps else "no target")
+        out.append(f"   set {slot + 1}: not done ({tgt})")
+    return out
+
+
 def _render_session_state(
     current_exercise: str | None,
     overrides: dict,
@@ -183,6 +215,8 @@ def _render_session_state(
                 status = "not started"
             marker = "   <- CURRENT" if i == current_idx else ""
             lines.append(f"{i + 1}. {name} — {_fmt_target(e.get('target_sets'))} — {status}{marker}")
+            if i == current_idx:
+                lines.extend(_render_current_sets(e.get("target_sets") or [], rows))
 
         for name, rows in logged.items():
             if name not in matched:
@@ -211,6 +245,10 @@ def _render_session_state(
     lines.append(
         "If the user mentions a set/reps/weight WITHOUT naming an exercise, "
         "it is for the CURRENT exercise."
+    )
+    lines.append(
+        "Sets are numbered 1-based; when the user names one ('the first set', "
+        "'set 3'), pass set_number to log_set."
     )
     return "<session_state>\n" + "\n".join(lines) + "\n</session_state>\n\n"
 
@@ -245,6 +283,41 @@ async def _load_session_context(session_id: str | None, db: AsyncClient) -> str:
         return ""
 
 
+def _summarize_tool(name: str, args: dict, result: dict) -> str | None:
+    """One compact clause for the cross-turn [actions: ...] note — the saved
+    history keeps only user/assistant text, so without this the model forgets
+    what it DID last turn (e.g. re-logs a set it already logged). None = not
+    worth remembering (pure reads)."""
+    if not isinstance(result, dict):
+        return None
+    if result.get("error"):
+        return f"{name} failed"
+    if name == "log_set":
+        n = result.get("set_number") or (result.get("set_index", 0) + 1)
+        verb = "corrected" if result.get("status") == "set_corrected" else "logged"
+        detail = str(args.get("reps", "?"))
+        if args.get("weight") is not None:
+            detail += f"@{args['weight']}{args.get('weight_unit') or ''}"
+        return f"{verb} {args.get('exercise_name')} set {n}: {detail}"
+    if name == "start_timer":
+        return f"started {result.get('duration_seconds', 90)}s rest timer"
+    if name in ("stop_timer", "pause_timer"):
+        return name.replace("_", " ")
+    if name == "go_to_exercise":
+        return f"moved to {args.get('exercise_name') or 'next exercise'}"
+    if name == "swap_exercise":
+        return f"swapped {args.get('from_exercise')} for {args.get('to_exercise') or 'an alternative'}"
+    if name == "modify_plan":
+        return "adjusted today's session plan"
+    if name == "add_exercise_to_session":
+        return f"added {args.get('exercise_name')} to today"
+    if name == "report_injury":
+        return f"recorded injury: {args.get('body_part')}"
+    if name == "propose_workout_plan":
+        return "proposed a weekly plan (awaiting Accept)"
+    return None
+
+
 async def _save_history(
     session_id: str | None,
     existing: list[dict],
@@ -253,6 +326,7 @@ async def _save_history(
     db: AsyncClient,
     conversation_id: str | None = None,
     user_id: str | None = None,
+    tool_notes: list[str] | None = None,
 ) -> None:
     if conversation_id and user_id:
         await conversation_store.add_messages(
@@ -267,9 +341,16 @@ async def _save_history(
         return
     if not session_id:
         return
+    assistant_entry: dict = {
+        "role": "assistant", "content": assistant_text, "ts": utcnow(),
+    }
+    # What the tools DID this turn, replayed as an [actions: ...] suffix so the
+    # next turn's model remembers its own actions (session JSONB path only).
+    if tool_notes:
+        assistant_entry["tool_notes"] = tool_notes[:6]
     updated = existing + [
         {"role": "user", "content": user_message, "ts": utcnow()},
-        {"role": "assistant", "content": assistant_text, "ts": utcnow()},
+        assistant_entry,
     ]
     await db.table("workout_sessions").update(
         {"chat_history": updated[-20:], "updated_at": utcnow()}
@@ -311,13 +392,20 @@ async def _agent_events(
     system = [{"type": "text", "text": system_text, "cache_control": {"type": "ephemeral"}}]
 
     # Conversation history arrives pre-bounded from the store; the workout-session
-    # JSONB path keeps its original last-10 replay window.
+    # JSONB path keeps its original last-10 replay window. Saved tool_notes ride
+    # back in as an [actions: ...] suffix (the prompt marks these as internal).
     replay = history if conversation_id else history[-10:]
-    messages: list[dict] = [{"role": m["role"], "content": m["content"]} for m in replay]
+    messages: list[dict] = []
+    for m in replay:
+        content = m["content"]
+        if m.get("tool_notes"):
+            content = f"{content}\n[actions: {'; '.join(m['tool_notes'])}]".strip()
+        messages.append({"role": m["role"], "content": content})
     full_user_message = profile_ctx + session_ctx + user_message
     messages.append({"role": "user", "content": full_user_message})
 
     assistant_text_parts: list[str] = []
+    tool_notes: list[str] = []
     model = model or MODEL_FAST  # escalate_to_reasoning bumps this to MODEL_REASONING
 
     try:
@@ -345,6 +433,7 @@ async def _agent_events(
                     db,
                     conversation_id=conversation_id,
                     user_id=user_id,
+                    tool_notes=tool_notes,
                 )
                 yield {"type": "done"}
                 break
@@ -362,6 +451,9 @@ async def _agent_events(
                         })
                         continue
                     result, app_actions = await execute_tool(block.name, block.input, ctx)
+                    note = _summarize_tool(block.name, block.input, result)
+                    if note:
+                        tool_notes.append(note)
                     for action in app_actions:
                         yield action
                     tool_results.append({

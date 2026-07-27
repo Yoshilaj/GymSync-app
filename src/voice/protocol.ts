@@ -21,7 +21,17 @@ export type ClientMessage =
   | { type: 'session_end' }
   | { type: 'message'; text: string }
   /** VAD gate is closed (user silent) — keeps the server's Deepgram socket warm. */
-  | { type: 'keepalive' };
+  | { type: 'keepalive' }
+  /**
+   * VAD gate closed AFTER speech — tells the server to force Deepgram to
+   * finalize the buffered transcript now (its endpointing runs on audio time
+   * and stalls once frames stop, so short utterances would otherwise hang).
+   */
+  | { type: 'utterance_end' }
+  /** User spoke over the coach; playback already stopped — abandon the turn. */
+  | { type: 'barge_in' }
+  /** Rest timer hit zero — the server speaks a short canned cue back. */
+  | { type: 'timer_done' };
 
 /** A single change within a modify_plan action (backend tools.py: modify_plan). */
 export interface PlanChange {
@@ -52,6 +62,10 @@ export type AppActionMessage =
       exercise: string;
       reps: number;
       weight: number | null;
+      /** Authoritative 0-based slot the server wrote (absent on older servers). */
+      set_index?: number;
+      /** 'corrected' = an existing set was overwritten — don't start rest. */
+      mode?: 'logged' | 'corrected';
     }
   | { type: 'app_action'; action: 'add_exercise'; exercise: string }
   | { type: 'app_action'; action: 'swap_exercise'; from: string; to: string }
@@ -120,6 +134,12 @@ export type ServerMessage =
    */
   | { type: 'segment_end' }
   | { type: 'done' }
+  /**
+   * Unsolicited coach speech (rest-timer cue): binary MP3 + segment_end +
+   * done follow. Flips the client to coach_speaking so the normal playback
+   * rails handle it.
+   */
+  | { type: 'coach_announce' }
   /**
    * fatal:false = per-turn failure (e.g. TTS down), always followed by `done` —
    * the session continues. fatal:true = session dead, the socket closes after.

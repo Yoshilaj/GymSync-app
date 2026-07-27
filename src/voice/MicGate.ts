@@ -38,6 +38,16 @@ export interface MicGateConfig {
   keepaliveIntervalMs: number;
   /** Duration of one mic frame (bufferSize 2048 bytes = 1024 samples = 64ms). */
   frameMs: number;
+  /**
+   * Barge-in (speech detected while the coach plays, no AEC): all three
+   * criteria must hold on CONSECUTIVE frames — a much higher VAD bar than the
+   * normal open, a sustain requirement, and an instant-RMS floor. Speaker
+   * echo through a pocketed / arm's-length phone is attenuated on all three;
+   * near-mouth speech is not.
+   */
+  bargeProbThreshold: number;
+  bargeSustainFrames: number;
+  bargeMinRms: number;
 }
 
 export const DEFAULT_GATE_CONFIG: MicGateConfig = {
@@ -49,6 +59,11 @@ export const DEFAULT_GATE_CONFIG: MicGateConfig = {
   hangoverMs: 700,
   keepaliveIntervalMs: 5000,
   frameMs: 64,
+  // If barge-in misfires on loud speaker playback, first move: 0.85→0.9 and
+  // 6→8 frames. The real fix is device AEC (rebuild rider).
+  bargeProbThreshold: 0.85,
+  bargeSustainFrames: 6, // ×64ms = 384ms of sustained speech
+  bargeMinRms: 0.12,
 };
 
 export interface MicGateEvents {
@@ -65,6 +80,15 @@ export interface MicGateEvents {
    * real 62Hz signal for the waveform UI. Optional; skipped when absent.
    */
   levelBuckets?: (buckets: number[]) => void;
+  /**
+   * The gate closed naturally after speech (hangover expired) — the server
+   * should force Deepgram to finalize the utterance NOW. Never fired on
+   * phase-mute / user-mute / reset closes: those are boundary changes, not
+   * end-of-speech.
+   */
+  utteranceEnd?: () => void;
+  /** Sustained user speech detected while phase-muted with barge monitoring on. */
+  bargeIn?: () => void;
 }
 
 export class MicGate {
@@ -78,6 +102,11 @@ export class MicGate {
   private hangoverLeftMs = 0;
   private silentMsSinceKeepalive = 0;
   private smoothedLevel = 0;
+  /** Barge-in monitoring: armed by the hook only during coach_speaking. */
+  private bargeMonitor = false;
+  private bargeStreak = 0;
+  /** Instant (unsmoothed) RMS of the latest frame, stamped by emitLevel. */
+  private lastInstantRms = 0;
   /** Serializes async VAD inference so recurrent state sees frames in order. */
   private chain: Promise<void> = Promise.resolve();
   private disposed = false;
@@ -137,6 +166,16 @@ export class MicGate {
 
   get isUserMuted(): boolean {
     return this.userMuted;
+  }
+
+  /**
+   * Arm/disarm barge-in detection (the hook arms it only while the coach is
+   * speaking). Detection runs in the phase-muted branch, so it costs nothing
+   * new — Silero already processes every frame to keep its state warm.
+   */
+  setBargeMonitor(on: boolean): void {
+    this.bargeMonitor = on;
+    this.bargeStreak = 0;
   }
 
   /** Feed one mic frame. Safe to call from the mic callback (sync). */
@@ -231,6 +270,22 @@ export class MicGate {
       // Half-duplex mute: keep the ring rolling (VAD state was already updated
       // by process()), but never send, keepalive, or flip `speaking`.
       this.ringPush(frame);
+      if (this.bargeMonitor) {
+        // The pre-roll ring (~768ms) exceeds the sustain window, so the words
+        // that triggered the barge-in flush with the next gate-open.
+        if (
+          prob >= cfg.bargeProbThreshold &&
+          this.lastInstantRms >= cfg.bargeMinRms
+        ) {
+          this.bargeStreak++;
+          if (this.bargeStreak >= cfg.bargeSustainFrames) {
+            this.bargeStreak = 0;
+            this.events.bargeIn?.();
+          }
+        } else {
+          this.bargeStreak = 0;
+        }
+      }
       return;
     }
 
@@ -266,6 +321,9 @@ export class MicGate {
       this.silentMsSinceKeepalive = 0;
       this.vad?.reset(); // next utterance starts from a clean recurrent state
       this.events.speakingChanged(false);
+      // Natural end-of-speech: the frames stop here, and Deepgram's
+      // endpointing runs on audio time — tell the server to finalize now.
+      this.events.utteranceEnd?.();
     }
   }
 
@@ -297,6 +355,7 @@ export class MicGate {
       sumSq += s * s;
     }
     const rms = Math.sqrt(sumSq / (pcm.length || 1));
+    this.lastInstantRms = rms; // raw RMS — the barge-in loudness floor
     // Speech RMS lives around 0.05–0.3; stretch to a usable 0..1 UI range.
     const instant = Math.min(1, rms * 4);
     // Fast attack, slow decay — bars jump with speech and fall smoothly.

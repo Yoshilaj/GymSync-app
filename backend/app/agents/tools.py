@@ -19,7 +19,11 @@ MOVEMENTS = ["push", "pull", "hinge", "squat", "lunge", "carry", "core", "isolat
 TOOL_DEFINITIONS = [
     {
         "name": "start_timer",
-        "description": "Start a rest timer on the user's screen. Call this immediately after logging a set.",
+        "description": (
+            "Start a rest timer on the user's screen. ONLY when the user explicitly "
+            "asks for a timer or a custom duration ('give me 2 minutes'). NEVER call "
+            "this after log_set — the app auto-starts a 90s rest on every logged set."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -44,8 +48,11 @@ TOOL_DEFINITIONS = [
     {
         "name": "log_set",
         "description": (
-            "Record a completed set to the current workout session. "
-            "Call this when the user confirms they finished a set."
+            "Record a set the user has ALREADY COMPLETED (past tense — 'I did 5 at "
+            "60'). Appends the next set by default; pass set_number when the user "
+            "names a specific set, which OVERWRITES it if already logged (that is "
+            "how corrections work). Never call this for stated intentions about a "
+            "future set."
         ),
         "input_schema": {
             "type": "object",
@@ -54,7 +61,16 @@ TOOL_DEFINITIONS = [
                 "exercise_name": {"type": "string"},
                 "reps": {"type": "integer"},
                 "weight": {"type": "number"},
-                "weight_unit": {"type": "string", "enum": ["kg", "lbs"]},
+                "weight_unit": {
+                    "type": "string",
+                    "enum": ["kg", "lbs"],
+                    "description": "Only when the user says it — omitted, the user's profile unit applies.",
+                },
+                "set_number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "1-based set position when the user names one ('first set' = 1, 'set 3' = 3). Omit when they just finished their next set.",
+                },
             },
         },
     },
@@ -347,6 +363,23 @@ class ToolContext:
 # from here — they encode the ONE matching rule shared by the prompt, the
 # tools, and (mirrored in TS) the client.
 
+def _resolve_set_slot(
+    existing_indexes: list[int], set_number: int | None
+) -> tuple[int, str]:
+    """Which completed_sets slot a log_set call writes, and how.
+
+    set_number is the user's 1-based ordinal ("first set" = 1). Omitted →
+    append after the highest logged slot (max+1, NOT count: manual UI logging
+    can leave gaps, and a count-append would collide with an existing row).
+    Named → ("corrected") if that slot already has a row, else fill it.
+    """
+    if set_number is None:
+        nxt = (max(existing_indexes) + 1) if existing_indexes else 0
+        return nxt, "logged"
+    idx = set_number - 1
+    return idx, ("corrected" if idx in existing_indexes else "logged")
+
+
 def _names_match(a: str | None, b: str | None) -> bool:
     """Loose exercise-name match: the agent, the UI, and the plan snapshot each
     write names from slightly different sources ("Bench Press" vs "bench press")."""
@@ -628,11 +661,16 @@ async def execute_tool(
         ).eq("is_active", True).limit(1).execute()
         exercise_id = ex_res.data[0]["id"] if ex_res.data else None
 
-        # Next set index for this exercise within this session.
-        count_res = await ctx.db.table("completed_sets").select(
-            "id", count="exact"
+        # Slots already written for this exercise in this session — the user's
+        # spoken ordinal ("first set") targets one of them; no ordinal appends.
+        idx_res = await ctx.db.table("completed_sets").select(
+            "set_index"
         ).eq("session_id", ctx.session_id).eq("exercise_name", exercise_name).execute()
-        set_index = count_res.count or 0
+        existing = [
+            r["set_index"] for r in (idx_res.data or [])
+            if isinstance(r.get("set_index"), int)
+        ]
+        set_index, mode = _resolve_set_slot(existing, args.get("set_number"))
 
         row: dict = {
             "user_id": ctx.user_id,
@@ -644,8 +682,19 @@ async def execute_tool(
         }
         if "weight" in args:
             row["weight"] = args["weight"]
-            row["weight_unit"] = args.get("weight_unit", "lbs")
-        await ctx.db.table("completed_sets").insert(row).execute()
+            unit = args.get("weight_unit")
+            if unit is None:
+                # The model rarely hears a unit — default to the user's profile.
+                prof = await ctx.db.table("profiles").select("units").eq(
+                    "user_id", ctx.user_id
+                ).limit(1).execute()
+                unit = (prof.data[0].get("units") if prof.data else None) or "lbs"
+            row["weight_unit"] = unit
+        # Upsert on the slot key (012): a correction updates only the columns
+        # present here, so an omitted weight survives a reps-only correction.
+        await ctx.db.table("completed_sets").upsert(
+            row, on_conflict="session_id,exercise_name,set_index"
+        ).execute()
 
         # Logging IS the position signal for hands-free users, who never tap
         # "next exercise" in the UI — keep the session's current_exercise fresh.
@@ -659,8 +708,16 @@ async def execute_tool(
             "exercise": exercise_name,
             "reps": args["reps"],
             "weight": args.get("weight"),
+            "set_index": set_index,
+            "mode": mode,
         })
-        return {"status": "set_logged", "set_index": set_index, **args}, ctx.app_actions
+        status = "set_corrected" if mode == "corrected" else "set_logged"
+        return {
+            "status": status,
+            "set_number": set_index + 1,
+            "set_index": set_index,
+            **args,
+        }, ctx.app_actions
 
     if name == "add_exercise_to_session":
         if not ctx.session_id:
@@ -732,7 +789,12 @@ async def execute_tool(
         grouped: dict[str, list] = {}
         for r in sets_res.data or []:
             grouped.setdefault(r["exercise_name"], []).append(
-                {"reps": r["reps"], "weight": r.get("weight"), "weight_unit": r.get("weight_unit")}
+                {
+                    "set_number": (r.get("set_index") or 0) + 1,
+                    "reps": r["reps"],
+                    "weight": r.get("weight"),
+                    "weight_unit": r.get("weight_unit"),
+                }
             )
         return {
             "current_exercise": (sess.data or {}).get("current_exercise"),
