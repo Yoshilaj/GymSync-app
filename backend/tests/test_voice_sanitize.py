@@ -36,6 +36,13 @@ from app.agents.voice import _sanitize_for_speech
         # pure markdown → empty (caller skips TTS)
         ("```\ncode\n```", ""),
         ("**", "**"),  # unpaired markers left alone — better spoken oddly than eaten
+        # emoji: Aura vocalizes their Unicode names ("💪" → "muscle")
+        ("Great work! 💪", "Great work!"),
+        ("Nice job 💪🔥 keep going", "Nice job keep going"),
+        ("Let's crush it 👊🏽", "Let's crush it"),  # skin-tone modifier
+        ("❤️ that effort", "that effort"),  # VS16 sequence
+        ("💪💪💪", ""),  # pure emoji → empty (caller skips TTS)
+        ("日本語はそのまま", "日本語はそのまま"),  # CJK text is NOT emoji
     ],
 )
 def test_sanitize_for_speech(raw: str, spoken: str) -> None:

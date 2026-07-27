@@ -55,7 +55,8 @@ export type AppActionMessage =
     }
   | { type: 'app_action'; action: 'add_exercise'; exercise: string }
   | { type: 'app_action'; action: 'swap_exercise'; from: string; to: string }
-  | { type: 'app_action'; action: 'modify_plan'; changes: PlanChange[] };
+  | { type: 'app_action'; action: 'modify_plan'; changes: PlanChange[] }
+  | { type: 'app_action'; action: 'go_to_exercise'; exercise: string };
 
 /** One exercise inside a proposed (not yet accepted) weekly plan. */
 export interface PlanProposalExercise {

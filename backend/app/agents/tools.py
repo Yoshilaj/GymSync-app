@@ -160,8 +160,12 @@ TOOL_DEFINITIONS = [
     {
         "name": "modify_plan",
         "description": (
-            "Apply changes to today's session plan (add, remove, replace, or adjust exercises). "
-            "For a same-muscle substitution, prefer swap_exercise."
+            "Change TODAY'S session only — the saved weekly plan is never touched. "
+            "Use op 'adjust' with sets and/or reps when the user wants a different "
+            "volume today (e.g. \"I'll only do 3 sets of these\" → op 'adjust', "
+            "exercise_name, sets 3). Use 'remove' to drop an exercise from today, "
+            "'add' to append one, 'replace' to substitute (prefer swap_exercise for "
+            "same-muscle swaps). Changes show on the user's screen immediately."
         ),
         "input_schema": {
             "type": "object",
@@ -182,6 +186,25 @@ TOOL_DEFINITIONS = [
                         },
                     },
                 }
+            },
+        },
+    },
+    {
+        "name": "go_to_exercise",
+        "description": (
+            "Move the workout screen to a different exercise in today's session. "
+            "Omit exercise_name to advance to the NEXT exercise — use this when the "
+            "user says 'next exercise', 'moving on', 'done with these', or 'skip "
+            "this one'. Pass exercise_name to jump to a specific one ('go back to "
+            "bench'). This only changes position — it never logs sets."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {
+                    "type": "string",
+                    "description": "Target exercise from today's session. Omit to advance to the next one.",
+                },
             },
         },
     },
@@ -300,6 +323,7 @@ UI_ACTION_TOOLS = {
     "add_exercise_to_session",
     "swap_exercise",
     "modify_plan",
+    "go_to_exercise",
     "propose_workout_plan",  # emits {"type": "plan_proposal", ...}
 }
 
@@ -315,6 +339,257 @@ class ToolContext:
     session_id: str | None
     db: AsyncClient
     app_actions: list[dict] = field(default_factory=list)
+
+
+# ── Session plan helpers ──────────────────────────────────────────────────────
+# Pure functions (no DB) so today-only plan surgery is unit-testable. The
+# session-state renderer in core.py imports _names_match/_pick_today_workout
+# from here — they encode the ONE matching rule shared by the prompt, the
+# tools, and (mirrored in TS) the client.
+
+def _names_match(a: str | None, b: str | None) -> bool:
+    """Loose exercise-name match: the agent, the UI, and the plan snapshot each
+    write names from slightly different sources ("Bench Press" vs "bench press")."""
+    if not a or not b:
+        return False
+    a, b = a.strip().lower(), b.strip().lower()
+    return a == b or a in b or b in a
+
+
+def _pick_today_workout(
+    snapshot: dict,
+    current_exercise: str | None,
+    logged_names: list[str],
+) -> dict | None:
+    """Which day of the snapshot is being trained right now, best signal first:
+    the day the client opened (recorded at session start), then the day holding
+    current_exercise, then the day the logged sets overlap most, then weekday."""
+    workouts = snapshot.get("workouts") or []
+    if not workouts:
+        return None
+
+    today_id = snapshot.get("today_workout_id")
+    if today_id:
+        for w in workouts:
+            if w.get("id") == today_id:
+                return w
+
+    if current_exercise:
+        for w in workouts:
+            if any(_names_match(current_exercise, e.get("exercise_name")) for e in w.get("exercises") or []):
+                return w
+
+    if logged_names:
+        best, best_overlap = None, 0
+        for w in workouts:
+            plan_names = [e.get("exercise_name") for e in w.get("exercises") or []]
+            overlap = sum(1 for n in logged_names if any(_names_match(n, p) for p in plan_names))
+            if overlap > best_overlap:
+                best, best_overlap = w, overlap
+        if best:
+            return best
+
+    weekday = datetime.now(timezone.utc).strftime("%a").lower()
+    for w in workouts:
+        label = (w.get("day_label") or "").strip().lower()
+        if label[:3] == weekday:
+            return w
+    return None
+
+
+def _completed_for(completed_counts: dict[str, int], plan_name: str | None) -> int:
+    """Fuzzy-count logged sets for a plan exercise (logged names may differ)."""
+    return next(
+        (c for n, c in completed_counts.items() if _names_match(n, plan_name)), 0
+    )
+
+
+def _apply_changes_to_snapshot(
+    snapshot: dict,
+    changes: list[dict],
+    completed_counts: dict[str, int],
+    current_exercise: str | None,
+) -> tuple[list[dict], list[str]]:
+    """Mutate the session's plan_snapshot in place so today-only changes are
+    real: the <session_state> renderer reads the snapshot, never the
+    session_overrides audit list. Returns (applied_changes, unmatched_names).
+
+    Rules: 'adjust' never shrinks below what's already logged; 'remove' of an
+    exercise with logged sets truncates to those sets (it renders as DONE)
+    instead of erasing history."""
+    today = _pick_today_workout(snapshot, current_exercise, list(completed_counts))
+    if today is None:
+        return [], [c.get("exercise_name") or "?" for c in changes]
+
+    exercises: list = today.setdefault("exercises", [])
+    applied: list[dict] = []
+    unmatched: list[str] = []
+
+    for change in changes:
+        op = change.get("op")
+        name = change.get("exercise_name")
+
+        if op == "add":
+            if not name:
+                unmatched.append("?")
+                continue
+            reps = change.get("reps") or 10
+            exercises.append({
+                "exercise_name": name,
+                "exercise_id": None,
+                "note": change.get("note"),
+                "sort_order": len(exercises),
+                "target_sets": [
+                    {"id": f"adhoc-{len(exercises)}-{i}", "exerciseId": None,
+                     "targetReps": reps, "weight": None}
+                    for i in range(change.get("sets") or 3)
+                ],
+            })
+            applied.append(change)
+            continue
+
+        target = next(
+            (e for e in exercises if _names_match(name, e.get("exercise_name"))), None
+        )
+        if target is None:
+            unmatched.append(name or "?")
+            continue
+
+        if op == "adjust":
+            floor = _completed_for(completed_counts, target.get("exercise_name"))
+            sets_list = list(target.get("target_sets") or [])
+            if change.get("sets") is not None:
+                n = max(change["sets"], floor)
+                if n < len(sets_list):
+                    sets_list = sets_list[:n]
+                else:
+                    last = sets_list[-1] if sets_list else {
+                        "exerciseId": target.get("exercise_id"),
+                        "targetReps": change.get("reps") or 10,
+                        "weight": None,
+                    }
+                    while len(sets_list) < n:
+                        sets_list.append(
+                            {**last, "id": f"{last.get('id') or 'ts'}-adj{len(sets_list)}"}
+                        )
+            if change.get("reps") is not None:
+                # Retarget only sets the user hasn't done yet (mirrors the client).
+                for i in range(floor, len(sets_list)):
+                    sets_list[i] = {**sets_list[i], "targetReps": change["reps"]}
+                    sets_list[i].pop("repsHigh", None)
+            target["target_sets"] = sets_list
+            if change.get("note"):
+                target["note"] = change["note"]
+            applied.append(change)
+        elif op == "remove":
+            n_done = _completed_for(completed_counts, target.get("exercise_name"))
+            if n_done > 0:
+                target["target_sets"] = list(target.get("target_sets") or [])[:n_done]
+            else:
+                exercises.remove(target)
+            applied.append(change)
+        elif op == "replace":
+            if not change.get("to_exercise"):
+                unmatched.append(name or "?")
+                continue
+            target["exercise_name"] = change["to_exercise"]
+            target["exercise_id"] = None
+            applied.append(change)
+        else:
+            unmatched.append(name or "?")
+
+    return applied, unmatched
+
+
+def _resolve_goto_target(
+    snapshot: dict | None,
+    overrides: dict,
+    current_exercise: str | None,
+    completed_counts: dict[str, int],
+    requested: str | None,
+) -> dict:
+    """Resolve go_to_exercise against today's ordered exercise list.
+    Returns {"name", "error", "position", "total", "exercises"} — error is
+    "end_of_workout" or a human-readable message, and name is None then."""
+    names: list[str] = []
+    exercises: list[dict] = []
+    today = (
+        _pick_today_workout(snapshot, current_exercise, list(completed_counts))
+        if snapshot else None
+    )
+    if today:
+        exercises = today.get("exercises") or []
+        names = [e.get("exercise_name") or "?" for e in exercises]
+
+    # Overrides: swaps rename in place; added exercises append. (The client
+    # inserts additions mid-list, but end-of-list is close enough for "next".)
+    for swap in overrides.get("swaps") or []:
+        for i, n in enumerate(names):
+            if _names_match(swap.get("from"), n):
+                names[i] = swap.get("to") or n
+    for added in overrides.get("added_exercises") or []:
+        if not any(_names_match(added, n) for n in names):
+            names.append(added)
+
+    def _result(name: str | None, error: str | None, position: int) -> dict:
+        return {
+            "name": name, "error": error,
+            "position": position, "total": len(names), "exercises": names,
+        }
+
+    if not names:
+        return _result(None, "No plan for this session.", 0)
+
+    if requested:
+        for i, n in enumerate(names):
+            if _names_match(requested, n):
+                return _result(n, None, i + 1)
+        return _result(None, f"'{requested}' isn't in today's session.", 0)
+
+    cur = next(
+        (i for i, n in enumerate(names) if _names_match(current_exercise, n)), None
+    )
+    if cur is None:
+        # Between exercises (or never positioned): snap to the first unfinished
+        # one — the same inference the session-state renderer uses.
+        def _has_sets_left(i: int) -> bool:
+            if i >= len(exercises):
+                return True  # override-added exercise: no target data, assume open
+            targets = exercises[i].get("target_sets") or []
+            if not targets:
+                return True
+            return _completed_for(completed_counts, names[i]) < len(targets)
+
+        idx = next((i for i in range(len(names)) if _has_sets_left(i)), 0)
+        return _result(names[idx], None, idx + 1)
+
+    if cur + 1 >= len(names):
+        return _result(None, "end_of_workout", 0)
+    return _result(names[cur + 1], None, cur + 2)
+
+
+async def _load_session_position(
+    ctx: ToolContext,
+) -> tuple[dict | None, dict, str | None, dict[str, int]]:
+    """(plan_snapshot, session_overrides, current_exercise, completed-set counts)
+    for the active session — the inputs both plan-surgery tools need."""
+    sres = await ctx.db.table("workout_sessions").select(
+        "plan_snapshot, session_overrides, current_exercise"
+    ).eq("id", ctx.session_id).single().execute()
+    row = sres.data or {}
+    logged = await ctx.db.table("completed_sets").select("exercise_name").eq(
+        "session_id", ctx.session_id
+    ).execute()
+    counts: dict[str, int] = {}
+    for r in logged.data or []:
+        n = r.get("exercise_name") or "?"
+        counts[n] = counts.get(n, 0) + 1
+    return (
+        row.get("plan_snapshot"),
+        row.get("session_overrides") or {},
+        row.get("current_exercise"),
+        counts,
+    )
 
 
 # ── Tool execution ────────────────────────────────────────────────────────────
@@ -553,18 +828,64 @@ async def execute_tool(
         if not ctx.session_id:
             return {"error": "No active session to modify"}, []
         changes: list = args.get("changes") or []
-        sres = await ctx.db.table("workout_sessions").select("session_overrides").eq(
-            "id", ctx.session_id
-        ).single().execute()
-        overrides = (sres.data or {}).get("session_overrides") or {}
+        snapshot, overrides, current_ex, counts = await _load_session_position(ctx)
+
+        # Mutate the snapshot (the live truth the renderer reads) and keep the
+        # override list as an audit trail. Read-modify-write on the JSONB is
+        # safe: one active session per user, tools run sequentially per turn,
+        # and the client PATCH only ever writes current_exercise.
+        applied: list = []
+        unmatched: list = []
+        update: dict = {"updated_at": utcnow()}
+        if snapshot:
+            applied, unmatched = _apply_changes_to_snapshot(
+                snapshot, changes, counts, current_ex
+            )
+            update["plan_snapshot"] = snapshot
+
         mods: list = overrides.get("plan_modifications", [])
         mods.extend(changes)
         overrides["plan_modifications"] = mods
-        await ctx.db.table("workout_sessions").update(
-            {"session_overrides": overrides, "updated_at": utcnow()}
-        ).eq("id", ctx.session_id).execute()
+        update["session_overrides"] = overrides
+
+        await ctx.db.table("workout_sessions").update(update).eq(
+            "id", ctx.session_id
+        ).execute()
         ctx.app_actions.append({"type": "app_action", "action": "modify_plan", "changes": changes})
-        return {"status": "plan_modified", "applied": changes}, ctx.app_actions
+        result: dict = {"status": "plan_modified", "applied": applied or changes}
+        if unmatched:
+            result["unmatched"] = unmatched
+        if not snapshot:
+            result["note"] = "no plan snapshot for this session; recorded as intent only"
+        return result, ctx.app_actions
+
+    if name == "go_to_exercise":
+        if not ctx.session_id:
+            return {"error": "No active session"}, []
+        snapshot, overrides, current_ex, counts = await _load_session_position(ctx)
+        res = _resolve_goto_target(
+            snapshot, overrides, current_ex, counts, args.get("exercise_name")
+        )
+        if res["error"] == "end_of_workout":
+            return {
+                "status": "end_of_workout",
+                "note": "That was the last exercise — suggest wrapping up. Finishing stays a user tap.",
+            }, []
+        if res["error"]:
+            return {"error": res["error"], "exercises": res["exercises"]}, []
+
+        target = res["name"]
+        await ctx.db.table("workout_sessions").update(
+            {"current_exercise": target, "updated_at": utcnow()}
+        ).eq("id", ctx.session_id).execute()
+        ctx.app_actions.append(
+            {"type": "app_action", "action": "go_to_exercise", "exercise": target}
+        )
+        return {
+            "status": "moved",
+            "exercise": target,
+            "position": f"{res['position']}/{res['total']}",
+        }, ctx.app_actions
 
     if name == "list_exercises":
         res = await ctx.db.table("exercises").select(

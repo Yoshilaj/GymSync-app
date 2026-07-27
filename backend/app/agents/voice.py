@@ -66,6 +66,23 @@ _SANITIZE_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(\d+)\s*[xX×]\s*(\d+)\s*[-–]\s*(\d+)\b"), r"\1 by \2 to \3"),
     (re.compile(r"\b(\d+)\s*[xX×]\s*(\d+)\b"), r"\1 by \2"),
     (re.compile(r"\b(\d+)\s*[-–]\s*(\d+)(?=\s*(?:reps?|sets?)\b)"), r"\1 to \2"),
+    # Emoji and pictographs: Aura vocalizes their Unicode names — a trailing 💪
+    # becomes the spoken word "muscle". Covers arrows, misc symbols/dingbats,
+    # the supplemental emoji planes, variation selectors, and ZWJ sequences.
+    (
+        re.compile(
+            "["
+            "←-⇿"  # arrows
+            "⌀-➿"  # misc technical, symbols, dingbats
+            "⬀-⯿"  # misc symbols and arrows
+            "〰〽㊗㊙"  # CJK symbols used as emoji
+            "︎️"  # variation selectors
+            "‍"  # zero-width joiner
+            "\U0001f000-\U0001faff"  # emoji planes (incl. 💪 U+1F4AA)
+            "]+"
+        ),
+        " ",
+    ),
 ]
 
 
@@ -80,11 +97,28 @@ def _sanitize_for_speech(text: str) -> str:
 # ── Instant acknowledgments ──────────────────────────────────────────────────
 # Played as the first audio segment of every turn, before the agent runs, so
 # the user hears they were heard (~0s vs the full think+TTS latency). Audio
-# only — never a text_delta, never in history.
+# only — never a text_delta, never in history. Long enough (~2-3s spoken) to
+# cover most of the think+first-TTS gap, but generic: they play before the
+# agent knows anything, so they must not promise specifics.
 _ACK_PHRASES: dict[str, list[str]] = {
-    "classic": ["Got it.", "Understood.", "Noted.", "On it."],
-    "supportive": ["Got it!", "Okay!", "Sure thing.", "I hear you."],
-    "energetic": ["LET'S GO!", "On it!", "Heard!", "Boom!"],
+    "classic": [
+        "Got it — give me one second to look at where you're at.",
+        "Understood. Let me think that through for a moment.",
+        "Okay, noted. One moment while I check your session.",
+        "On it — let me pull that up real quick.",
+    ],
+    "supportive": [
+        "Got it! Give me just a second to look at where you're at.",
+        "Okay! Let me think about the best way to handle that for you.",
+        "I hear you — one sec while I check your session.",
+        "Sure thing! Let me take a quick look here.",
+    ],
+    "energetic": [
+        "LET'S GO — gimme one second to line this up!",
+        "On it! Hang tight one sec while I check your numbers!",
+        "Heard! Let me pull up where you're at real quick!",
+        "Boom! One second, lining up your next move!",
+    ],
 }
 # (preset_id, phrase) → MP3 bytes, cached for the process lifetime (~20KB each).
 # Benign race if two sessions warm the same key concurrently — last write wins.

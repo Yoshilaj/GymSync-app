@@ -118,6 +118,16 @@ export function WorkoutSessionScreen() {
   const [exerciseIdx, setExerciseIdx] = useState(0);
   const exerciseIdxRef = useRef(0);
   exerciseIdxRef.current = exerciseIdx;
+  const exercisesRef = useRef(exercises);
+  exercisesRef.current = exercises;
+
+  // A coach `remove` can delete the current/last exercise — keep the index
+  // pointing at a real card.
+  useEffect(() => {
+    if (exercises.length > 0 && exerciseIdx > exercises.length - 1) {
+      setExerciseIdx(exercises.length - 1);
+    }
+  }, [exercises.length, exerciseIdx]);
 
   const [toasts, setToasts] = useState<SessionToast[]>([]);
   const [planChanges, setPlanChanges] = useState<PlanChange[] | null>(null);
@@ -278,9 +288,11 @@ export function WorkoutSessionScreen() {
   const applyModifyPlan = useCallback(
     (action: Extract<AppActionMessage, { action: 'modify_plan' }>) => {
       setPlanChanges(action.changes);
-      // Only exercises the user hasn't reached yet are fair game to mutate.
+      // The current exercise and everything after it are fair game to mutate —
+      // "I'll only do 3 sets of these" means the card on screen. Only exercises
+      // the user already finished and moved past stay untouchable.
       setExercises((prev) => {
-        const startAt = exerciseIdxRef.current + 1;
+        const startAt = exerciseIdxRef.current;
         let next = [...prev];
         for (const change of action.changes) {
           if (change.op === 'add' && change.exercise_name) {
@@ -298,9 +310,15 @@ export function WorkoutSessionScreen() {
               })),
             });
           } else if (change.op === 'remove' && change.exercise_name) {
-            next = next.filter(
-              (ex, i) => i < startAt || !matchesName(ex.name, change.exercise_name!),
-            );
+            // Mirror the server rule: a started exercise keeps its logged sets
+            // (renders as done); only an untouched one disappears outright.
+            next = next.flatMap((ex, i) => {
+              if (i < startAt || !matchesName(ex.name, change.exercise_name!)) {
+                return [ex];
+              }
+              const done = ex.sets.filter((s) => s.completed);
+              return done.length > 0 ? [{ ...ex, sets: done }] : [];
+            });
           } else if (change.op === 'replace' && change.exercise_name && change.to_exercise) {
             next = next.map((ex, i) => {
               if (i < startAt || !matchesName(ex.name, change.exercise_name!)) return ex;
@@ -339,6 +357,20 @@ export function WorkoutSessionScreen() {
     [pushToast],
   );
 
+  const applyGoTo = useCallback(
+    (action: Extract<AppActionMessage, { action: 'go_to_exercise' }>) => {
+      const idx = exercisesRef.current.findIndex((ex) =>
+        matchesName(ex.name, action.exercise),
+      );
+      if (idx === -1 || idx === exerciseIdxRef.current) return;
+      setExerciseIdx(idx);
+      actions.skipRest();
+      // The server already wrote current_exercise for this move — no PATCH here.
+      pushToast(`Up: ${action.exercise}`, 'arrow-forward');
+    },
+    [actions, pushToast],
+  );
+
   const handleAppAction = useCallback(
     (action: AppActionMessage) => {
       actions.apply(action); // timer + session activity state
@@ -355,11 +387,14 @@ export function WorkoutSessionScreen() {
         case 'modify_plan':
           applyModifyPlan(action);
           break;
+        case 'go_to_exercise':
+          applyGoTo(action);
+          break;
         default:
           break;
       }
     },
-    [actions.apply, applyLogSet, applySwap, applyAdd, applyModifyPlan],
+    [actions.apply, applyLogSet, applySwap, applyAdd, applyModifyPlan, applyGoTo],
   );
 
   // ---- Session + voice ownership -------------------------------------------

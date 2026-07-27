@@ -15,7 +15,15 @@ from supabase import AsyncClient
 
 from app.agents import conversation_store
 from app.agents.personalities import build_system_prompt
-from app.agents.tools import TOOL_DEFINITIONS, ToolContext, blocks_to_dicts, execute_tool, utcnow
+from app.agents.tools import (
+    TOOL_DEFINITIONS,
+    ToolContext,
+    _names_match,
+    _pick_today_workout,
+    blocks_to_dicts,
+    execute_tool,
+    utcnow,
+)
 from app.config import settings
 
 # Two-tier routing: every live turn starts on the fast model with the full tool set.
@@ -97,15 +105,6 @@ async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
     return "<user_profile>\n" + "\n".join(lines) + "\n</user_profile>\n\n"
 
 
-def _names_match(a: str | None, b: str | None) -> bool:
-    """Loose exercise-name match: the agent, the UI, and the plan snapshot each
-    write names from slightly different sources ("Bench Press" vs "bench press")."""
-    if not a or not b:
-        return False
-    a, b = a.strip().lower(), b.strip().lower()
-    return a == b or a in b or b in a
-
-
 def _fmt_set(row: dict) -> str:
     weight = row.get("weight")
     if weight is None:
@@ -124,47 +123,6 @@ def _fmt_target(target_sets: list) -> str:
         return f"{n} sets"
     high = first.get("repsHigh")
     return f"{n}x{reps}-{high}" if high else f"{n}x{reps}"
-
-
-def _pick_today_workout(
-    snapshot: dict,
-    current_exercise: str | None,
-    logged_names: list[str],
-) -> dict | None:
-    """Which day of the snapshot is being trained right now, best signal first:
-    the day the client opened (recorded at session start), then the day holding
-    current_exercise, then the day the logged sets overlap most, then weekday."""
-    workouts = snapshot.get("workouts") or []
-    if not workouts:
-        return None
-
-    today_id = snapshot.get("today_workout_id")
-    if today_id:
-        for w in workouts:
-            if w.get("id") == today_id:
-                return w
-
-    if current_exercise:
-        for w in workouts:
-            if any(_names_match(current_exercise, e.get("exercise_name")) for e in w.get("exercises") or []):
-                return w
-
-    if logged_names:
-        best, best_overlap = None, 0
-        for w in workouts:
-            plan_names = [e.get("exercise_name") for e in w.get("exercises") or []]
-            overlap = sum(1 for n in logged_names if any(_names_match(n, p) for p in plan_names))
-            if overlap > best_overlap:
-                best, best_overlap = w, overlap
-        if best:
-            return best
-
-    weekday = datetime.now(timezone.utc).strftime("%a").lower()
-    for w in workouts:
-        label = (w.get("day_label") or "").strip().lower()
-        if label[:3] == weekday:
-            return w
-    return None
 
 
 def _render_session_state(
