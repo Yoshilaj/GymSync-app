@@ -47,10 +47,18 @@ async def log_set(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
+    # Resolve exercise_id server-side (same ilike rule as the voice log_set) —
+    # the client's ids come from its bundled catalog, which has drifted from
+    # the DB catalog; a stale id would violate the FK and silently lose the set.
+    ex_res = await db.table("exercises").select("id").ilike(
+        "name", body.exercise_name
+    ).eq("is_active", True).limit(1).execute()
+    exercise_id = ex_res.data[0]["id"] if ex_res.data else None
+
     row: dict = {
         "user_id": user_id,
         "session_id": body.session_id,
-        "exercise_id": body.exercise_id,
+        "exercise_id": exercise_id,
         "exercise_name": body.exercise_name,
         "set_index": body.set_index,
         "reps": body.reps,
@@ -136,11 +144,22 @@ async def progress_summary(
         )
         week_target = (prof.data[0].get("training_days") if prof.data else None) or 4
 
+    # Most recently trained exercises (rows are already newest-first) — the
+    # client uses [0] to default the trend chart to what the user just did.
+    recent_exercises: list[str] = []
+    for r in rows:
+        name = r["exercise_name"]
+        if name not in recent_exercises:
+            recent_exercises.append(name)
+        if len(recent_exercises) >= 10:
+            break
+
     return {
         "current_streak": streak,
         "days_this_week": days_this_week,
         "week_target": week_target,
         "prs_this_month": prs,
+        "recent_exercises": recent_exercises,
     }
 
 
@@ -149,19 +168,26 @@ async def exercise_series(
     exercise_id: str,
     metric: str = Query("strength", pattern="^(strength|volume)$"),
     days: int = Query(90, ge=7, le=365),
+    name: str | None = Query(
+        None,
+        description="Exercise display name. Preferred filter: matches by "
+        "exercise_name (case-insensitive), which BOTH logging paths reliably "
+        "write — voice-logged sets often have exercise_id NULL.",
+    ),
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    res = (
-        await db.table("completed_sets")
+    q = (
+        db.table("completed_sets")
         .select("reps, weight, logged_at")
         .eq("user_id", user_id)
-        .eq("exercise_id", exercise_id)
         .gte("logged_at", since)
         .order("logged_at")
-        .execute()
     )
+    # Name filter when provided (the id path segment stays for back-compat).
+    q = q.ilike("exercise_name", name) if name else q.eq("exercise_id", exercise_id)
+    res = await q.execute()
     by_day: dict[str, float] = defaultdict(float)
     for r in res.data or []:
         w = r.get("weight")

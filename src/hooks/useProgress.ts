@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '@/auth/AuthContext';
+import { getExerciseById } from '@/data/mockExercises';
 import {
   fetchBodyWeightSeries,
   fetchExerciseSeries,
@@ -69,7 +70,16 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     (async () => {
       try {
         const token = await getToken();
-        const points = await fetchExerciseSeries(token, exerciseId, metric, EXERCISE_DAYS);
+        // Pass the display name so the server matches by exercise_name — the
+        // filter that finds voice-logged sets (their exercise_id is often
+        // NULL, and the catalog id namespaces have drifted).
+        const points = await fetchExerciseSeries(
+          token,
+          exerciseId,
+          metric,
+          EXERCISE_DAYS,
+          getExerciseById(exerciseId)?.name,
+        );
         if (!cancelled) setSeries(points);
       } catch {
         /* offline — keep last known values */

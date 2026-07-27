@@ -244,7 +244,8 @@ def _render_session_state(
         lines.append(f"overrides: {json.dumps(overrides)}")
     lines.append(
         "If the user mentions a set/reps/weight WITHOUT naming an exercise, "
-        "it is for the CURRENT exercise."
+        "it is for the CURRENT exercise — log it ONLY if they say it's done "
+        "(never log stated plans for an upcoming set)."
     )
     lines.append(
         "Sets are numbered 1-based; when the user names one ('the first set', "

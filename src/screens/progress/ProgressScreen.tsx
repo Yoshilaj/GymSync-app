@@ -27,7 +27,7 @@ import { AppText, Card, EmptyState, Entering } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { usePlan } from '@/context/PlanContext';
-import { getExerciseById, mockExercises } from '@/data/mockExercises';
+import { getExerciseById, getExerciseByName, mockExercises } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { useProgress, useTabBarClearance } from '@/hooks';
@@ -68,9 +68,21 @@ export function ProgressScreen() {
   const clearance = useTabBarClearance();
   const { summary, bodyWeight, series } = useProgress(exerciseId, metric);
 
+  // Until the user picks an exercise themselves, follow what they actually
+  // trained last — a fresh squat session should open on squats, not an empty
+  // default bench chart.
+  const userPickedRef = useRef(false);
+  useEffect(() => {
+    if (userPickedRef.current) return;
+    const recent = summary?.recent_exercises?.[0];
+    const match = recent ? getExerciseByName(recent) : undefined;
+    if (match) setExerciseId(match.id);
+  }, [summary?.recent_exercises]);
+
   useEffect(() => {
     const params = route.params;
     if (params?.pickedExercise) {
+      userPickedRef.current = true;
       setExerciseId(params.pickedExercise);
       nav.setParams({ pickedExercise: undefined, returnKey: undefined } as never);
     }

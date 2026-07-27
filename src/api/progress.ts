@@ -10,6 +10,8 @@ export interface ProgressSummary {
   days_this_week: number;
   week_target: number;
   prs_this_month: number;
+  /** Distinct exercise names, most recently trained first (absent on old servers). */
+  recent_exercises?: string[];
 }
 
 export interface SeriesPoint {
@@ -51,11 +53,21 @@ export async function fetchExerciseSeries(
   exerciseId: string,
   metric: 'strength' | 'volume',
   days = 90,
+  /**
+   * Display name of the exercise. When given, the server filters by
+   * exercise_name (case-insensitive) instead of exercise_id — names are what
+   * both logging paths reliably write (voice-logged sets often carry a NULL
+   * id), so this is the filter that actually finds the data.
+   */
+  exerciseName?: string,
 ): Promise<SeriesPoint[]> {
+  const nameParam = exerciseName
+    ? `&name=${encodeURIComponent(exerciseName)}`
+    : '';
   const data = await request<{ points: SeriesPoint[] }>(
     token,
     'GET',
-    `/progress/exercise/${encodeURIComponent(exerciseId)}?metric=${metric}&days=${days}`,
+    `/progress/exercise/${encodeURIComponent(exerciseId)}?metric=${metric}&days=${days}${nameParam}`,
   );
   return data.points;
 }
