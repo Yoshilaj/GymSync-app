@@ -1,42 +1,52 @@
 /**
- * Shared chrome for every onboarding step: progress bar, back chevron,
- * question heading, content, and a pinned Continue button that stays
- * disabled until the step is valid.
+ * Shared chrome for every onboarding question.
+ *
+ * One decision per screen, so the headline IS the label — no eyebrow, no step
+ * counter, no section header. What's left is a back pill, a bar that eases
+ * forward, the question, and a CTA that stays dark until the answer is real.
  */
 import { ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useNavigation } from '@react-navigation/native';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Button, Chip, ProgressBar, Screen } from '@/components/ui';
-
-export const TOTAL_STEPS = 6;
+import { AppText, Button, ProgressBar, Screen } from '@/components/ui';
+import { useOnboarding } from './OnboardingContext';
+import { useStepFlow } from './useStepFlow';
 
 interface Props {
-  step: number; // 1-based
   title: string;
   subtitle?: string;
+  /** Continue stays disabled until this is true. */
   valid: boolean;
-  onContinue: () => void;
+  /** Defaults to advancing the flow; override only to do work first. */
+  onContinue?: () => void;
   continueLabel?: string;
-  continueLoading?: boolean;
+  /** Small print under the content — safety notes, privacy notes. */
+  footnote?: string;
   children: ReactNode;
 }
 
 export function OnboardingStep({
-  step,
   title,
   subtitle,
   valid,
   onContinue,
-  continueLabel = 'Continue',
-  continueLoading = false,
+  continueLabel,
+  footnote,
   children,
 }: Props) {
-  const nav = useNavigation();
   const { colors } = useTheme();
   const styles = useStyles();
+  const { submitting, submitError } = useOnboarding();
+  const { progress, prevProgress, isFirst, isLast, optional, goNext, goBack } =
+    useStepFlow();
+
+  const advance = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (onContinue) onContinue();
+    else void goNext();
+  };
 
   return (
     <Screen
@@ -45,89 +55,96 @@ export function OnboardingStep({
       tabBarClearance={false}
       footer={
         <View style={styles.footer}>
+          {!!submitError && (
+            <AppText variant="caption" color="dangerText" style={styles.error}>
+              {submitError}
+            </AppText>
+          )}
           <Button
-            title={continueLabel}
+            title={continueLabel ?? (isLast ? 'Build my plan' : 'Continue')}
             variant="primary"
             disabled={!valid}
-            loading={continueLoading}
-            onPress={onContinue}
+            loading={submitting}
+            onPress={advance}
           />
         </View>
       }
     >
       <View style={styles.top}>
-        {step > 1 ? (
+        {isFirst ? (
+          <View style={styles.backSpacer} />
+        ) : (
           <Pressable
-            onPress={() => {
-              if (nav.canGoBack()) nav.goBack();
-            }}
+            onPress={goBack}
             hitSlop={12}
-            style={styles.back}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            style={({ pressed }) => [styles.back, pressed && styles.pressed]}
           >
-            <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+            <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
+          </Pressable>
+        )}
+
+        <View style={styles.progress}>
+          <ProgressBar
+            value={progress}
+            animateFrom={prevProgress}
+            gradient
+            animated
+          />
+        </View>
+
+        {optional ? (
+          <Pressable
+            onPress={() => void goNext()}
+            hitSlop={12}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.skip, pressed && styles.pressed]}
+          >
+            <AppText variant="caption" color="textSecondary">
+              Skip
+            </AppText>
           </Pressable>
         ) : (
-          <View style={styles.back} />
+          <View style={styles.skipSpacer} />
         )}
-        <View style={styles.progress}>
-          <ProgressBar value={step / TOTAL_STEPS} gradient />
-        </View>
-        <AppText variant="caption" color="textTertiary">
-          {step}/{TOTAL_STEPS}
-        </AppText>
       </View>
 
-      <AppText variant="h1" style={styles.title}>
+      <AppText variant="display" style={styles.title}>
         {title}
       </AppText>
       {!!subtitle && (
-        <AppText variant="caption" color="textSecondary" style={styles.subtitle}>
+        <AppText variant="body" color="textSecondary" style={styles.subtitle}>
           {subtitle}
         </AppText>
       )}
 
       <View style={styles.content}>{children}</View>
+
+      {!!footnote && (
+        <AppText variant="caption" color="textTertiary" style={styles.footnote}>
+          {footnote}
+        </AppText>
+      )}
     </Screen>
   );
 }
 
-/** A wrapping grid of selectable chips — the standard onboarding select. */
-export function ChipGrid({
-  options,
-  selected,
-  onToggle,
-}: {
-  options: { value: string; label: string }[];
-  selected: string[];
-  onToggle: (value: string) => void;
-}) {
+/**
+ * Quiet label above a control. The headline labels the screen, so this is only
+ * for screens with more than one control — the wheel screens.
+ */
+export function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
   const styles = useStyles();
   return (
-    <View style={styles.chipGrid}>
-      {options.map((opt) => (
-        <Chip
-          key={opt.value}
-          label={opt.label}
-          selected={selected.includes(opt.value)}
-          onPress={() => onToggle(opt.value)}
-        />
-      ))}
-    </View>
-  );
-}
-
-/** Uppercase section label above a question cluster. */
-export function StepSection({ label, children }: { label: string; children: ReactNode }) {
-  const styles = useStyles();
-  return (
-    <View style={styles.section}>
+    <View style={styles.field}>
       <AppText variant="label">{label}</AppText>
       {children}
     </View>
   );
 }
 
-/** Segmented control — small uniform option sets (days/week, unit systems). */
+/** Segmented control — small uniform option sets (unit systems). */
 export function SegmentRow<T extends string | number>({
   options,
   value,
@@ -174,34 +191,34 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: spacing.md,
     paddingTop: spacing.sm,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.xxl,
   },
   back: {
-    width: 44,
-    height: 44,
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: t.colors.bgSubtle,
   },
+  backSpacer: { width: 40, height: 40 },
   progress: { flex: 1 },
-  title: { marginBottom: spacing.xs },
-  subtitle: { marginBottom: spacing.sm },
-  content: {
-    marginTop: spacing.lg,
-    gap: spacing.xl,
-  },
-  chipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  section: {
-    gap: spacing.sm,
-  },
+  skip: { minWidth: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+  skipSpacer: { width: spacing.xxs },
+  pressed: { opacity: 0.6 },
+  title: { marginBottom: spacing.sm },
+  subtitle: { marginBottom: spacing.xs },
+  content: { marginTop: spacing.xl, gap: spacing.xl },
+  field: { gap: spacing.sm, alignItems: 'center' },
+  footnote: { marginTop: spacing.lg },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     paddingTop: spacing.sm,
     backgroundColor: t.colors.bg,
+    gap: spacing.sm,
   },
+  error: { textAlign: 'center' },
   segmentTrack: {
     flexDirection: 'row',
     backgroundColor: t.colors.bgSubtle,

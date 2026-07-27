@@ -4,6 +4,10 @@
  * WITHOUT the completion flag (the gate must stay put while BuildingPlan
  * generates); completeOnboarding() repeats the write WITH the flag once the
  * plan is accepted (or skipped), which flips RootGate into the app.
+ *
+ * `preview` mode (dev only) runs the whole flow against nothing: both writes
+ * become no-ops so the real profile is never touched. See the Settings replay
+ * entry — walking onboarding shouldn't cost you an account.
  */
 import React, {
   createContext,
@@ -17,13 +21,19 @@ import type { Units } from '@/types';
 import type { ActivityLevel, ExperienceLevel, Sex } from '@/api/profile';
 import { useUser } from '@/context/UserContext';
 import { ftInToCm, lbsToKg } from '@/lib/units';
+import type { TrainingPlace } from './options';
+import { matchCoach } from './coachMatch';
 
 export interface OnboardingDraft {
-  goals: string[];
+  goals: string[]; // single primary goal, kept as a list for the wire format
   experience: ExperienceLevel | null;
+  attribution: string | null;
   trainingDays: number | null;
   sessionMinutes: number | null;
+  trainingPlace: TrainingPlace | null;
   equipment: string[];
+  /** questionId -> chosen option value; scored by matchCoach(). */
+  coachAnswers: Record<string, string>;
   sex: Sex | null; // null = prefer not to say (allowed)
   /** True when the user explicitly chose "prefer not to say". */
   sexAnsweredSkip: boolean;
@@ -35,37 +45,80 @@ export interface OnboardingDraft {
   heightInches: string;
   heightCm: string;
   weight: string; // in `units`
+  injuryAreas: string[];
   injuriesNote: string;
+  referralCode: string;
 }
 
-const INITIAL: OnboardingDraft = {
-  goals: [],
-  experience: null,
-  trainingDays: null,
-  sessionMinutes: null,
-  equipment: [],
-  sex: null,
-  sexAnsweredSkip: false,
-  birthYear: null,
-  activityLevel: null,
-  units: 'lbs',
-  heightFeet: '',
-  heightInches: '',
-  heightCm: '',
-  weight: '',
-  injuriesNote: '',
-};
+/** Multi-select draft keys — the ones `toggleInList` may touch. */
+type ListKey = 'equipment' | 'injuryAreas';
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+/**
+ * Wheels open on a sensible value rather than empty. The old flow seeded these
+ * from a mount effect purely so Continue would light up without a scroll —
+ * a default belongs in the initial state, not in a side effect.
+ */
+function initialDraft(units: Units): OnboardingDraft {
+  const metric = units === 'kg';
+  return {
+    goals: [],
+    experience: null,
+    attribution: null,
+    trainingDays: null,
+    sessionMinutes: 60,
+    trainingPlace: null,
+    equipment: [],
+    coachAnswers: {},
+    sex: null,
+    sexAnsweredSkip: false,
+    birthYear: CURRENT_YEAR - 27,
+    activityLevel: null,
+    units,
+    heightFeet: metric ? '' : '5',
+    heightInches: metric ? '' : '9',
+    heightCm: metric ? '175' : '',
+    weight: metric ? '75' : '165',
+    injuryAreas: [],
+    injuriesNote: '',
+    referralCode: '',
+  };
+}
+
+/** Realistic answers so a dev replay can jump straight to any step. */
+function previewDraft(units: Units): OnboardingDraft {
+  return {
+    ...initialDraft(units),
+    goals: ['muscle'],
+    experience: 'intermediate',
+    attribution: 'instagram',
+    trainingDays: 4,
+    trainingPlace: 'gym',
+    equipment: ['Barbell', 'Dumbbell', 'Cable', 'Machine', 'Kettlebell', 'Bodyweight'],
+    coachAnswers: {
+      drive: 'numbers',
+      setback: 'analyse',
+      room: 'quiet',
+      pride: 'lifts',
+    },
+    sex: 'male',
+    activityLevel: 'moderate',
+  };
+}
 
 interface OnboardingContextValue {
   draft: OnboardingDraft;
   patch: (p: Partial<OnboardingDraft>) => void;
-  toggleInList: (key: 'goals' | 'equipment', value: string) => void;
+  toggleInList: (key: ListKey, value: string) => void;
   /** Height in cm derived from the raw inputs, or null when incomplete. */
   heightCmValue: number | null;
   /** Weight in kg derived from the raw input, or null when incomplete. */
   weightKgValue: number | null;
   submitting: boolean;
   submitError: string | null;
+  /** Dev replay — nothing in this run touches the server. */
+  preview: boolean;
   /**
    * Persist the profile WITHOUT completing onboarding — the gate must not
    * flip while the BuildingPlan step is still generating.
@@ -77,12 +130,17 @@ interface OnboardingContextValue {
 
 const OnboardingContext = createContext<OnboardingContextValue | undefined>(undefined);
 
-export function OnboardingProvider({ children }: { children: ReactNode }) {
+export function OnboardingProvider({
+  children,
+  preview = false,
+}: {
+  children: ReactNode;
+  preview?: boolean;
+}) {
   const { user, profile, saveProfile, setUnits } = useUser();
-  const [draft, setDraft] = useState<OnboardingDraft>({
-    ...INITIAL,
-    units: user.units,
-  });
+  const [draft, setDraft] = useState<OnboardingDraft>(() =>
+    preview ? previewDraft(user.units) : initialDraft(user.units),
+  );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -90,7 +148,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     setDraft((prev) => ({ ...prev, ...p }));
   }, []);
 
-  const toggleInList = useCallback((key: 'goals' | 'equipment', value: string) => {
+  const toggleInList = useCallback((key: ListKey, value: string) => {
     setDraft((prev) => {
       const list = prev[key];
       return {
@@ -134,10 +192,26 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       height_cm: heightCmValue,
       weight_kg: weightKgValue,
       units: draft.units,
+      // The backend replaces `preferences` wholesale, so anything already
+      // there (theme, notification toggles) has to be carried forward.
       preferences: {
         ...(profile?.preferences ?? {}),
+        ...(draft.trainingPlace ? { training_place: draft.trainingPlace } : null),
+        ...(draft.attribution ? { attribution: draft.attribution } : null),
+        // The authority is PUT /api/personality; this is a record of what the
+        // quiz produced, so a support question can be answered later.
+        ...(Object.keys(draft.coachAnswers).length
+          ? {
+              coach_preset: matchCoach(draft.coachAnswers),
+              coach_answers: draft.coachAnswers,
+            }
+          : null),
+        ...(draft.injuryAreas.length ? { injury_areas: draft.injuryAreas } : null),
         ...(draft.injuriesNote.trim()
           ? { injuries_note: draft.injuriesNote.trim() }
+          : null),
+        ...(draft.referralCode.trim()
+          ? { referral_code: draft.referralCode.trim() }
           : null),
       },
       complete_onboarding: complete,
@@ -147,6 +221,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
 
   const save = useCallback(
     async (complete: boolean): Promise<boolean> => {
+      if (preview) return true;
       setSubmitting(true);
       setSubmitError(null);
       try {
@@ -162,7 +237,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
         setSubmitting(false);
       }
     },
-    [buildPayload, draft.units, saveProfile, setUnits],
+    [preview, buildPayload, draft.units, saveProfile, setUnits],
   );
 
   const saveProfileDraft = useCallback(() => save(false), [save]);
@@ -176,6 +251,7 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
     weightKgValue,
     submitting,
     submitError,
+    preview,
     saveProfileDraft,
     completeOnboarding,
   };

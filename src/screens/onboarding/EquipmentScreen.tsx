@@ -1,52 +1,26 @@
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { OnboardingStackParamList } from '@/navigation/OnboardingNavigator';
-import { Chip } from '@/components/ui';
-import { ChipGrid, OnboardingStep, StepSection } from './OnboardingStep';
+import { ChoiceList } from '@/components/ui';
+import { OnboardingStep } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
+import { HOME_EQUIPMENT } from './options';
 
-// Tokens match the exercises catalog's `equipment` vocabulary, so plan
-// proposals can be validated against what the user actually has.
-const EQUIPMENT = [
-  { value: 'Barbell', label: 'Barbell' },
-  { value: 'Dumbbell', label: 'Dumbbells' },
-  { value: 'Cable', label: 'Cables' },
-  { value: 'Machine', label: 'Machines' },
-  { value: 'Kettlebell', label: 'Kettlebells' },
-  { value: 'Bodyweight', label: 'Bodyweight' },
-];
-
-const FULL_GYM = EQUIPMENT.map((e) => e.value);
-
+/**
+ * Only shown when the user trains at home — a full gym and bodyweight-only
+ * both answer this question by themselves (see TrainingPlaceScreen).
+ */
 export function EquipmentScreen() {
-  const nav =
-    useNavigation<NativeStackNavigationProp<OnboardingStackParamList>>();
-  const { draft, patch, toggleInList } = useOnboarding();
-
-  const hasFullGym = FULL_GYM.every((e) => draft.equipment.includes(e));
+  const { draft, toggleInList } = useOnboarding();
 
   return (
     <OnboardingStep
-      step={3}
-      title="What can you train with?"
-      subtitle="Your plan only uses equipment you actually have."
+      title="What do you have at home?"
+      subtitle="Pick everything you can get to. Your plan won't ask for anything else."
       valid={draft.equipment.length > 0}
-      onContinue={() => nav.navigate('AboutYou')}
     >
-      <StepSection label="Quick pick">
-        <Chip
-          label="Full gym — everything"
-          selected={hasFullGym}
-          onPress={() => patch({ equipment: hasFullGym ? [] : FULL_GYM })}
-        />
-      </StepSection>
-      <StepSection label="Or select what you have">
-        <ChipGrid
-          options={EQUIPMENT}
-          selected={draft.equipment}
-          onToggle={(v) => toggleInList('equipment', v)}
-        />
-      </StepSection>
+      <ChoiceList
+        options={HOME_EQUIPMENT}
+        value={draft.equipment}
+        onChange={(v) => toggleInList('equipment', v)}
+      />
     </OnboardingStep>
   );
 }

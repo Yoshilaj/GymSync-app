@@ -134,6 +134,18 @@ export function SettingsHomeScreen() {
         />
       </SettingsGroup>
 
+      {__DEV__ && (
+        <SettingsGroup title="🛠  Developer" inset>
+          <SettingsRow
+            label="Replay onboarding"
+            icon="refresh-outline"
+            value="Preview"
+            chevron
+            onPress={() => nav.navigate('OnboardingPreview')}
+          />
+        </SettingsGroup>
+      )}
+
       <SettingsGroup>
         <DestructiveRow label="Sign out" onPress={confirmSignOut} />
       </SettingsGroup>

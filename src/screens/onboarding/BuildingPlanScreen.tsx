@@ -7,9 +7,10 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
 import { makeStyles, spacing } from '@/theme';
-import { AppText, Button, Card, Screen, Skeleton } from '@/components/ui';
+import { AppText, Button, Card, Chip, Screen, Skeleton } from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { usePlan } from '@/context/PlanContext';
 import {
@@ -21,6 +22,53 @@ import type { PlanProposalWire } from '@/voice';
 import type { ProposalStatus } from '@/voice/useTextChat';
 import { PlanCard } from '@/screens/sync/components/PlanCard';
 import { useOnboarding } from './OnboardingContext';
+import { GOALS } from './options';
+
+/** Dev replay only — lets the reveal be reviewed without burning a generation. */
+const PREVIEW_PLAN: PlanProposalWire = {
+  name: 'Upper / Lower Split',
+  split_type: 'upper_lower',
+  rationale: 'Four focused days built around your equipment and time.',
+  days: [
+    {
+      day_label: 'Mon',
+      title: 'Upper — Push',
+      est_minutes: 60,
+      exercises: [
+        { exercise_name: 'Barbell Bench Press', sets: 4, reps_low: 6, reps_high: 8 },
+        { exercise_name: 'Overhead Press', sets: 3, reps_low: 8, reps_high: 10 },
+        { exercise_name: 'Cable Fly', sets: 3, reps_low: 12, reps_high: 15 },
+      ],
+    },
+    {
+      day_label: 'Tue',
+      title: 'Lower — Squat',
+      est_minutes: 60,
+      exercises: [
+        { exercise_name: 'Back Squat', sets: 4, reps_low: 5, reps_high: 6 },
+        { exercise_name: 'Romanian Deadlift', sets: 3, reps_low: 8, reps_high: 10 },
+      ],
+    },
+    {
+      day_label: 'Thu',
+      title: 'Upper — Pull',
+      est_minutes: 60,
+      exercises: [
+        { exercise_name: 'Pull-up', sets: 4, reps_low: 6, reps_high: 10 },
+        { exercise_name: 'Barbell Row', sets: 3, reps_low: 8, reps_high: 10 },
+      ],
+    },
+    {
+      day_label: 'Fri',
+      title: 'Lower — Hinge',
+      est_minutes: 60,
+      exercises: [
+        { exercise_name: 'Deadlift', sets: 3, reps_low: 4, reps_high: 5 },
+        { exercise_name: 'Walking Lunge', sets: 3, reps_low: 10, reps_high: 12 },
+      ],
+    },
+  ],
+};
 
 const CAPTIONS = [
   'Reading your goals and schedule…',
@@ -52,8 +100,17 @@ export function BuildingPlanScreen() {
   const styles = useStyles();
   const { getToken } = useAuth();
   const { refresh } = usePlan();
-  const { completeOnboarding, submitting } = useOnboarding();
+  const { completeOnboarding, submitting, draft, preview } = useOnboarding();
   const reduceMotion = useReducedMotion();
+
+  // Echo what they actually chose while the plan builds — a progress bar that
+  // says nothing reads as a stall; their own answers read as work being done.
+  const goalLabel = GOALS.find((g) => g.value === draft.goals[0])?.label;
+  const summary = [
+    goalLabel,
+    draft.trainingDays ? `${draft.trainingDays} days` : null,
+    draft.sessionMinutes ? `${draft.sessionMinutes} min` : null,
+  ].filter((s): s is string => !!s);
 
   const [phase, setPhase] = useState<Phase>('generating');
   const [proposalId, setProposalId] = useState<string | null>(null);
@@ -76,6 +133,14 @@ export function BuildingPlanScreen() {
     async (recoverFirst: boolean) => {
       setPhase('generating');
       setStatus('pending');
+      if (preview) {
+        setTimeout(() => {
+          setProposalId('preview');
+          setPlan(PREVIEW_PLAN);
+          setPhase('ready');
+        }, 1800);
+        return;
+      }
       try {
         const token = await getToken();
         if (!token) throw new Error('Not signed in.');
@@ -96,7 +161,7 @@ export function BuildingPlanScreen() {
         setPhase('error');
       }
     },
-    [getToken],
+    [getToken, preview],
   );
 
   useEffect(() => {
@@ -105,8 +170,19 @@ export function BuildingPlanScreen() {
     void generate(true);
   }, [generate]);
 
+  // The payoff beat — the one place in onboarding that earns a success haptic.
+  useEffect(() => {
+    if (phase === 'ready') {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [phase]);
+
   const handleAccept = async () => {
     if (!proposalId) return;
+    if (preview) {
+      setStatus('accepted');
+      return;
+    }
     setStatus('accepting');
     try {
       const token = await getToken();
@@ -125,9 +201,18 @@ export function BuildingPlanScreen() {
   return (
     <Screen scroll tabBarClearance={false}>
       <View style={styles.top}>
-        <AppText variant="h1">
-          {phase === 'ready' ? 'Your first plan' : 'Building your plan'}
+        <AppText variant="display">
+          {phase === 'ready' ? 'Your first plan is ready.' : 'Building your plan'}
         </AppText>
+
+        {summary.length > 0 && phase !== 'error' && (
+          <View style={styles.summary}>
+            {summary.map((s) => (
+              <Chip key={s} label={s} tone="accent" size="sm" />
+            ))}
+          </View>
+        )}
+
         {phase === 'generating' && (
           <Animated.View
             key={caption}
@@ -188,6 +273,7 @@ const useStyles = makeStyles(() =>
       marginBottom: spacing.xl,
       gap: spacing.sm,
     },
+    summary: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     caption: { minHeight: 44 },
     ghost: { gap: 0 },
     ghostGap: { marginTop: spacing.md },

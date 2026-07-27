@@ -21,6 +21,7 @@ import { InquiryScreen } from '@/screens/settings/InquiryScreen';
 import { FaqScreen } from '@/screens/settings/FaqScreen';
 import { AboutUsScreen } from '@/screens/settings/AboutUsScreen';
 import { LegalScreen } from '@/screens/settings/LegalScreen';
+import { OnboardingPreviewScreen } from '@/screens/settings/OnboardingPreviewScreen';
 
 export type SettingsStackParamList = {
   SettingsHome: undefined;
@@ -39,6 +40,8 @@ export type SettingsStackParamList = {
   Faq: undefined;
   AboutUs: undefined;
   Legal: { kind: 'privacy' | 'terms' };
+  /** Dev-only: walks the real onboarding flow without touching the profile. */
+  OnboardingPreview: undefined;
 };
 
 const Stack = createNativeStackNavigator<SettingsStackParamList>();
@@ -68,6 +71,13 @@ export function SettingsNavigator() {
       <Stack.Screen name="Faq" component={FaqScreen} />
       <Stack.Screen name="AboutUs" component={AboutUsScreen} />
       <Stack.Screen name="Legal" component={LegalScreen} />
+      {__DEV__ && (
+        <Stack.Screen
+          name="OnboardingPreview"
+          component={OnboardingPreviewScreen}
+          options={{ presentation: 'fullScreenModal' }}
+        />
+      )}
     </Stack.Navigator>
   );
 }

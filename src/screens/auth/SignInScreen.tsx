@@ -10,7 +10,7 @@ import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButton
 import { useAuth } from '@/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/AuthNavigator';
 
-/** Email/password sign-in — the auth stack's landing screen. */
+/** Email/password sign-in — pushed from the Welcome screen. */
 export function SignInScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
@@ -36,7 +36,10 @@ export function SignInScreen() {
   };
 
   return (
-    <AuthLayout caption="Welcome back — let's get to work">
+    <AuthLayout
+      caption="Welcome back — let's get to work"
+      onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
+    >
       <View style={styles.form}>
         <Input
           label="Email"

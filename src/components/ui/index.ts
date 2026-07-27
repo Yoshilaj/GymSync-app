@@ -7,6 +7,8 @@ export { Button } from './Button';
 export { Card } from './Card';
 export { Input } from './Input';
 export { Chip } from './Chip';
+export { ChoiceRow, ChoiceList } from './ChoiceRow';
+export type { ChoiceOption } from './ChoiceRow';
 export { StatTile } from './StatTile';
 export { ListRow } from './ListRow';
 export { EmptyState } from './EmptyState';
