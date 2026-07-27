@@ -9,7 +9,11 @@
  * The native module is require()d lazily so merely importing this file doesn't crash
  * in Expo Go (where the native module is absent). Real audio needs a dev build — see §2.
  */
-import { requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
+import {
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  setIsAudioActiveAsync,
+} from 'expo-audio';
 
 export type PcmFrameHandler = (frame: ArrayBuffer) => void;
 
@@ -72,6 +76,24 @@ export async function reassertAudioMode(): Promise<void> {
     shouldPlayInBackground: true,
     shouldRouteThroughEarpiece: false,
   });
+  // setAudioModeAsync only sets the category — it never (re)activates the
+  // session, so a re-arm after an external deactivation (Siri, a call, an
+  // expo-audio player teardown) would restart the recorder onto a dead
+  // session. Activate explicitly.
+  await setIsAudioActiveAsync(true);
+}
+
+/**
+ * Deactivate the shared audio session (best effort). Coach players hold the
+ * session active for the whole voice session (keepAudioSessionActive), so
+ * without this the user's music would stay ducked after the session ends.
+ */
+export async function releaseAudioSession(): Promise<void> {
+  try {
+    await setIsAudioActiveAsync(false);
+  } catch {
+    /* other audio may still be running — releasing is best effort */
+  }
 }
 
 export async function ensureMicAccess(): Promise<boolean> {

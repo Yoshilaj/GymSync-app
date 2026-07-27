@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AppState } from 'react-native';
 import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
-import { voiceMic, ensureMicAccess, reassertAudioMode } from './VoiceMic';
+import {
+  voiceMic,
+  ensureMicAccess,
+  reassertAudioMode,
+  releaseAudioSession,
+} from './VoiceMic';
 import { voicePlayer } from './VoicePlayer';
 import { MicGate } from './MicGate';
 import { SileroVad } from './SileroVad';
@@ -13,6 +18,10 @@ import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
 const NOTICE_MS = 5000;
 /** Delay before the single automatic reconnect after an unexpected close. */
 const RECONNECT_DELAY_MS = 500;
+/** Watchdog: how long to wait for a live mic frame after entering listening. */
+const WATCHDOG_INTERVAL_MS = 1200;
+/** Watchdog: re-arm attempts per listening entry before giving up. */
+const WATCHDOG_MAX_REARMS = 3;
 
 export interface UseVoiceSessionArgs {
   /** Supabase user id — the {user_id} path segment on the voice socket. */
@@ -175,10 +184,19 @@ export function useVoiceSession({
   }, []);
 
   // Stable frame handler shared by start, re-arm, and the watchdog. Stamps
-  // the arrival time so a dead recorder (no frames) is detectable.
+  // the arrival time so a dead recorder is detectable — but only for frames
+  // with signal in them: an AudioQueue whose session was deactivated under it
+  // (expo-audio player teardown, Siri) can keep delivering all-zero buffers,
+  // and a live mic always has a noise floor, so exact zeros = zombie capture.
   const lastFrameAtRef = useRef(0);
   const handleFrame = useCallback((frame: ArrayBuffer) => {
-    lastFrameAtRef.current = Date.now();
+    const bytes = new Uint8Array(frame);
+    for (let i = 0; i < bytes.length; i++) {
+      if (bytes[i] !== 0) {
+        lastFrameAtRef.current = Date.now();
+        break;
+      }
+    }
     gateRef.current?.pushFrame(frame);
   }, []);
 
@@ -373,6 +391,9 @@ export function useVoiceSession({
     gateRef.current?.reset();
     await voiceMic.stop();
     await voicePlayer.stop();
+    // Coach players keep the audio session active (keepAudioSessionActive) —
+    // release it here or the user's music stays ducked after the session.
+    await releaseAudioSession();
 
     if (socket) {
       try {
@@ -392,18 +413,34 @@ export function useVoiceSession({
 
   // Watchdog: the per-turn re-arm covers playback-induced recorder death, but
   // an OS-level session steal (Siri, a call) can kill it at any time. On each
-  // entry to `listening`, verify a frame actually arrived; if not, re-arm once.
+  // entry to `listening`, verify a LIVE frame arrived; if not, re-arm — and
+  // keep checking after each attempt, because a single re-arm can itself be
+  // clobbered by an in-flight session reconfiguration.
   useEffect(() => {
     if (phase !== 'listening') return;
-    const entered = Date.now();
-    const t = setTimeout(() => {
-      if (phaseRef.current !== 'listening') return;
+    let cancelled = false;
+    let attempts = 0;
+    let entered = Date.now();
+    let timer: ReturnType<typeof setTimeout>;
+    const check = () => {
+      if (cancelled || phaseRef.current !== 'listening') return;
       if (!voiceMic.isRunning) return; // startMic still in flight — don't race it
       if (AppState.currentState !== 'active') return; // backgrounded ≠ dead mic
-      if (lastFrameAtRef.current >= entered) return; // frames flowing — healthy
-      void rearmMic();
-    }, 1200);
-    return () => clearTimeout(t);
+      if (lastFrameAtRef.current >= entered) return; // live frames — healthy
+      if (attempts >= WATCHDOG_MAX_REARMS) return;
+      attempts++;
+      entered = Date.now();
+      void rearmMic().then(() => {
+        if (!cancelled && phaseRef.current === 'listening') {
+          timer = setTimeout(check, WATCHDOG_INTERVAL_MS);
+        }
+      });
+    };
+    timer = setTimeout(check, WATCHDOG_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [phase, rearmMic]);
 
   // Coming back from a suspension (phone call, Siri, a long lock without the
@@ -432,6 +469,7 @@ export function useVoiceSession({
       gateRef.current = null;
       void voiceMic.stop();
       void voicePlayer.stop();
+      void releaseAudioSession();
       socketRef.current?.close();
       socketRef.current = null;
     };

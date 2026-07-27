@@ -98,7 +98,11 @@ function concatChunks(parts: Uint8Array[]): Uint8Array {
  */
 function playFile(file: File, myEpoch: number): Promise<void> {
   return new Promise<void>((resolve) => {
-    const p = createAudioPlayer(file.uri);
+    // keepAudioSessionActive: without it expo-audio deactivates the shared
+    // AVAudioSession 100ms after the last segment finishes — right under the
+    // freshly re-armed recorder, killing the mic for every turn after the
+    // first. The session is released explicitly in useVoiceSession.stop().
+    const p = createAudioPlayer(file.uri, { keepAudioSessionActive: true });
     activePlayer = p;
 
     // Probe the hidden playback-sample API for the real coach waveform.
