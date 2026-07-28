@@ -53,6 +53,11 @@ export const lightColors = {
   textSecondary: palette.navy[700],
   textTertiary: palette.navy[600],
   textInverse: palette.white,
+
+  // Translucent white chrome for controls sitting ON the brand/accent fills
+  // (back pills, progress tracks, icon wells). Scheme-invariant — it overlays
+  // the fixed brand blue, not a surface.
+  onBrandOverlay: 'rgba(255,255,255,0.18)',
 } as const;
 
 export type ColorKey = keyof typeof lightColors;
@@ -102,6 +107,9 @@ export const darkColors: Record<ColorKey, string> = {
   textSecondary: '#A9B8CE',
   textTertiary: '#6B7C96',
   textInverse: '#FFFFFF',
+
+  // On-brand chrome (see light note — deliberately scheme-invariant)
+  onBrandOverlay: 'rgba(255,255,255,0.18)',
 };
 
 /** Legacy export = light palette (unmigrated files keep working). */

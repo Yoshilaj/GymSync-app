@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { AppText, NumberWheel, WheelRow } from '@/components/ui';
+import { AppText, Entering, NumberWheel, WheelRow } from '@/components/ui';
 import { makeStyles, spacing } from '@/theme';
 import { OnboardingStep } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
@@ -24,23 +24,26 @@ export function AgeScreen() {
       title="What year were you born?"
       subtitle="Recovery and calorie needs shift with age — this keeps the math honest."
       valid={valid}
+      fill
     >
-      <View style={styles.center}>
-        <WheelRow>
-          <NumberWheel
-            min={MIN_YEAR}
-            max={MAX_YEAR}
-            value={year}
-            onChange={(y) => patch({ birthYear: y })}
-            width={120}
-            showBand={false}
-            accessibilityLabel="Birth year"
-          />
-        </WheelRow>
-        <AppText variant="caption" color="textSecondary">
-          {age} years old
-        </AppText>
-      </View>
+      <Entering>
+        <View style={styles.center}>
+          <WheelRow>
+            <NumberWheel
+              min={MIN_YEAR}
+              max={MAX_YEAR}
+              value={year}
+              onChange={(y) => patch({ birthYear: y })}
+              width={120}
+              showBand={false}
+              accessibilityLabel="Birth year"
+            />
+          </WheelRow>
+          <AppText variant="caption" color="textSecondary">
+            {age} years old
+          </AppText>
+        </View>
+      </Entering>
     </OnboardingStep>
   );
 }

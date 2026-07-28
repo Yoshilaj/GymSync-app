@@ -5,7 +5,7 @@
  */
 import { View } from 'react-native';
 import type { Units } from '@/types';
-import { AppText, RulerPicker } from '@/components/ui';
+import { AppText, Entering, RulerPicker } from '@/components/ui';
 import { makeStyles, spacing } from '@/theme';
 import { cmToFtIn } from '@/lib/units';
 import { OnboardingStep, SegmentRow } from './OnboardingStep';
@@ -59,8 +59,11 @@ export function BodyScreen() {
       valid={heightCmValue !== null && weightKgValue !== null}
       fill
     >
-      <SegmentRow options={UNIT_OPTIONS} value={draft.units} onChange={switchUnits} />
+      <Entering index={0}>
+        <SegmentRow options={UNIT_OPTIONS} value={draft.units} onChange={switchUnits} />
+      </Entering>
 
+      <Entering index={1}>
       <View style={styles.section}>
         <AppText variant="label">Height</AppText>
         <View style={styles.readout}>
@@ -99,7 +102,9 @@ export function BodyScreen() {
           />
         )}
       </View>
+      </Entering>
 
+      <Entering index={2}>
       <View style={styles.section}>
         <AppText variant="label">Weight</AppText>
         <View style={styles.readout}>
@@ -117,6 +122,7 @@ export function BodyScreen() {
           accessibilityLabel="Weight"
         />
       </View>
+      </Entering>
     </OnboardingStep>
   );
 }

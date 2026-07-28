@@ -1,5 +1,9 @@
 import { ReactNode } from 'react';
-import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeInDown,
+  useReducedMotion,
+} from 'react-native-reanimated';
 
 interface Props {
   children: ReactNode;
@@ -9,9 +13,11 @@ interface Props {
   enabled?: boolean;
 }
 
-/** Standard "content arrives" animation: a soft staggered fade-up, no bounce. */
+/** Standard "content arrives" animation: a soft staggered fade-up, no bounce.
+ * Respects Reduce Motion on its own, so call sites don't each need a guard. */
 export function Entering({ children, index = 0, enabled = true }: Props) {
-  if (!enabled) return <>{children}</>;
+  const reduceMotion = useReducedMotion();
+  if (!enabled || reduceMotion) return <>{children}</>;
   return (
     <Animated.View
       entering={FadeInDown.delay(Math.min(index, 8) * 50)

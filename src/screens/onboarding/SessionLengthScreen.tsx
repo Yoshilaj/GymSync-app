@@ -1,5 +1,5 @@
 import { View } from 'react-native';
-import { AppText, NumberWheel, WheelRow, WheelUnit } from '@/components/ui';
+import { AppText, Entering, NumberWheel, WheelRow, WheelUnit } from '@/components/ui';
 import { makeStyles, spacing } from '@/theme';
 import { OnboardingStep } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
@@ -20,28 +20,30 @@ export function SessionLengthScreen() {
       valid={draft.sessionMinutes !== null}
       fill
     >
-      <View style={styles.center}>
-        <WheelRow>
-          <NumberWheel
-            min={20}
-            max={120}
-            step={5}
-            value={minutes}
-            onChange={(m) => patch({ sessionMinutes: m })}
-            width={96}
-            showBand={false}
-            accessibilityLabel="Session length in minutes"
-          />
-          <WheelUnit label="min" />
-        </WheelRow>
+      <Entering>
+        <View style={styles.center}>
+          <WheelRow>
+            <NumberWheel
+              min={20}
+              max={120}
+              step={5}
+              value={minutes}
+              onChange={(m) => patch({ sessionMinutes: m })}
+              width={96}
+              showBand={false}
+              accessibilityLabel="Session length in minutes"
+            />
+            <WheelUnit label="min" />
+          </WheelRow>
 
-        {weekly !== null && (
-          <AppText variant="caption" color="textSecondary" align="center">
-            {days} days × {minutes} min — about{' '}
-            {weekly % 1 === 0 ? weekly : weekly.toFixed(1)} hours a week
-          </AppText>
-        )}
-      </View>
+          {weekly !== null && (
+            <AppText variant="caption" color="textSecondary" align="center">
+              {days} days × {minutes} min — about{' '}
+              {weekly % 1 === 0 ? weekly : weekly.toFixed(1)} hours a week
+            </AppText>
+          )}
+        </View>
+      </Entering>
     </OnboardingStep>
   );
 }

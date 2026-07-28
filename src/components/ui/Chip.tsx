@@ -95,7 +95,7 @@ const useStyles = makeStyles((t) => ({
     borderColor: t.colors.border,
   },
   accent: { backgroundColor: t.colors.accentSoft },
-  onAccent: { backgroundColor: 'rgba(255,255,255,0.18)' },
+  onAccent: { backgroundColor: t.colors.onBrandOverlay },
   selected: { backgroundColor: t.colors.accent },
   labelSm: { fontSize: 13 },
   pressed: { opacity: 0.8 },

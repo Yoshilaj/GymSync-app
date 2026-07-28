@@ -135,8 +135,81 @@ export function ChoiceList<T extends string | number>({
   );
 }
 
+interface ChoiceGridProps<T extends string | number> {
+  options: ChoiceOption<T>[];
+  /** Multi-select only — the grid is for "pick any that apply" sets. */
+  value: T[];
+  /** Always the cell that was tapped; the caller owns the list. */
+  onChange: (value: T) => void;
+  animate?: boolean;
+}
+
+/**
+ * The compact sibling of ChoiceList: a two-column grid of selectable cells
+ * for short-label sets (body areas, tags) where full rows would run long and
+ * chips would read too light next to them.
+ */
+export function ChoiceGrid<T extends string | number>({
+  options,
+  value,
+  onChange,
+  animate = true,
+}: ChoiceGridProps<T>) {
+  const { colors } = useTheme();
+  const styles = useStyles();
+
+  return (
+    <View style={styles.grid}>
+      {options.map((opt, i) => {
+        const selected = value.includes(opt.value);
+        return (
+          // The plain wrapper owns the column layout; an animated wrapper as
+          // the flex child would break the two-column distribution.
+          <View key={String(opt.value)} style={styles.cellWrap}>
+            <Entering index={i} enabled={animate}>
+              <AnimatedPressable
+                onPress={() => {
+                  void Haptics.selectionAsync();
+                  onChange(opt.value);
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={opt.label}
+                style={[
+                  styles.cell,
+                  selected ? styles.selected : styles.unselected,
+                ]}
+              >
+                <AppText
+                  variant="bodyMedium"
+                  color={selected ? colors.textInverse : colors.textPrimary}
+                >
+                  {opt.label}
+                </AppText>
+              </AnimatedPressable>
+            </Entering>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 const useStyles = makeStyles((t) => ({
   list: { gap: spacing.sm },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  cellWrap: { flexBasis: '48%', flexGrow: 1 },
+  cell: {
+    minHeight: 52,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -146,14 +219,21 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: spacing.lg,
     borderRadius: radius.lg,
   },
-  unselected: {
-    backgroundColor: t.colors.bgSubtle,
-    // Dark surfaces sit close together, so the row needs a hairline to read
-    // as a distinct target — same trick Card uses for elevation.
-    ...(t.scheme === 'dark'
-      ? { borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }
-      : null),
-  },
+  unselected:
+    t.scheme === 'dark'
+      ? {
+          backgroundColor: t.colors.bgSubtle,
+          // Dark surfaces sit close together, so the row needs a hairline to
+          // read as a distinct target — same trick Card uses for elevation.
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: t.colors.border,
+        }
+      : {
+          // Rows live on the screen wash, where bgSubtle disappears — the
+          // card language (white + shadow, no border) keeps them tappable.
+          backgroundColor: t.colors.card,
+          ...t.shadows.xs,
+        },
   selected: { backgroundColor: t.colors.accent, ...t.shadows.sm },
   leading: {
     width: 40,
@@ -161,7 +241,9 @@ const useStyles = makeStyles((t) => ({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: t.colors.card,
+    // A step off the row surface in either scheme: a subtle well on the white
+    // row in light, a lighter (elevated) circle on the bgSubtle row in dark.
+    backgroundColor: t.scheme === 'dark' ? t.colors.card : t.colors.bgSubtle,
   },
   leadingSelected: { backgroundColor: t.colors.accentPressed },
   text: { flex: 1, gap: spacing.xxs },

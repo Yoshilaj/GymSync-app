@@ -30,9 +30,9 @@ export const GOALS: ChoiceOption<string>[] = [
 ];
 
 export const EXPERIENCE: ChoiceOption<ExperienceLevel>[] = [
-  { value: 'beginner', label: 'New to this', description: 'Less than six months of training' },
-  { value: 'intermediate', label: 'Some experience', description: "Comfortable with the main lifts" },
-  { value: 'advanced', label: 'Experienced', description: 'Years of consistent training' },
+  { value: 'beginner', label: 'New to this', description: 'Less than six months of training', icon: 'leaf-outline' },
+  { value: 'intermediate', label: 'Some experience', description: "Comfortable with the main lifts", icon: 'trending-up-outline' },
+  { value: 'advanced', label: 'Experienced', description: 'Years of consistent training', icon: 'trophy-outline' },
 ];
 
 export const SOURCES: ChoiceOption<string>[] = [
@@ -70,17 +70,17 @@ export const HOME_EQUIPMENT: ChoiceOption<string>[] = [
 ];
 
 export const SEXES: ChoiceOption<Sex | 'skip'>[] = [
-  { value: 'male', label: 'Male' },
-  { value: 'female', label: 'Female' },
-  { value: 'skip', label: 'Prefer not to say', description: "We'll use a neutral average" },
+  { value: 'male', label: 'Male', icon: 'male-outline' },
+  { value: 'female', label: 'Female', icon: 'female-outline' },
+  { value: 'skip', label: 'Prefer not to say', description: "We'll use a neutral average", icon: 'eye-off-outline' },
 ];
 
 export const ACTIVITY_LEVELS: ChoiceOption<ActivityLevel>[] = [
-  { value: 'sedentary', label: 'Mostly sitting', description: 'Desk job, little walking' },
-  { value: 'light', label: 'Lightly active', description: 'On your feet some of the day' },
-  { value: 'moderate', label: 'Moderately active', description: 'Walking or moving most days' },
-  { value: 'very_active', label: 'Very active', description: 'Physical job or lots of movement' },
-  { value: 'athlete', label: 'Athlete', description: 'Training hard on top of an active day' },
+  { value: 'sedentary', label: 'Mostly sitting', description: 'Desk job, little walking', icon: 'desktop-outline' },
+  { value: 'light', label: 'Lightly active', description: 'On your feet some of the day', icon: 'footsteps-outline' },
+  { value: 'moderate', label: 'Moderately active', description: 'Walking or moving most days', icon: 'walk-outline' },
+  { value: 'very_active', label: 'Very active', description: 'Physical job or lots of movement', icon: 'bicycle-outline' },
+  { value: 'athlete', label: 'Athlete', description: 'Training hard on top of an active day', icon: 'flash-outline' },
 ];
 
 export const INJURY_AREAS: ChoiceOption<string>[] = [

@@ -59,6 +59,7 @@ export function OnboardingStep({
     <Screen
       scroll={!fill}
       keyboard
+      wash
       tabBarClearance={false}
       footer={
         <View style={styles.footer}>
@@ -225,7 +226,9 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     paddingTop: spacing.sm,
-    backgroundColor: t.colors.bg,
+    // Sits below the scroll area on the screen wash — an opaque bg would
+    // paint a band across the gradient.
+    backgroundColor: 'transparent',
     gap: spacing.sm,
   },
   error: { textAlign: 'center' },

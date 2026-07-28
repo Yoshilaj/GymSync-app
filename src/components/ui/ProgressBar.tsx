@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { makeStyles, radius, useTheme } from '@/theme';
 
-type Tone = 'accent' | 'success' | 'live';
+type Tone = 'accent' | 'success' | 'live' | 'onBrand';
 
 interface Props {
   /** 0..1 */
@@ -46,10 +46,13 @@ export function ProgressBar({
   const reduceMotion = useReducedMotion();
 
   const clamped = Math.min(1, Math.max(0, value));
+  // onBrand = the bar sits on the brand-blue fill, where the blue gradient and
+  // the default sunken track are both invisible — white fill, overlay track.
   const toneFill: Record<Tone, string> = {
     accent: colors.accent,
     success: colors.success,
     live: colors.live,
+    onBrand: colors.textInverse,
   };
 
   // Reanimated can't interpolate percentage strings, so the animated path
@@ -109,7 +112,11 @@ export function ProgressBar({
 
   return (
     <View
-      style={[styles.track, { height, borderRadius: height / 2 }]}
+      style={[
+        styles.track,
+        { height, borderRadius: height / 2 },
+        tone === 'onBrand' && { backgroundColor: colors.onBrandOverlay },
+      ]}
       onLayout={animated ? onLayout : undefined}
     >
       {gradient ? (

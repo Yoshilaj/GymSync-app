@@ -4,7 +4,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -12,10 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText } from '@/components/ui';
+import { AppText, RingsMotif } from '@/components/ui';
 import { Logo } from '@/components/Logo';
 
 // Tall enough that the back chevron (insets.top + 40pt) sits fully on blue —
@@ -29,36 +27,6 @@ interface Props {
   subtitle?: string;
   /** Renders a top-left back chevron (auth stack hides native headers). */
   onBack?: () => void;
-}
-
-/**
- * Rings bleeding off the header's top-left corner — the brand's ring language
- * (RestRing, the breathing coach orb) doing the job of the reference design's
- * wave pattern. Pure decoration, so it's aria-hidden by omission.
- */
-function HeaderRings({ color }: { color: string }) {
-  const rings = [56, 104, 152, 200, 248];
-  return (
-    <Svg
-      width={320}
-      height={HEADER_H + 80}
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-    >
-      {rings.map((r) => (
-        <Circle
-          key={r}
-          cx={40}
-          cy={10}
-          r={r}
-          stroke={color}
-          strokeOpacity={0.1}
-          strokeWidth={8}
-          fill="none"
-        />
-      ))}
-    </Svg>
-  );
 }
 
 /**
@@ -80,7 +48,11 @@ export function AuthLayout({ children, title, subtitle, onBack }: Props) {
       {focused && <StatusBar style="light" />}
 
       <LinearGradient colors={gradients.brand} style={styles.header}>
-        <HeaderRings color={colors.textInverse} />
+        <RingsMotif
+          color={colors.textInverse}
+          width={320}
+          height={HEADER_H + 80}
+        />
         {onBack ? (
           <Pressable
             onPress={onBack}

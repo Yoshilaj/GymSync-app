@@ -7,19 +7,21 @@
  */
 import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
-  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import { useAuth } from '@/auth/AuthContext';
 import { updatePersonality } from '@/api/personality';
-import { AppText, ProgressBar, Screen } from '@/components/ui';
-import { makeStyles, radius, spacing } from '@/theme';
+import { AppText, ProgressBar, RingsMotif, Screen } from '@/components/ui';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { useOnboarding } from './OnboardingContext';
 import { useStepFlow } from './useStepFlow';
 import { matchCoach } from './coachMatch';
@@ -28,28 +30,43 @@ const HOLD_MS = 1600;
 
 export function CoachMatchingScreen() {
   const styles = useStyles();
+  const { colors } = useTheme();
+  const focused = useIsFocused();
   const { getToken } = useAuth();
   const { draft, preview, preAuth } = useOnboarding();
   const { progress, prevProgress, goNext } = useStepFlow();
   const reduceMotion = useReducedMotion();
   const done = useRef(false);
 
-  const pulse = useSharedValue(0);
+  // Two stroke rings expanding out of the sphere, phase-offset by half a
+  // cycle — radar sweeping for a match, not a throb. Non-reversing repeat
+  // restarts each ring from the sphere's edge.
+  const ringA = useSharedValue(0);
+  const ringB = useSharedValue(0);
   useEffect(() => {
-    if (reduceMotion) return;
-    pulse.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 900, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 900, easing: Easing.inOut(Easing.quad) }),
-      ),
-      -1,
-      false,
-    );
-  }, [pulse, reduceMotion]);
+    if (reduceMotion) {
+      // One static halo; the second ring parks at full expansion (opacity 0).
+      ringA.value = 0.4;
+      ringB.value = 1;
+      return;
+    }
+    const sweep = () =>
+      withRepeat(
+        withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }),
+        -1,
+        false,
+      );
+    ringA.value = sweep();
+    ringB.value = withDelay(800, sweep());
+  }, [ringA, ringB, reduceMotion]);
 
-  const ring = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 + pulse.value * 0.18 }],
-    opacity: 0.35 - pulse.value * 0.25,
+  const ringAStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + ringA.value * 0.5 }],
+    opacity: 0.5 * (1 - ringA.value),
+  }));
+  const ringBStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + ringB.value * 0.5 }],
+    opacity: 0.5 * (1 - ringB.value),
   }));
 
   // Everything the timer needs, read at fire time. Putting these in the dep
@@ -93,25 +110,35 @@ export function CoachMatchingScreen() {
   }, []);
 
   return (
-    <Screen tabBarClearance={false}>
+    <Screen fill="brand" tabBarClearance={false}>
+      {/* Dark glyphs would be illegible on the brand fill. */}
+      {focused && <StatusBar style="light" />}
+      <RingsMotif color={colors.textInverse} width={320} height={220} />
+
       <View style={styles.top}>
         <ProgressBar
           value={progress}
           animateFrom={prevProgress}
-          gradient
+          tone="onBrand"
           animated
         />
       </View>
 
       <View style={styles.body}>
         <View style={styles.orbWrap}>
-          <Animated.View style={[styles.ring, ring]} />
+          <Animated.View style={[styles.ring, ringAStyle]} />
+          <Animated.View style={[styles.ring, ringBStyle]} />
           <View style={styles.core} />
         </View>
-        <AppText variant="h2" align="center">
+        <AppText variant="h2" align="center" color={colors.textInverse}>
           Matching your coach…
         </AppText>
-        <AppText variant="body" color="textSecondary" align="center">
+        <AppText
+          variant="body"
+          align="center"
+          color={colors.textInverse}
+          style={styles.dimmed}
+        >
           Reading your answers to find the voice that'll actually get you moving.
         </AppText>
       </View>
@@ -137,15 +164,20 @@ const useStyles = makeStyles((t) => ({
   },
   ring: {
     position: 'absolute',
-    width: 160,
-    height: 160,
+    width: 96,
+    height: 96,
     borderRadius: radius.pill,
-    backgroundColor: t.colors.accent,
+    borderWidth: 2,
+    borderColor: t.colors.textInverse,
   },
+  // Frosted sphere on the brand fill — same material as the reveal's glyph
+  // well, one size up: the radar finds the coach, the reveal names them.
   core: {
     width: 96,
     height: 96,
     borderRadius: radius.pill,
-    backgroundColor: t.colors.accent,
+    backgroundColor: t.colors.onBrandOverlay,
   },
+  // Secondary text on brand steps back with opacity, not a dimmer token.
+  dimmed: { opacity: 0.82 },
 }));

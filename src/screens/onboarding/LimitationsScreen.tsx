@@ -1,13 +1,10 @@
-import { View } from 'react-native';
-import { Chip, Input } from '@/components/ui';
-import { makeStyles, spacing } from '@/theme';
+import { ChoiceGrid, Entering, Input } from '@/components/ui';
 import { OnboardingStep } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
 import { INJURY_AREAS } from './options';
 
 export function LimitationsScreen() {
   const { draft, patch, toggleInList } = useOnboarding();
-  const styles = useStyles();
 
   return (
     <OnboardingStep
@@ -17,28 +14,23 @@ export function LimitationsScreen() {
       valid
       footnote="GymSync isn't a medical service and can't diagnose anything. If a movement hurts, stop."
     >
-      <View style={styles.chips}>
-        {INJURY_AREAS.map((area) => (
-          <Chip
-            key={area.value}
-            label={area.label}
-            selected={draft.injuryAreas.includes(area.value)}
-            onPress={() => toggleInList('injuryAreas', area.value)}
-          />
-        ))}
-      </View>
-
-      <Input
-        label="Anything else"
-        placeholder="Old shoulder injury, avoid overhead pressing…"
-        value={draft.injuriesNote}
-        onChangeText={(injuriesNote) => patch({ injuriesNote })}
-        multiline
+      {/* Grid cells, not chips — same tap-target weight as the choice rows on
+          every neighbouring screen. */}
+      <ChoiceGrid
+        options={INJURY_AREAS}
+        value={draft.injuryAreas}
+        onChange={(v) => toggleInList('injuryAreas', v)}
       />
+
+      <Entering index={4}>
+        <Input
+          label="Anything else"
+          placeholder="Old shoulder injury, avoid overhead pressing…"
+          value={draft.injuriesNote}
+          onChangeText={(injuriesNote) => patch({ injuriesNote })}
+          multiline
+        />
+      </Entering>
     </OnboardingStep>
   );
 }
-
-const useStyles = makeStyles(() => ({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-}));
