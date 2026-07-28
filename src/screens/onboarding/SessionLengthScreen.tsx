@@ -18,6 +18,7 @@ export function SessionLengthScreen() {
       title="How long is a session?"
       subtitle="Your coach will fit the work into the time you've got."
       valid={draft.sessionMinutes !== null}
+      fill
     >
       <View style={styles.center}>
         <WheelRow>

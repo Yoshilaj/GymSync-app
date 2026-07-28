@@ -45,11 +45,13 @@ export const SOURCES: ChoiceOption<string>[] = [
 ];
 
 export const TRAINING_DAYS: ChoiceOption<number>[] = [
+  { value: 1, label: '1 day', description: 'One focused full-body session' },
   { value: 2, label: '2 days', description: 'Enough to make real progress' },
   { value: 3, label: '3 days', description: 'A solid, sustainable base' },
   { value: 4, label: '4 days', description: 'Room to train each area properly' },
   { value: 5, label: '5 days', description: 'Serious volume, focused sessions' },
   { value: 6, label: '6 days', description: 'Short sessions, most days' },
+  { value: 7, label: '7 days', description: 'Every day — recovery built into the plan' },
 ];
 
 export const TRAINING_PLACES: ChoiceOption<TrainingPlace>[] = [

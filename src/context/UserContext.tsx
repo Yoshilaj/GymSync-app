@@ -16,6 +16,10 @@ import {
   updateProfile,
   type ServerProfile,
 } from '@/api/profile';
+import {
+  DRAFT_STASH_KEY,
+  clearPendingDraft,
+} from '@/screens/onboarding/draftStash';
 
 const PREFS_KEY = '@gymsync/prefs';
 const PROFILE_KEY = '@gymsync/profile';
@@ -64,7 +68,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           const saved = JSON.parse(raw) as Partial<UserProfile> & { owner?: string };
           if (saved.owner && saved.owner !== accountId) {
             // Different account — drop the stale caches entirely.
-            void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY]);
+            void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY, DRAFT_STASH_KEY]);
             return;
           }
           setUser((prev) => ({
@@ -101,6 +105,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     setProfile(p);
     setProfileStatus('ready');
     AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(p)).catch(() => {});
+    // The ONE place the pre-auth onboarding stash is retired: onboarded_at
+    // arriving means the answers are on the server (or the account never
+    // needed them). Clearing any earlier — e.g. right after the draft PUT —
+    // would open a crash window that re-lands a fully-saved user on question 1.
+    if (p.onboarded_at) void clearPendingDraft();
     setUser((prev) => ({
       ...prev,
       ...(p.display_name ? { displayName: p.display_name } : null),
@@ -136,7 +145,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (hadSessionRef.current && !authLoading) {
         hadSessionRef.current = false;
         setUser(mockUser);
-        void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY]);
+        void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY, DRAFT_STASH_KEY]);
       }
       return;
     }

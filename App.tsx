@@ -1,9 +1,9 @@
 import 'react-native-gesture-handler';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Linking, View, ActivityIndicator, StyleSheet } from 'react-native';
+import { Alert, Linking, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
@@ -20,16 +20,10 @@ import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
 import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
+import { LaunchScreen } from '@/components/LaunchScreen';
+import { readPendingDraft } from '@/screens/onboarding/draftStash';
+import type { OnboardingDraft } from '@/screens/onboarding/OnboardingContext';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
-
-function Splash() {
-  const { colors } = useTheme();
-  return (
-    <View style={[styles.splash, { backgroundColor: colors.bg }]}>
-      <ActivityIndicator color={colors.accent} />
-    </View>
-  );
-}
 
 /**
  * Adopt the theme preference stored on the server profile once, when it
@@ -69,15 +63,46 @@ function useAuthDeepLinks() {
 }
 
 /**
+ * Onboarding now runs pre-auth, so a fresh signup arrives with its answers
+ * stashed on disk. This resolves that stash once per account: keyed on the
+ * user id (NOT the session object, which changes identity on every token
+ * refresh) so the read doesn't re-fire and flicker the gate.
+ */
+type DraftGate =
+  | { state: 'idle' | 'loading' }
+  | { state: 'resolved'; draft: OnboardingDraft | null };
+
+function usePendingOnboardingDraft(userId: string | null): DraftGate {
+  const [gate, setGate] = useState<DraftGate>({ state: 'idle' });
+  useEffect(() => {
+    if (!userId) {
+      setGate({ state: 'idle' });
+      return;
+    }
+    let cancelled = false;
+    setGate({ state: 'loading' });
+    void readPendingDraft().then((draft) => {
+      if (!cancelled) setGate({ state: 'resolved', draft });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+  return gate;
+}
+
+/**
  * Auth + first-run gate: splash while loading, auth flow when logged out,
  * onboarding until the profile has onboarded_at, then the app. Fails OPEN
- * into the app if the profile can't be fetched (never lock a user out).
+ * into the app if the profile can't be fetched (never lock a user out) — a
+ * stashed onboarding draft survives that and is picked up on a later launch.
  */
 function RootGate() {
   useAuthDeepLinks();
   const { loading, session } = useAuth();
   const { profile, profileStatus } = useUser();
   const { colors, scheme } = useTheme();
+  const draftGate = usePendingOnboardingDraft(session?.user?.id ?? null);
   useAdoptServerTheme();
 
   const navTheme = {
@@ -95,11 +120,29 @@ function RootGate() {
   };
 
   const content = () => {
-    if (loading || (session && profileStatus === 'loading')) return <Splash />;
+    // The draft read resolves faster than the profile GET, so waiting on both
+    // adds no visible latency — and prevents a one-frame flash of the wrong
+    // branch (questions vs BuildingPlan) before the stash is known.
+    if (
+      loading ||
+      (session && (profileStatus === 'loading' || draftGate.state !== 'resolved'))
+    ) {
+      return <LaunchScreen />;
+    }
     const needsOnboarding =
       !!session && profileStatus === 'ready' && !profile?.onboarded_at;
     if (!session) return <AuthNavigator />;
-    if (needsOnboarding) return <OnboardingNavigator />;
+    if (needsOnboarding) {
+      const pending = draftGate.state === 'resolved' ? draftGate.draft : null;
+      // With a stashed pre-auth draft: straight to BuildingPlan, which PUTs
+      // the answers then generates. Without one (legacy accounts): the
+      // post-auth question flow, exactly as before.
+      return pending ? (
+        <OnboardingNavigator resumeDraft={pending} />
+      ) : (
+        <OnboardingNavigator />
+      );
+    }
     return <RootNavigator />;
   };
 
@@ -128,7 +171,7 @@ export default function App() {
             <UserProvider>
               <ThemeProvider>
                 <PlanProvider>
-                  {fontsLoaded ? <RootGate /> : <Splash />}
+                  {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
                 </PlanProvider>
               </ThemeProvider>
             </UserProvider>
@@ -141,9 +184,4 @@ export default function App() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  splash: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

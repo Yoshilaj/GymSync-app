@@ -1,7 +1,14 @@
+/**
+ * Height and weight as tape measures: a big readout, a ruler underneath.
+ * (Tonal's Personal Info screen is the reference — readout + ruler reads as
+ * an instrument, where two number wheels read as a form.)
+ */
+import { View } from 'react-native';
 import type { Units } from '@/types';
-import { NumberWheel, WheelRow, WheelUnit } from '@/components/ui';
+import { AppText, RulerPicker } from '@/components/ui';
+import { makeStyles, spacing } from '@/theme';
 import { cmToFtIn } from '@/lib/units';
-import { FieldLabel, OnboardingStep, SegmentRow } from './OnboardingStep';
+import { OnboardingStep, SegmentRow } from './OnboardingStep';
 import { useOnboarding } from './OnboardingContext';
 
 const UNIT_OPTIONS: { value: Units; label: string }[] = [
@@ -9,11 +16,16 @@ const UNIT_OPTIONS: { value: Units; label: string }[] = [
   { value: 'kg', label: 'kg / cm' },
 ];
 
+/** 66 → 5'6" — the ruler's major-tick labels and the height readout. */
+const formatFtIn = (totalInches: number) =>
+  `${Math.floor(totalInches / 12)}'${totalInches % 12}"`;
+
 export function BodyScreen() {
   const { draft, patch, heightCmValue, weightKgValue } = useOnboarding();
+  const styles = useStyles();
   const metric = draft.units === 'kg';
 
-  /** Convert in place so switching units doesn't send the wheels to strangers. */
+  /** Convert in place so switching units doesn't send the rulers to strangers. */
   const switchUnits = (u: Units) => {
     if (u === draft.units) return;
     if (u === 'kg') {
@@ -35,70 +47,89 @@ export function BodyScreen() {
     }
   };
 
-  const weightValue = Math.round(Number(draft.weight)) || (metric ? 75 : 165);
+  const heightInches =
+    (Number(draft.heightFeet) || 5) * 12 + (Number(draft.heightInches) || 0);
+  const heightCm = Number(draft.heightCm) || 175;
+  const weight = Math.round(Number(draft.weight)) || (metric ? 75 : 165);
 
   return (
     <OnboardingStep
       title="Your height and weight"
       subtitle="Sets your starting calorie and load math. You can change these anytime."
       valid={heightCmValue !== null && weightKgValue !== null}
+      fill
     >
       <SegmentRow options={UNIT_OPTIONS} value={draft.units} onChange={switchUnits} />
 
-      <FieldLabel label="Height">
+      <View style={styles.section}>
+        <AppText variant="label">Height</AppText>
+        <View style={styles.readout}>
+          <AppText variant="statLg">
+            {metric ? String(heightCm) : formatFtIn(heightInches)}
+          </AppText>
+          {metric && (
+            <AppText variant="h3" color="textSecondary" style={styles.unit}>
+              cm
+            </AppText>
+          )}
+        </View>
         {metric ? (
-          <WheelRow>
-            <NumberWheel
-              min={120}
-              max={220}
-              value={Number(draft.heightCm) || 175}
-              onChange={(cm) => patch({ heightCm: String(cm) })}
-              width={88}
-              showBand={false}
-              accessibilityLabel="Height in centimetres"
-            />
-            <WheelUnit label="cm" />
-          </WheelRow>
-        ) : (
-          <WheelRow>
-            <NumberWheel
-              min={3}
-              max={7}
-              value={Number(draft.heightFeet) || 5}
-              onChange={(ft) => patch({ heightFeet: String(ft) })}
-              width={64}
-              showBand={false}
-              accessibilityLabel="Height feet"
-            />
-            <WheelUnit label="ft" />
-            <NumberWheel
-              min={0}
-              max={11}
-              value={Number(draft.heightInches) || 0}
-              onChange={(inch) => patch({ heightInches: String(inch) })}
-              width={64}
-              showBand={false}
-              accessibilityLabel="Height inches"
-            />
-            <WheelUnit label="in" />
-          </WheelRow>
-        )}
-      </FieldLabel>
-
-      <FieldLabel label="Weight">
-        <WheelRow>
-          <NumberWheel
-            min={metric ? 30 : 66}
-            max={metric ? 250 : 550}
-            value={weightValue}
-            onChange={(n) => patch({ weight: String(n) })}
-            width={96}
-            showBand={false}
-            accessibilityLabel="Weight"
+          <RulerPicker
+            min={120}
+            max={220}
+            value={heightCm}
+            onChange={(cm) => patch({ heightCm: String(cm) })}
+            majorEvery={10}
+            accessibilityLabel="Height in centimetres"
           />
-          <WheelUnit label={draft.units} />
-        </WheelRow>
-      </FieldLabel>
+        ) : (
+          <RulerPicker
+            min={54}
+            max={84}
+            value={heightInches}
+            onChange={(t) =>
+              patch({
+                heightFeet: String(Math.floor(t / 12)),
+                heightInches: String(t % 12),
+              })
+            }
+            majorEvery={6}
+            formatLabel={formatFtIn}
+            accessibilityLabel="Height in feet and inches"
+          />
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <AppText variant="label">Weight</AppText>
+        <View style={styles.readout}>
+          <AppText variant="statLg">{String(weight)}</AppText>
+          <AppText variant="h3" color="textSecondary" style={styles.unit}>
+            {draft.units}
+          </AppText>
+        </View>
+        <RulerPicker
+          min={metric ? 35 : 80}
+          max={metric ? 180 : 400}
+          value={weight}
+          onChange={(n) => patch({ weight: String(n) })}
+          majorEvery={metric ? 10 : 20}
+          accessibilityLabel="Weight"
+        />
+      </View>
     </OnboardingStep>
   );
 }
+
+const useStyles = makeStyles(() => ({
+  section: {
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  readout: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.xs,
+  },
+  unit: { marginBottom: 2 },
+}));

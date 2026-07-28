@@ -4,6 +4,12 @@
  * proposal after a crash/reload, otherwise fires one-shot generation, then
  * shows the PlanCard with "Start training". Accept (or "Skip for now" on
  * error) calls completeOnboarding(), which flips the gate into the app.
+ *
+ * When the answers came from the pre-auth flow (`needsSubmit`), the profile
+ * ISN'T saved yet — generate() PUTs the stashed draft first, inside the same
+ * retry path, so a failed submit and a failed generation share one Try-again.
+ * The stash itself is only cleared when onboarded_at lands (UserContext), so
+ * any crash in here resumes on relaunch instead of re-asking 18 questions.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -21,7 +27,9 @@ import {
 import type { PlanProposalWire } from '@/voice';
 import type { ProposalStatus } from '@/voice/useTextChat';
 import { PlanCard } from '@/screens/sync/components/PlanCard';
+import { updatePersonality } from '@/api/personality';
 import { useOnboarding } from './OnboardingContext';
+import { matchCoach } from './coachMatch';
 import { GOALS } from './options';
 
 /** Dev replay only — lets the reveal be reviewed without burning a generation. */
@@ -100,7 +108,15 @@ export function BuildingPlanScreen() {
   const styles = useStyles();
   const { getToken } = useAuth();
   const { refresh } = usePlan();
-  const { completeOnboarding, submitting, draft, preview } = useOnboarding();
+  const {
+    completeOnboarding,
+    saveProfileDraft,
+    needsSubmit,
+    submitting,
+    submitError,
+    draft,
+    preview,
+  } = useOnboarding();
   const reduceMotion = useReducedMotion();
 
   // Echo what they actually chose while the plan builds — a progress bar that
@@ -118,6 +134,8 @@ export function BuildingPlanScreen() {
   const [status, setStatus] = useState<ProposalStatus>('pending');
   const [captionIdx, setCaptionIdx] = useState(0);
   const startedRef = useRef(false);
+  // Latches only on a SUCCESSFUL draft submit, so Try-again re-runs it.
+  const submittedRef = useRef(false);
 
   // Cycle the wait captions while generating.
   useEffect(() => {
@@ -144,7 +162,29 @@ export function BuildingPlanScreen() {
       try {
         const token = await getToken();
         if (!token) throw new Error('Not signed in.');
-        if (recoverFirst) {
+        // Pre-auth answers land here unsaved — PUT them before generating so
+        // the server builds from this user's actual profile. Inside the try
+        // so a failure shares the error branch's Try-again.
+        const firstSubmit = needsSubmit && !submittedRef.current;
+        if (firstSubmit) {
+          const ok = await saveProfileDraft();
+          if (!ok) throw new Error('Profile save failed.');
+          submittedRef.current = true;
+          // Replay what CoachMatching couldn't do without a token. Non-fatal:
+          // the preset also rides in profile preferences.
+          if (Object.keys(draft.coachAnswers).length) {
+            try {
+              await updatePersonality(token, matchCoach(draft.coachAnswers));
+            } catch {
+              /* server keeps its default until Settings syncs it */
+            }
+          }
+        }
+        // A run that just (re)submitted keeps recovery on: a prior launch may
+        // have left a pending proposal, and re-generating would burn it for
+        // nothing. Explicit "Regenerate" (recoverFirst=false, already
+        // submitted) still forces a fresh plan.
+        if (recoverFirst || firstSubmit) {
           const existing = await fetchLatestProposal(token);
           if (existing) {
             setProposalId(existing.id);
@@ -161,7 +201,7 @@ export function BuildingPlanScreen() {
         setPhase('error');
       }
     },
-    [getToken, preview],
+    [getToken, preview, needsSubmit, saveProfileDraft, draft.coachAnswers],
   );
 
   useEffect(() => {
@@ -177,6 +217,10 @@ export function BuildingPlanScreen() {
     }
   }, [phase]);
 
+  // The proposal-accept side latches separately from completeOnboarding, so a
+  // retry after a failed completing PUT doesn't re-accept the plan.
+  const acceptedRef = useRef(false);
+
   const handleAccept = async () => {
     if (!proposalId) return;
     if (preview) {
@@ -185,12 +229,17 @@ export function BuildingPlanScreen() {
     }
     setStatus('accepting');
     try {
-      const token = await getToken();
-      if (!token) throw new Error('Not signed in.');
-      await acceptPlanProposal(token, proposalId);
-      await refresh();
-      setStatus('accepted');
-      await completeOnboarding();
+      if (!acceptedRef.current) {
+        const token = await getToken();
+        if (!token) throw new Error('Not signed in.');
+        await acceptPlanProposal(token, proposalId);
+        await refresh();
+        acceptedRef.current = true;
+      }
+      // 'accepted' only once the gate actually flips — announcing success
+      // while the completing PUT can still fail left users on a dead screen.
+      const done = await completeOnboarding();
+      setStatus(done ? 'accepted' : 'failed');
     } catch {
       setStatus('failed');
     }
@@ -253,11 +302,19 @@ export function BuildingPlanScreen() {
             We couldn't build your plan just now. You can try again, or skip
             ahead and ask your coach for a plan anytime.
           </AppText>
+          {submitError ? (
+            <AppText variant="caption" color="dangerText">
+              {submitError}
+            </AppText>
+          ) : null}
           <Button title="Try again" variant="primary" onPress={() => void generate(false)} />
           <Button
             title="Skip for now"
             variant="ghost"
             loading={submitting}
+            // The completing PUT resends the full draft, so this works even
+            // when the earlier draft save is what failed. On failure the
+            // submitError above surfaces and the button stays.
             onPress={() => void completeOnboarding()}
           />
         </View>

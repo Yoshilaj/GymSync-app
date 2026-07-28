@@ -6,13 +6,20 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
 import { AuthLayout } from '@/components/auth/AuthLayout';
+import { FormError } from '@/components/auth/FormKit';
 import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
 import { useAuth } from '@/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/AuthNavigator';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** Account creation. Shows a "check your inbox" state when Supabase requires email confirmation. */
+/**
+ * Account creation — now the step AFTER onboarding, so the user arrives with
+ * their answers stashed and a coach already matched. The copy sells saving
+ * that work, and the "Sign in" footer navigates explicitly (goBack would land
+ * on the last onboarding question). Shows a "check your inbox" state when
+ * Supabase requires email confirmation; the stashed draft waits on disk.
+ */
 export function SignUpScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
@@ -53,7 +60,7 @@ export function SignUpScreen() {
 
   if (sentTo) {
     return (
-      <AuthLayout title="Check your inbox" caption="One more step">
+      <AuthLayout title="Check your inbox" subtitle="One more step.">
         <View style={styles.confirmBlock}>
           <View style={styles.confirmIcon}>
             <Ionicons name="mail-unread-outline" size={28} color={colors.accentText} />
@@ -63,12 +70,13 @@ export function SignUpScreen() {
             <AppText variant="bodyMedium">{sentTo}</AppText>
           </AppText>
           <AppText variant="caption" align="center" color="textSecondary">
-            Tap the link in the email, then come back and sign in.
+            Tap the link in the email, then come back and sign in. Your answers
+            are saved on this device.
           </AppText>
           <Button
             title="Back to sign in"
             variant="ghost"
-            onPress={() => navigation.popToTop()}
+            onPress={() => navigation.navigate('SignIn')}
             style={styles.confirmButton}
           />
         </View>
@@ -78,16 +86,18 @@ export function SignUpScreen() {
 
   return (
     <AuthLayout
-      caption="Create your account"
+      title="Save your plan"
+      subtitle="Create an account to keep your plan."
       onBack={() => navigation.goBack()}
     >
       <View style={styles.form}>
         <Input
-          label="Name"
+          round
           icon="person-outline"
           value={name}
           onChangeText={setName}
           placeholder="What should your coach call you?"
+          accessibilityLabel="Name"
           autoCapitalize="words"
           autoCorrect={false}
           textContentType="name"
@@ -95,12 +105,13 @@ export function SignUpScreen() {
           onSubmitEditing={() => emailRef.current?.focus()}
         />
         <Input
+          round
           ref={emailRef}
-          label="Email"
           icon="mail-outline"
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder="Email address"
+          accessibilityLabel="Email address"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -110,39 +121,38 @@ export function SignUpScreen() {
         />
         <View>
           <Input
+            round
             ref={passwordRef}
-            label="Password"
             icon="lock-closed-outline"
             secure
             value={password}
             onChangeText={setPassword}
-            placeholder="••••••••"
+            placeholder="Password"
+            accessibilityLabel="Password"
             textContentType="newPassword"
             returnKeyType="go"
             onSubmitEditing={onSubmit}
           />
           <AppText variant="caption" color="textTertiary" style={styles.hint}>
-            At least 8 characters
+            At least 8 characters.
           </AppText>
         </View>
-
-        {error ? (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle" size={15} color={colors.dangerText} />
-            <AppText variant="caption" color="dangerText" style={{ flex: 1 }}>
-              {error}
-            </AppText>
-          </View>
-        ) : null}
-
-        <Button
-          title="Create account"
-          icon="person-add"
-          loading={submitting}
-          disabled={submitting}
-          onPress={onSubmit}
-        />
       </View>
+
+      {error ? (
+        <View style={styles.error}>
+          <FormError message={error} />
+        </View>
+      ) : null}
+
+      <Button
+        title="Create account"
+        pill
+        loading={submitting}
+        disabled={submitting}
+        onPress={onSubmit}
+        style={styles.submit}
+      />
 
       <OrDivider />
       <SocialAuthButtons />
@@ -153,7 +163,13 @@ export function SignUpScreen() {
 
       <View style={styles.footer}>
         <AppText variant="caption">Already have an account?</AppText>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={8}>
+        <Pressable
+          // Explicit navigate: goBack here would return to the last
+          // onboarding question, not a sign-in form.
+          onPress={() => navigation.navigate('SignIn')}
+          hitSlop={8}
+          accessibilityRole="button"
+        >
           <AppText variant="caption" color="accentText" style={styles.footerLink}>
             Sign in
           </AppText>
@@ -163,32 +179,28 @@ export function SignUpScreen() {
   );
 }
 
+// One rhythm: lg (16) inside a block, xl (24) between blocks — sized so the
+// whole sheet fits one screen without scrolling.
 const useStyles = makeStyles((t) => ({
-  form: { gap: spacing.md },
-  hint: { marginTop: spacing.xs },
-  errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: t.colors.dangerSoft,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
+  form: { gap: spacing.lg },
+  // Indented to the round field's inner text edge, not the sheet edge.
+  hint: { marginTop: spacing.sm, marginLeft: spacing.lg },
+  error: { marginTop: spacing.lg },
+  submit: { marginTop: spacing.xl },
   legal: { marginTop: spacing.lg },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   footerLink: { fontFamily: 'Inter_600SemiBold' },
   confirmBlock: { alignItems: 'center', gap: spacing.md },
   confirmIcon: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: radius.pill,
     backgroundColor: t.colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',

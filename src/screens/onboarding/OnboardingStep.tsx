@@ -24,6 +24,12 @@ interface Props {
   continueLabel?: string;
   /** Small print under the content — safety notes, privacy notes. */
   footnote?: string;
+  /**
+   * Centers the content in the space between title and footer. For screens
+   * with one compact control (a wheel, a ruler) that would otherwise leave
+   * the bottom half of the screen dead.
+   */
+  fill?: boolean;
   children: ReactNode;
 }
 
@@ -34,6 +40,7 @@ export function OnboardingStep({
   onContinue,
   continueLabel,
   footnote,
+  fill = false,
   children,
 }: Props) {
   const { colors } = useTheme();
@@ -50,7 +57,7 @@ export function OnboardingStep({
 
   return (
     <Screen
-      scroll
+      scroll={!fill}
       keyboard
       tabBarClearance={false}
       footer={
@@ -119,7 +126,7 @@ export function OnboardingStep({
         </AppText>
       )}
 
-      <View style={styles.content}>{children}</View>
+      <View style={[styles.content, fill && styles.contentFill]}>{children}</View>
 
       {!!footnote && (
         <AppText variant="caption" color="textTertiary" style={styles.footnote}>
@@ -209,6 +216,9 @@ const useStyles = makeStyles((t) => ({
   title: { marginBottom: spacing.sm },
   subtitle: { marginBottom: spacing.xs },
   content: { marginTop: spacing.xl, gap: spacing.xl },
+  // Pull the control into the visual middle of the leftover space, with the
+  // same bottom bias the footer creates up top.
+  contentFill: { flex: 1, justifyContent: 'center', paddingBottom: spacing.xxxl },
   field: { gap: spacing.sm, alignItems: 'center' },
   footnote: { marginTop: spacing.lg },
   footer: {

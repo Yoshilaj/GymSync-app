@@ -5,9 +5,16 @@
  * generates); completeOnboarding() repeats the write WITH the flag once the
  * plan is accepted (or skipped), which flips RootGate into the app.
  *
- * `preview` mode (dev only) runs the whole flow against nothing: both writes
- * become no-ops so the real profile is never touched. See the Settings replay
- * entry — walking onboarding shouldn't cost you an account.
+ * Three run modes, mutually exclusive:
+ * - default (post-auth): both writes are real PUTs. Legacy accounts that
+ *   signed up before pre-auth onboarding existed still take this path.
+ * - `preview` (dev only): the whole flow runs against nothing — both writes
+ *   are no-ops so the real profile is never touched (Settings replay).
+ * - `preAuth`: the questions run before an account exists. Writes are no-ops;
+ *   the finished draft is stashed (draftStash.ts) and the flow hands off to
+ *   SignUp. Once a session appears, RootGate remounts this provider with
+ *   `resumeDraft` — the stashed answers seed the state, `needsSubmit` tells
+ *   BuildingPlan to PUT them before generating.
  */
 import React, {
   createContext,
@@ -23,6 +30,7 @@ import { useUser } from '@/context/UserContext';
 import { ftInToCm, lbsToKg } from '@/lib/units';
 import type { TrainingPlace } from './options';
 import { matchCoach } from './coachMatch';
+import { stashPendingDraft } from './draftStash';
 
 export interface OnboardingDraft {
   goals: string[]; // single primary goal, kept as a list for the wire format
@@ -119,6 +127,12 @@ interface OnboardingContextValue {
   submitError: string | null;
   /** Dev replay — nothing in this run touches the server. */
   preview: boolean;
+  /** Running before an account exists — no network, stash at the end. */
+  preAuth: boolean;
+  /** Seeded from a stashed pre-auth draft; BuildingPlan must PUT it first. */
+  needsSubmit: boolean;
+  /** preAuth end-of-flow: persist the draft for the post-signup pickup. */
+  stashDraft: () => Promise<boolean>;
   /**
    * Persist the profile WITHOUT completing onboarding — the gate must not
    * flip while the BuildingPlan step is still generating.
@@ -133,14 +147,22 @@ const OnboardingContext = createContext<OnboardingContextValue | undefined>(unde
 export function OnboardingProvider({
   children,
   preview = false,
+  preAuth = false,
+  resumeDraft,
 }: {
   children: ReactNode;
   preview?: boolean;
+  preAuth?: boolean;
+  /** A stashed pre-auth draft to resume from (post-signup BuildingPlan run). */
+  resumeDraft?: OnboardingDraft;
 }) {
   const { user, profile, saveProfile, setUnits } = useUser();
+  // A resumed draft seeds state VERBATIM — never merged over initialDraft,
+  // whose units come from the not-yet-hydrated local user and could disagree.
   const [draft, setDraft] = useState<OnboardingDraft>(() =>
-    preview ? previewDraft(user.units) : initialDraft(user.units),
+    resumeDraft ?? (preview ? previewDraft(user.units) : initialDraft(user.units)),
   );
+  const needsSubmit = !!resumeDraft && !preview;
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -219,9 +241,12 @@ export function OnboardingProvider({
     [draft, heightCmValue, weightKgValue, profile],
   );
 
+  const stashDraft = useCallback(() => stashPendingDraft(draft), [draft]);
+
   const save = useCallback(
     async (complete: boolean): Promise<boolean> => {
-      if (preview) return true;
+      // preAuth has no token to PUT with — the draft travels via the stash.
+      if (preview || preAuth) return true;
       setSubmitting(true);
       setSubmitError(null);
       try {
@@ -237,7 +262,7 @@ export function OnboardingProvider({
         setSubmitting(false);
       }
     },
-    [preview, buildPayload, draft.units, saveProfile, setUnits],
+    [preview, preAuth, buildPayload, draft.units, saveProfile, setUnits],
   );
 
   const saveProfileDraft = useCallback(() => save(false), [save]);
@@ -252,6 +277,9 @@ export function OnboardingProvider({
     submitting,
     submitError,
     preview,
+    preAuth,
+    needsSubmit,
+    stashDraft,
     saveProfileDraft,
     completeOnboarding,
   };

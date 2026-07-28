@@ -1,21 +1,20 @@
 import { useRef, useState } from 'react';
 import { Pressable, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { makeStyles, radius, spacing, useTheme } from '@/theme';
+import { makeStyles, spacing } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
 import { AuthLayout } from '@/components/auth/AuthLayout';
+import { FormError } from '@/components/auth/FormKit';
 import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
 import { useAuth } from '@/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/AuthNavigator';
 
-/** Email/password sign-in — pushed from the Welcome screen. */
+/** Email/password sign-in — reached from the Welcome screen's Log in. */
 export function SignInScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<AuthStackParamList>>();
   const { signIn } = useAuth();
-  const { colors } = useTheme();
   const styles = useStyles();
   const passwordRef = useRef<TextInput>(null);
   const [email, setEmail] = useState('');
@@ -37,16 +36,18 @@ export function SignInScreen() {
 
   return (
     <AuthLayout
-      caption="Welcome back — let's get to work"
+      title="Welcome back"
+      subtitle="Sign in and pick up where you left off."
       onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined}
     >
       <View style={styles.form}>
         <Input
-          label="Email"
+          round
           icon="mail-outline"
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder="Email address"
+          accessibilityLabel="Email address"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -55,57 +56,60 @@ export function SignInScreen() {
           onSubmitEditing={() => passwordRef.current?.focus()}
         />
         <Input
+          round
           ref={passwordRef}
-          label="Password"
           icon="lock-closed-outline"
           secure
           value={password}
           onChangeText={setPassword}
-          placeholder="••••••••"
+          placeholder="Password"
+          accessibilityLabel="Password"
           textContentType="password"
           returnKeyType="go"
           onSubmitEditing={onSubmit}
         />
-
-        <Pressable
-          onPress={() =>
-            navigation.navigate('ForgotPassword', { email: email.trim() || undefined })
-          }
-          hitSlop={8}
-          style={styles.forgot}
-        >
-          <AppText variant="caption" color="accentText">
-            Forgot password?
-          </AppText>
-        </Pressable>
-
-        {error ? (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle" size={15} color={colors.dangerText} />
-            <AppText variant="caption" color="dangerText" style={{ flex: 1 }}>
-              {error}
-            </AppText>
-          </View>
-        ) : null}
-
-        <Button
-          title="Sign in"
-          icon="log-in"
-          loading={submitting}
-          disabled={submitting}
-          onPress={onSubmit}
-          style={styles.button}
-        />
       </View>
+
+      <Pressable
+        onPress={() =>
+          navigation.navigate('ForgotPassword', { email: email.trim() || undefined })
+        }
+        hitSlop={8}
+        accessibilityRole="button"
+        style={styles.forgot}
+      >
+        <AppText variant="caption" color="accentText">
+          Forgot password?
+        </AppText>
+      </Pressable>
+
+      {error ? (
+        <View style={styles.error}>
+          <FormError message={error} />
+        </View>
+      ) : null}
+
+      <Button
+        title="Sign in"
+        pill
+        loading={submitting}
+        disabled={submitting}
+        onPress={onSubmit}
+        style={styles.submit}
+      />
 
       <OrDivider />
       <SocialAuthButtons />
 
       <View style={styles.footer}>
         <AppText variant="caption">New to GymSync?</AppText>
-        <Pressable onPress={() => navigation.navigate('SignUp')} hitSlop={8}>
+        <Pressable
+          onPress={() => navigation.navigate('Intro')}
+          hitSlop={8}
+          accessibilityRole="button"
+        >
           <AppText variant="caption" color="accentText" style={styles.footerLink}>
-            Create account
+            Get started
           </AppText>
         </Pressable>
       </View>
@@ -113,19 +117,14 @@ export function SignInScreen() {
   );
 }
 
-const useStyles = makeStyles((t) => ({
-  form: { gap: spacing.md },
-  forgot: { alignSelf: 'flex-end' },
-  errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: t.colors.dangerSoft,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  button: { marginTop: spacing.xs },
+// One rhythm: lg (16) inside a block, xl (24) between blocks — sized so the
+// whole sheet fits one screen without scrolling.
+const useStyles = makeStyles(() => ({
+  form: { gap: spacing.lg },
+  // Sits tight under the field it belongs to, not floating between blocks.
+  forgot: { alignSelf: 'flex-end', marginTop: spacing.md, minHeight: 32 },
+  error: { marginTop: spacing.lg },
+  submit: { marginTop: spacing.xl },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',

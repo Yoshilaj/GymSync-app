@@ -6,6 +6,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
 import { AuthLayout } from '@/components/auth/AuthLayout';
+import { FormError } from '@/components/auth/FormKit';
 import { useAuth } from '@/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/AuthNavigator';
 
@@ -40,7 +41,7 @@ export function ForgotPasswordScreen() {
 
   if (sent) {
     return (
-      <AuthLayout title="Check your email" caption="Reset link on the way">
+      <AuthLayout title="Check your email" subtitle="Reset link on the way.">
         <View style={styles.sentBlock}>
           <View style={styles.sentIcon}>
             <Ionicons name="checkmark-circle-outline" size={28} color={colors.successText} />
@@ -66,16 +67,17 @@ export function ForgotPasswordScreen() {
   return (
     <AuthLayout
       title="Reset your password"
-      caption="We'll email you a reset link"
+      subtitle="We'll email you a link to set a new one."
       onBack={() => navigation.goBack()}
     >
-      <View style={styles.form}>
+      <View>
         <Input
-          label="Email"
+          round
           icon="mail-outline"
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder="Email address"
+          accessibilityLabel="Email address"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -84,44 +86,34 @@ export function ForgotPasswordScreen() {
           onSubmitEditing={onSubmit}
           autoFocus
         />
-
-        {error ? (
-          <View style={styles.errorCard}>
-            <Ionicons name="alert-circle" size={15} color={colors.dangerText} />
-            <AppText variant="caption" color="dangerText" style={{ flex: 1 }}>
-              {error}
-            </AppText>
-          </View>
-        ) : null}
-
-        <Button
-          title="Send reset link"
-          icon="mail"
-          loading={submitting}
-          disabled={submitting}
-          onPress={onSubmit}
-        />
       </View>
+
+      {error ? (
+        <View style={styles.error}>
+          <FormError message={error} />
+        </View>
+      ) : null}
+
+      <Button
+        title="Send reset link"
+        pill
+        loading={submitting}
+        disabled={submitting}
+        onPress={onSubmit}
+        style={styles.submit}
+      />
     </AuthLayout>
   );
 }
 
 const useStyles = makeStyles((t) => ({
-  form: { gap: spacing.md },
-  errorCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: t.colors.dangerSoft,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
+  error: { marginTop: spacing.lg },
+  submit: { marginTop: spacing.xl },
   sentBlock: { alignItems: 'center', gap: spacing.md },
   sentIcon: {
     width: 64,
     height: 64,
-    borderRadius: 32,
+    borderRadius: radius.pill,
     backgroundColor: t.colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',

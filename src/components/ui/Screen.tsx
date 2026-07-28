@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { layout, makeStyles, spacing, useTheme } from '@/theme';
+import { layout, makeStyles, spacing, useTheme, type GradientKey } from '@/theme';
 import { useTabBarClearance } from '@/hooks';
 
 interface Props {
@@ -21,6 +21,12 @@ interface Props {
   footer?: ReactNode;
   /** Soft blue gradient wash instead of the flat background. */
   wash?: boolean;
+  /**
+   * Any gradient as a full-bleed background — `fill="brand"` for a branded
+   * surface. Takes precedence over `wash`. Remember the content sitting on it
+   * needs inverse colours and its own light status bar.
+   */
+  fill?: GradientKey;
   /** Pad scroll content so it clears the floating tab bar (off for non-tab screens). */
   tabBarClearance?: boolean;
 }
@@ -37,6 +43,7 @@ export function Screen({
   keyboard = false,
   footer,
   wash = false,
+  fill,
   tabBarClearance = true,
 }: Props) {
   const { gradients } = useTheme();
@@ -86,18 +93,20 @@ export function Screen({
     );
   }
 
+  const gradient: GradientKey | undefined = fill ?? (wash ? 'screenWash' : undefined);
+
   const safe = (
     <SafeAreaView
-      style={[styles.flex, !wash && styles.bg]}
+      style={[styles.flex, !gradient && styles.bg]}
       edges={edges}
     >
       {body}
     </SafeAreaView>
   );
 
-  if (wash) {
+  if (gradient) {
     return (
-      <LinearGradient colors={gradients.screenWash} style={styles.flex}>
+      <LinearGradient colors={gradients[gradient]} style={styles.flex}>
         {safe}
       </LinearGradient>
     );

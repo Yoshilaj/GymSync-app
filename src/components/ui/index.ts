@@ -13,6 +13,8 @@ export { StatTile } from './StatTile';
 export { ListRow } from './ListRow';
 export { EmptyState } from './EmptyState';
 export { ProgressBar } from './ProgressBar';
+export { PageDots } from './PageDots';
+export { RulerPicker } from './RulerPicker';
 export { TimerDisplay, formatSeconds } from './TimerDisplay';
 export {
   WheelPicker,

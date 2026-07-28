@@ -6,14 +6,14 @@ import { AnimatedPressable, AppText, Entering } from '@/components/ui';
 
 type Provider = 'Apple' | 'Google';
 
-/** "or continue with" separator between the email form and the social buttons. */
+/** "OR" separator between the email form and the social buttons. */
 export function OrDivider() {
   const styles = useStyles();
   return (
     <View style={styles.divider}>
       <View style={styles.dividerLine} />
-      <AppText variant="caption" color="textTertiary">
-        or continue with
+      <AppText variant="label" color="textTertiary">
+        or
       </AppText>
       <View style={styles.dividerLine} />
     </View>
@@ -49,14 +49,26 @@ export function SocialAuthButtons() {
 
   return (
     <View style={styles.stack}>
-      <AnimatedPressable style={styles.apple} onPress={() => announce('Apple')}>
+      {/* Labelled full-width pills. The pill CTA above and the OR divider keep
+          the hierarchy honest: these read as an alternative, not the pitch. */}
+      <AnimatedPressable
+        style={[styles.provider, styles.apple]}
+        onPress={() => announce('Apple')}
+        accessibilityRole="button"
+        accessibilityLabel="Continue with Apple"
+      >
         <Ionicons name="logo-apple" size={20} color={appleContent} />
         <AppText variant="button" color={appleContent}>
           Continue with Apple
         </AppText>
       </AnimatedPressable>
 
-      <AnimatedPressable style={styles.google} onPress={() => announce('Google')}>
+      <AnimatedPressable
+        style={[styles.provider, styles.google]}
+        onPress={() => announce('Google')}
+        accessibilityRole="button"
+        accessibilityLabel="Continue with Google"
+      >
         <Ionicons name="logo-google" size={18} color={googleContent} />
         <AppText variant="button" color={googleContent}>
           Continue with Google
@@ -77,33 +89,31 @@ export function SocialAuthButtons() {
   );
 }
 
-const row = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  gap: spacing.sm,
-  minHeight: 52,
-  borderRadius: radius.md,
-};
-
 const useStyles = makeStyles((t) => ({
-  stack: { gap: spacing.sm },
+  stack: { gap: spacing.md },
+  provider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 52,
+    borderRadius: radius.pill,
+  },
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    marginVertical: spacing.lg,
+    // xl clears the primary CTA's glow while keeping the sheet on one screen.
+    marginVertical: spacing.xl,
   },
   dividerLine: { flex: 1, height: 1, backgroundColor: t.colors.border },
   // Brand buttons per each brand's OWN light/dark specs (deliberate hex, not
   // theme tokens): Apple = black-on-light / white-on-dark; Google = white with
   // border on light / #131314 dark button.
   apple: {
-    ...row,
     backgroundColor: t.scheme === 'dark' ? '#FFFFFF' : '#000000',
   },
   google: {
-    ...row,
     backgroundColor: t.scheme === 'dark' ? '#131314' : '#FFFFFF',
     borderWidth: 1,
     borderColor: t.scheme === 'dark' ? '#8E918F' : t.colors.border,

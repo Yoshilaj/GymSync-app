@@ -1,8 +1,12 @@
 /**
- * First-run onboarding — mounted by RootGate when the session exists but the
- * profile has no onboarded_at. The last question saves the profile (without
- * completing), then BuildingPlan generates and accepts the first plan in
- * place; completeOnboarding() stamps onboarded_at and flips the gate.
+ * The onboarding question flow, mounted three ways:
+ * - `preAuth` — inside AuthNavigator, before any account exists. The last
+ *   question stashes the draft and hands off to SignUp.
+ * - by RootGate with `resumeDraft` — post-signup pickup of a stashed draft;
+ *   opens directly on BuildingPlan, which PUTs the answers then generates.
+ * - by RootGate bare — legacy accounts with no onboarded_at and no stash get
+ *   the questions post-auth, exactly as before the inversion.
+ * (`preview` is the dev replay from Settings — no server writes at all.)
  *
  * The running order lives in `screens/onboarding/steps.ts`. This file only
  * maps step keys to components — that split is what keeps the registry free of
@@ -10,7 +14,10 @@
  */
 import type { ComponentType } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { OnboardingProvider } from '@/screens/onboarding/OnboardingContext';
+import {
+  OnboardingProvider,
+  type OnboardingDraft,
+} from '@/screens/onboarding/OnboardingContext';
 import { ONBOARDING_STEPS, BUILDING_ROUTE } from '@/screens/onboarding/steps';
 import { GoalScreen } from '@/screens/onboarding/GoalScreen';
 import { ExperienceScreen } from '@/screens/onboarding/ExperienceScreen';
@@ -28,6 +35,7 @@ import { BodyScreen } from '@/screens/onboarding/BodyScreen';
 import { ActivityScreen } from '@/screens/onboarding/ActivityScreen';
 import { LimitationsScreen } from '@/screens/onboarding/LimitationsScreen';
 import { ReferralScreen } from '@/screens/onboarding/ReferralScreen';
+import { PreparingScreen } from '@/screens/onboarding/PreparingScreen';
 import { BuildingPlanScreen } from '@/screens/onboarding/BuildingPlanScreen';
 
 const SCREENS: Record<string, ComponentType> = {
@@ -54,11 +62,20 @@ const SCREENS: Record<string, ComponentType> = {
 
 const Stack = createNativeStackNavigator();
 
-export function OnboardingNavigator({ preview = false }: { preview?: boolean }) {
+export function OnboardingNavigator({
+  preview = false,
+  preAuth = false,
+  resumeDraft,
+}: {
+  preview?: boolean;
+  preAuth?: boolean;
+  /** Stashed pre-auth draft: seed the provider and open on BuildingPlan. */
+  resumeDraft?: OnboardingDraft;
+}) {
   return (
-    <OnboardingProvider preview={preview}>
+    <OnboardingProvider preview={preview} preAuth={preAuth} resumeDraft={resumeDraft}>
       <Stack.Navigator
-        initialRouteName={ONBOARDING_STEPS[0].key}
+        initialRouteName={resumeDraft ? BUILDING_ROUTE : ONBOARDING_STEPS[0].key}
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
@@ -77,6 +94,12 @@ export function OnboardingNavigator({ preview = false }: { preview?: boolean }) 
             options={step.key === 'CoachMatching' ? { gestureEnabled: false } : undefined}
           />
         ))}
+        {/* Pre-auth interstitial between the last question and SignUp. */}
+        <Stack.Screen
+          name="Preparing"
+          component={PreparingScreen}
+          options={{ gestureEnabled: false }}
+        />
         <Stack.Screen
           name={BUILDING_ROUTE}
           component={BuildingPlanScreen}

@@ -29,7 +29,7 @@ const HOLD_MS = 1600;
 export function CoachMatchingScreen() {
   const styles = useStyles();
   const { getToken } = useAuth();
-  const { draft, preview } = useOnboarding();
+  const { draft, preview, preAuth } = useOnboarding();
   const { progress, prevProgress, goNext } = useStepFlow();
   const reduceMotion = useReducedMotion();
   const done = useRef(false);
@@ -55,8 +55,11 @@ export function CoachMatchingScreen() {
   // Everything the timer needs, read at fire time. Putting these in the dep
   // array instead would let a re-render's cleanup cancel the pending advance
   // and strand the user on a screen with no controls.
-  const latest = useRef({ answers: draft.coachAnswers, preview, getToken, goNext });
-  latest.current = { answers: draft.coachAnswers, preview, getToken, goNext };
+  // preAuth counts as "skip the save" too: there's no token yet, and
+  // BuildingPlan replays this call once the account exists.
+  const skipSave = preview || preAuth;
+  const latest = useRef({ answers: draft.coachAnswers, skipSave, getToken, goNext });
+  latest.current = { answers: draft.coachAnswers, skipSave, getToken, goNext };
 
   useEffect(() => {
     if (done.current) return;
@@ -65,9 +68,9 @@ export function CoachMatchingScreen() {
     let cancelled = false;
 
     const run = async () => {
-      const { answers, preview: isPreview, getToken: token$, goNext: advance } =
+      const { answers, skipSave: skip, getToken: token$, goNext: advance } =
         latest.current;
-      if (!isPreview) {
+      if (!skip) {
         try {
           await updatePersonality(await token$(), matchCoach(answers));
         } catch {

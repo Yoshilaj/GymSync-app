@@ -16,7 +16,7 @@ type Nav = NativeStackNavigationProp<Record<string, object | undefined>>;
 export function useStepFlow() {
   const nav = useNavigation<Nav>();
   const route = useRoute();
-  const { draft, saveProfileDraft } = useOnboarding();
+  const { draft, preAuth, saveProfileDraft, stashDraft } = useOnboarding();
 
   const visible = useMemo(
     () => ONBOARDING_STEPS.filter((s) => !s.isVisible || s.isVisible(draft)),
@@ -29,9 +29,12 @@ export function useStepFlow() {
   const isLast = index === total - 1;
 
   /**
-   * Advance. On the final step this also persists the draft (without the
-   * completion flag — the gate must stay put while the plan generates).
-   * `replace` is for interstitials that must not sit in the back stack.
+   * Advance. On the final step: authenticated runs persist the draft (without
+   * the completion flag — the gate must stay put while the plan generates)
+   * and continue to BuildingPlan; pre-auth runs stash the draft and hand off
+   * to SignUp in the parent auth stack ('SignUp' isn't a route here, so the
+   * navigate call bubbles up). `replace` is for interstitials that must not
+   * sit in the back stack.
    */
   const goNext = useCallback(
     async (opts?: { replace?: boolean }) => {
@@ -43,10 +46,19 @@ export function useStepFlow() {
         else nav.navigate(next.key, next.params);
         return;
       }
+      if (preAuth) {
+        // Even a failed stash proceeds: the post-auth flow re-asks the
+        // questions, and a storage error must never block account creation.
+        await stashDraft();
+        // A percentage beat before the account ask. Not `replace` — the
+        // interstitial pops itself, so Back from SignUp returns HERE.
+        nav.navigate('Preparing');
+        return;
+      }
       const saved = await saveProfileDraft();
       if (saved) nav.navigate(BUILDING_ROUTE);
     },
-    [visible, index, nav, saveProfileDraft],
+    [visible, index, nav, preAuth, stashDraft, saveProfileDraft],
   );
 
   const goBack = useCallback(() => {

@@ -8,9 +8,7 @@
     "scheme": "gymsync",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#2E90EA"
     },
     "assetBundlePatterns": [
       "**/*"

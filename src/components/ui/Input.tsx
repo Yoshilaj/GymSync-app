@@ -19,12 +19,14 @@ interface Props extends Omit<TextInputProps, 'style'> {
   secure?: boolean;
   /** Paints the border in the danger color. */
   error?: boolean;
+  /** Pill geometry (auth screens) — fully rounded, a touch taller. */
+  round?: boolean;
   containerStyle?: StyleProp<ViewStyle>;
 }
 
 /** The standard text field: bordered card row with a leading icon. */
 export const Input = forwardRef<TextInput, Props>(function Input(
-  { label, icon, secure = false, error = false, containerStyle, ...rest },
+  { label, icon, secure = false, error = false, round = false, containerStyle, ...rest },
   ref,
 ) {
   const { colors, scheme } = useTheme();
@@ -38,7 +40,7 @@ export const Input = forwardRef<TextInput, Props>(function Input(
           {label}
         </AppText>
       )}
-      <View style={[styles.wrap, error && styles.wrapError]}>
+      <View style={[styles.wrap, round && styles.round, error && styles.wrapError]}>
         {icon && <Ionicons name={icon} size={17} color={colors.textSecondary} />}
         <TextInput
           ref={ref}
@@ -73,6 +75,11 @@ const useStyles = makeStyles((t) => ({
     borderWidth: 1,
     borderColor: t.colors.border,
     paddingHorizontal: spacing.md,
+  },
+  round: {
+    borderRadius: radius.pill,
+    minHeight: 52,
+    paddingHorizontal: spacing.lg,
   },
   wrapError: { borderColor: t.colors.danger },
   input: {

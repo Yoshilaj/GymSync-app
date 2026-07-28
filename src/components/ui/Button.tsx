@@ -9,7 +9,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from './AppText';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'live' | 'solid';
+type Variant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'danger'
+  | 'live'
+  | 'solid'
+  | 'onBrand'
+  | 'onBrandGhost';
 type Size = 'lg' | 'md' | 'sm';
 
 interface Props {
@@ -21,6 +29,8 @@ interface Props {
   loading?: boolean;
   disabled?: boolean;
   full?: boolean;
+  /** Pill geometry (auth screens) — fully rounded corners. */
+  pill?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -35,6 +45,7 @@ export function Button({
   loading,
   disabled,
   full = true,
+  pill = false,
   style,
 }: Props) {
   const { colors, gradients, scheme } = useTheme();
@@ -49,6 +60,11 @@ export function Button({
     live: colors.textInverse,
     // solid = quiet ink button: inverse-on-ink in light, primary-on-card in dark.
     solid: scheme === 'dark' ? colors.textPrimary : colors.textInverse,
+    // onBrand = white button for brand-filled surfaces, where the gradient
+    // `primary` fill would vanish into the background it sits on.
+    onBrand: colors.accentText,
+    // onBrandGhost = its quiet sibling: outline only, for the secondary action.
+    onBrandGhost: colors.textInverse,
   }[variant];
 
   const content = loading ? (
@@ -78,6 +94,7 @@ export function Button({
     { minHeight: HEIGHTS[size] },
     size === 'sm' && styles.baseSm,
     full && styles.full,
+    pill && styles.pill,
   ];
 
   if (variant === 'primary') {
@@ -87,6 +104,7 @@ export function Button({
         disabled={isDisabled}
         style={({ pressed }) => [
           styles.primaryShadow,
+          pill && styles.pill,
           full && styles.full,
           pressed && !isDisabled && styles.pressed,
           isDisabled && styles.disabled,
@@ -115,6 +133,8 @@ export function Button({
         variant === 'danger' && styles.danger,
         variant === 'live' && styles.live,
         variant === 'solid' && styles.solid,
+        variant === 'onBrand' && styles.onBrand,
+        variant === 'onBrandGhost' && styles.onBrandGhost,
         pressed && !isDisabled && styles.pressed,
         isDisabled && styles.disabled,
         style,
@@ -134,6 +154,7 @@ const useStyles = makeStyles((t) => ({
     borderRadius: radius.md,
   },
   baseSm: { paddingHorizontal: spacing.md, borderRadius: radius.sm },
+  pill: { borderRadius: radius.pill },
   full: { alignSelf: 'stretch' },
   primaryShadow: { ...t.shadows.glow, borderRadius: radius.md },
   secondary: {
@@ -152,6 +173,14 @@ const useStyles = makeStyles((t) => ({
           borderColor: t.colors.borderStrong,
         }
       : { backgroundColor: t.colors.textPrimary, ...t.shadows.sm },
+  // White on brand. No glow — a glow needs a surface darker than the button to
+  // read against, and here the button is the lightest thing on screen.
+  onBrand: { backgroundColor: t.colors.textInverse, ...t.shadows.md },
+  onBrandGhost: {
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: t.colors.textInverse,
+  },
   icon: { marginRight: spacing.sm },
   labelSm: { fontSize: 15 },
   pressed: { opacity: 0.85 },
