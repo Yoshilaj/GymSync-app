@@ -133,6 +133,11 @@ export function WorkoutSessionScreen() {
   const [planChanges, setPlanChanges] = useState<PlanChange[] | null>(null);
   const [planBannerOpen, setPlanBannerOpen] = useState(false);
   const [restExpanded, setRestExpanded] = useState(false);
+  // Which set's weight wheel is open — one at a time, per current exercise.
+  const [weightEditIdx, setWeightEditIdx] = useState<number | null>(null);
+  useEffect(() => {
+    setWeightEditIdx(null);
+  }, [exerciseIdx]);
   // Bottom edge of the header in the popover's coordinate space. Absolute
   // children position against the parent's border box, which ignores the
   // safe-area padding the header flows below — so track y + height, not height.
@@ -487,6 +492,19 @@ export function WorkoutSessionScreen() {
     );
   };
 
+  const onChangeWeight = (setIdx: number, weight: number) => {
+    setExercises((prev) =>
+      prev.map((ex, i) =>
+        i === exerciseIdx
+          ? {
+              ...ex,
+              sets: ex.sets.map((s, si) => (si === setIdx ? { ...s, weight } : s)),
+            }
+          : ex,
+      ),
+    );
+  };
+
   const onToggleComplete = (setIdx: number) => {
     const wasCompleted = currentSets[setIdx]?.completed;
     setExercises((prev) =>
@@ -508,6 +526,7 @@ export function WorkoutSessionScreen() {
       ),
     );
     if (!wasCompleted) {
+      if (weightEditIdx === setIdx) setWeightEditIdx(null);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       actions.startRest(DEFAULT_REST_SECONDS);
 
@@ -758,6 +777,13 @@ export function WorkoutSessionScreen() {
               completed={s.completed}
               isCurrent={i === currentSetIdx}
               units={user.units}
+              weightExpanded={weightEditIdx === i && !s.completed}
+              onPressWeight={
+                s.completed
+                  ? undefined
+                  : () => setWeightEditIdx((cur) => (cur === i ? null : i))
+              }
+              onChangeWeight={(w) => onChangeWeight(i, w)}
               onChangeReps={(reps) => onChangeReps(i, reps)}
               onToggleComplete={() => onToggleComplete(i)}
             />
