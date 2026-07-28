@@ -13,14 +13,24 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
-import { makeStyles, spacing } from '@/theme';
-import { AppText, Button, Card, Chip, Screen, Skeleton } from '@/components/ui';
+import { makeStyles, radius, spacing, useTheme } from '@/theme';
+import {
+  AppText,
+  Button,
+  Card,
+  Chip,
+  Entering,
+  Screen,
+  Skeleton,
+} from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { usePlan } from '@/context/PlanContext';
 import {
   acceptPlanProposal,
+  adoptPlanProposal,
   fetchLatestProposal,
   generatePlan,
 } from '@/api/plan';
@@ -32,8 +42,9 @@ import { useOnboarding } from './OnboardingContext';
 import { matchCoach } from './coachMatch';
 import { GOALS } from './options';
 
-/** Dev replay only — lets the reveal be reviewed without burning a generation. */
-const PREVIEW_PLAN: PlanProposalWire = {
+/** Dev replay only — lets the reveal be reviewed without burning a generation.
+ *  (Exported for PreparingScreen's preview path.) */
+export const PREVIEW_PLAN: PlanProposalWire = {
   name: 'Upper / Lower Split',
   split_type: 'upper_lower',
   rationale: 'Four focused days built around your equipment and time.',
@@ -78,7 +89,8 @@ const PREVIEW_PLAN: PlanProposalWire = {
   ],
 };
 
-const CAPTIONS = [
+/** Shared with PreparingScreen, which narrates the same real generation. */
+export const CAPTIONS = [
   'Reading your goals and schedule…',
   'Balancing muscle groups across the week…',
   'Picking exercises for your equipment…',
@@ -88,7 +100,8 @@ const CAPTIONS = [
 
 type Phase = 'generating' | 'ready' | 'error';
 
-function GhostCard() {
+/** Shape-of-the-answer placeholder; also PreparingScreen's skeleton. */
+export function GhostCard() {
   const styles = useStyles();
   return (
     <Card style={styles.ghost}>
@@ -106,6 +119,7 @@ function GhostCard() {
 
 export function BuildingPlanScreen() {
   const styles = useStyles();
+  const { colors } = useTheme();
   const { getToken } = useAuth();
   const { refresh } = usePlan();
   const {
@@ -116,6 +130,7 @@ export function BuildingPlanScreen() {
     submitError,
     draft,
     preview,
+    stashedPlan,
   } = useOnboarding();
   const reduceMotion = useReducedMotion();
 
@@ -192,6 +207,15 @@ export function BuildingPlanScreen() {
             setPhase('ready');
             return;
           }
+          // The plan generated (and shown) pre-signup: adopt it verbatim.
+          // Regenerating here could silently swap the plan the user chose.
+          if (stashedPlan) {
+            const adopted = await adoptPlanProposal(token, stashedPlan);
+            setProposalId(adopted.proposal_id);
+            setPlan(adopted.plan);
+            setPhase('ready');
+            return;
+          }
         }
         const result = await generatePlan(token);
         setProposalId(result.proposal_id);
@@ -201,7 +225,7 @@ export function BuildingPlanScreen() {
         setPhase('error');
       }
     },
-    [getToken, preview, needsSubmit, saveProfileDraft, draft.coachAnswers],
+    [getToken, preview, needsSubmit, saveProfileDraft, draft.coachAnswers, stashedPlan],
   );
 
   useEffect(() => {
@@ -248,7 +272,7 @@ export function BuildingPlanScreen() {
   const caption = reduceMotion ? CAPTIONS[0] : CAPTIONS[captionIdx];
 
   return (
-    <Screen scroll tabBarClearance={false}>
+    <Screen scroll wash tabBarClearance={false}>
       <View style={styles.top}>
         <AppText variant="display">
           {phase === 'ready' ? 'Your first plan is ready.' : 'Building your plan'}
@@ -292,38 +316,54 @@ export function BuildingPlanScreen() {
           onViewPlan={() => void completeOnboarding()}
           acceptLabel="Start training"
           secondaryLabel="Regenerate"
+          initialOpenDay={null}
         />
       )}
 
       {phase === 'error' && (
-        <View style={styles.errorBox}>
-          <AppText variant="h3">That didn't work</AppText>
-          <AppText variant="body" color="textSecondary" style={styles.errorBody}>
-            We couldn't build your plan just now. You can try again, or skip
-            ahead and ask your coach for a plan anytime.
-          </AppText>
-          {submitError ? (
-            <AppText variant="caption" color="dangerText">
-              {submitError}
+        <Entering>
+          <View style={styles.errorBox}>
+            {/* Warning, not danger — the user did nothing wrong. */}
+            <View style={styles.errorWell}>
+              <Ionicons
+                name="cloud-offline-outline"
+                size={28}
+                color={colors.warningText}
+              />
+            </View>
+            <AppText variant="h3">That didn't work</AppText>
+            <AppText
+              variant="body"
+              color="textSecondary"
+              align="center"
+              style={styles.errorBody}
+            >
+              We couldn't build your plan just now. You can try again, or skip
+              ahead and ask your coach for a plan anytime.
             </AppText>
-          ) : null}
-          <Button title="Try again" variant="primary" onPress={() => void generate(false)} />
-          <Button
-            title="Skip for now"
-            variant="ghost"
-            loading={submitting}
-            // The completing PUT resends the full draft, so this works even
-            // when the earlier draft save is what failed. On failure the
-            // submitError above surfaces and the button stays.
-            onPress={() => void completeOnboarding()}
-          />
-        </View>
+            {submitError ? (
+              <AppText variant="caption" color="dangerText" align="center">
+                {submitError}
+              </AppText>
+            ) : null}
+            <Button title="Try again" variant="primary" onPress={() => void generate(false)} />
+            <Button
+              title="Skip for now"
+              variant="ghost"
+              loading={submitting}
+              // The completing PUT resends the full draft, so this works even
+              // when the earlier draft save is what failed. On failure the
+              // submitError above surfaces and the button stays.
+              onPress={() => void completeOnboarding()}
+            />
+          </View>
+        </Entering>
       )}
     </Screen>
   );
 }
 
-const useStyles = makeStyles(() =>
+const useStyles = makeStyles((t) =>
   StyleSheet.create({
     top: {
       marginTop: spacing.xxl,
@@ -336,7 +376,20 @@ const useStyles = makeStyles(() =>
     ghostGap: { marginTop: spacing.md },
     ghostGapSm: { marginTop: spacing.sm },
     ghostRows: { marginTop: spacing.lg, gap: spacing.sm },
-    errorBox: { gap: spacing.md, marginTop: spacing.lg },
+    errorBox: {
+      gap: spacing.md,
+      marginTop: spacing.xxl,
+      alignItems: 'center',
+    },
+    errorWell: {
+      width: 64,
+      height: 64,
+      borderRadius: radius.pill,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.colors.warningSoft,
+      marginBottom: spacing.sm,
+    },
     errorBody: { marginBottom: spacing.sm },
   }),
 );

@@ -26,6 +26,8 @@ import React, {
 } from 'react';
 import type { Units } from '@/types';
 import type { ActivityLevel, ExperienceLevel, Sex } from '@/api/profile';
+import type { AnonymousProfilePayload } from '@/api/plan';
+import type { PlanProposalWire } from '@/voice/protocol';
 import { useUser } from '@/context/UserContext';
 import { ftInToCm, lbsToKg } from '@/lib/units';
 import type { TrainingPlace } from './options';
@@ -133,6 +135,14 @@ interface OnboardingContextValue {
   needsSubmit: boolean;
   /** preAuth end-of-flow: persist the draft for the post-signup pickup. */
   stashDraft: () => Promise<boolean>;
+  /** Re-stash with the pre-signup generated plan so it survives the auth
+   *  boundary alongside the answers that produced it. */
+  stashDraftWithPlan: (plan: PlanProposalWire) => Promise<boolean>;
+  /** The draft as the anonymous-generation request body. */
+  buildAnonymousPayload: () => AnonymousProfilePayload;
+  /** Plan generated pre-signup (from the stash) — BuildingPlan adopts it
+   *  instead of regenerating. Null when none survived. */
+  stashedPlan: PlanProposalWire | null;
   /**
    * Persist the profile WITHOUT completing onboarding — the gate must not
    * flip while the BuildingPlan step is still generating.
@@ -149,12 +159,15 @@ export function OnboardingProvider({
   preview = false,
   preAuth = false,
   resumeDraft,
+  resumePlan = null,
 }: {
   children: ReactNode;
   preview?: boolean;
   preAuth?: boolean;
   /** A stashed pre-auth draft to resume from (post-signup BuildingPlan run). */
   resumeDraft?: OnboardingDraft;
+  /** The plan stashed alongside it, if generation succeeded pre-signup. */
+  resumePlan?: PlanProposalWire | null;
 }) {
   const { user, profile, saveProfile, setUnits } = useUser();
   // A resumed draft seeds state VERBATIM — never merged over initialDraft,
@@ -243,6 +256,33 @@ export function OnboardingProvider({
 
   const stashDraft = useCallback(() => stashPendingDraft(draft), [draft]);
 
+  const stashDraftWithPlan = useCallback(
+    (plan: PlanProposalWire) => stashPendingDraft(draft, plan),
+    [draft],
+  );
+
+  const buildAnonymousPayload = useCallback(
+    (): AnonymousProfilePayload => ({
+      goals: draft.goals,
+      experience: draft.experience,
+      training_days: draft.trainingDays,
+      session_minutes: draft.sessionMinutes,
+      equipment: draft.equipment,
+      sex: draft.sex,
+      birth_year: draft.birthYear,
+      activity_level: draft.activityLevel,
+      height_cm: heightCmValue,
+      weight_kg: weightKgValue,
+      units: draft.units,
+      injuries_note: draft.injuriesNote.trim() || null,
+      injury_areas: draft.injuryAreas,
+      coach_preset: Object.keys(draft.coachAnswers).length
+        ? matchCoach(draft.coachAnswers)
+        : null,
+    }),
+    [draft, heightCmValue, weightKgValue],
+  );
+
   const save = useCallback(
     async (complete: boolean): Promise<boolean> => {
       // preAuth has no token to PUT with — the draft travels via the stash.
@@ -280,6 +320,9 @@ export function OnboardingProvider({
     preAuth,
     needsSubmit,
     stashDraft,
+    stashDraftWithPlan,
+    buildAnonymousPayload,
+    stashedPlan: resumePlan,
     saveProfileDraft,
     completeOnboarding,
   };

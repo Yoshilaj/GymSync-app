@@ -16,7 +16,7 @@ type Nav = NativeStackNavigationProp<Record<string, object | undefined>>;
 export function useStepFlow() {
   const nav = useNavigation<Nav>();
   const route = useRoute();
-  const { draft, preAuth, saveProfileDraft, stashDraft } = useOnboarding();
+  const { draft, preAuth, preview, saveProfileDraft, stashDraft } = useOnboarding();
 
   const visible = useMemo(
     () => ONBOARDING_STEPS.filter((s) => !s.isVisible || s.isVisible(draft)),
@@ -46,19 +46,20 @@ export function useStepFlow() {
         else nav.navigate(next.key, next.params);
         return;
       }
-      if (preAuth) {
+      if (preAuth || preview) {
         // Even a failed stash proceeds: the post-auth flow re-asks the
         // questions, and a storage error must never block account creation.
-        await stashDraft();
-        // A percentage beat before the account ask. Not `replace` — the
-        // interstitial pops itself, so Back from SignUp returns HERE.
+        // (Preview never stashes — a fake draft must not haunt a real signup.)
+        if (!preview) await stashDraft();
+        // The real plan builds here now, then reveals, then SignUp. Preview
+        // walks the same two screens on stubbed data.
         nav.navigate('Preparing');
         return;
       }
       const saved = await saveProfileDraft();
       if (saved) nav.navigate(BUILDING_ROUTE);
     },
-    [visible, index, nav, preAuth, stashDraft, saveProfileDraft],
+    [visible, index, nav, preAuth, preview, stashDraft, saveProfileDraft],
   );
 
   const goBack = useCallback(() => {

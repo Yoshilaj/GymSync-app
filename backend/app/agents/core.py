@@ -365,6 +365,8 @@ async def _agent_events(
     db: AsyncClient,
     conversation_id: str | None = None,
     model: str | None = None,
+    anonymous_profile: dict | None = None,
+    personality_preset: str | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Core agent loop. Yields plain event dicts:
@@ -374,16 +376,32 @@ async def _agent_events(
       {"type": "error", "message": "..."}
     """
     client = _get_client()
-    ctx = ToolContext(user_id=user_id, session_id=session_id, db=db)
-
-    # Independent reads — run concurrently; on a voice turn this is the bulk of
-    # the pre-model latency.
-    personality, history, session_ctx, profile_ctx = await asyncio.gather(
-        _load_personality(user_id, db),
-        _load_history(session_id, conversation_id, db),
-        _load_session_context(session_id, db),
-        _load_profile_context(user_id, db),
+    ctx = ToolContext(
+        user_id=user_id,
+        session_id=session_id,
+        db=db,
+        anonymous_profile=anonymous_profile,
     )
+
+    if anonymous_profile is not None:
+        # No user rows exist (user_id isn't even a valid uuid here) — the
+        # request payload is the whole context, and the quiz preset rides in.
+        personality = {
+            "preset_id": personality_preset or "classic",
+            "system_prompt_override": None,
+        }
+        history, session_ctx, profile_ctx = [], "", ""
+    else:
+        # Independent reads — run concurrently; on a voice turn this is the
+        # bulk of the pre-model latency.
+        personality, history, session_ctx, profile_ctx = await asyncio.gather(
+            _load_personality(user_id, db),
+            _load_history(session_id, conversation_id, db),
+            _load_session_context(session_id, db),
+            _load_profile_context(user_id, db),
+        )
+        if personality_preset:
+            personality = {"preset_id": personality_preset, "system_prompt_override": None}
 
     system_text = build_system_prompt(
         personality["preset_id"], personality.get("system_prompt_override")
@@ -501,21 +519,26 @@ GENERATION_MESSAGE = (
 )
 
 
-async def run_plan_generation(user_id: str, db: AsyncClient) -> dict:
-    """
-    Chat-free plan generation for onboarding. Drives the normal agent loop on
-    the reasoning model, swallows text, and returns the plan_proposal packet
-    (the tool has already persisted the plan_proposals row by then). No
-    session/conversation ids → zero chat side effects. One internal retry.
-    """
+async def _drive_plan_generation(
+    message: str,
+    user_id: str,
+    db: AsyncClient,
+    *,
+    anonymous_profile: dict | None = None,
+    personality_preset: str | None = None,
+) -> dict:
+    """Shared driver: run the agent loop on the reasoning model, swallow text,
+    return the plan_proposal packet. One internal retry."""
     last_error: str | None = None
     for _attempt in range(2):
         gen = _agent_events(
-            GENERATION_MESSAGE,
+            message,
             session_id=None,
             user_id=user_id,
             db=db,
             model=MODEL_REASONING,
+            anonymous_profile=anonymous_profile,
+            personality_preset=personality_preset,
         )
         try:
             async with asyncio.timeout(90):
@@ -534,3 +557,53 @@ async def run_plan_generation(user_id: str, db: AsyncClient) -> dict:
             # the model's post-tool follow-up turn entirely.
             await gen.aclose()
     raise PlanGenerationError(last_error or "The coach didn't produce a plan.")
+
+
+async def run_plan_generation(user_id: str, db: AsyncClient) -> dict:
+    """
+    Chat-free plan generation for onboarding. Drives the normal agent loop on
+    the reasoning model, swallows text, and returns the plan_proposal packet
+    (the tool has already persisted the plan_proposals row by then). No
+    session/conversation ids → zero chat side effects. One internal retry.
+    """
+    return await _drive_plan_generation(GENERATION_MESSAGE, user_id, db)
+
+
+# Same key order _load_profile_context uses, so the model sees an identical
+# profile block whether the facts came from a row or a request payload.
+_ANON_PROFILE_KEYS = (
+    "experience", "goals", "training_days", "session_minutes", "equipment",
+    "sex", "birth_year", "height_cm", "weight_kg", "activity_level", "units",
+)
+
+_VALID_PRESETS = {"classic", "supportive", "energetic"}
+
+
+def _anonymous_profile_block(profile: dict) -> str:
+    lines = []
+    for key in _ANON_PROFILE_KEYS:
+        value = profile.get(key)
+        if value not in (None, [], ""):
+            lines.append(f"{key}: {json.dumps(value) if isinstance(value, list) else value}")
+    if profile.get("injuries_note"):
+        lines.append(f"injuries_note: {profile['injuries_note']}")
+    if profile.get("injury_areas"):
+        lines.append(f"injury_areas: {json.dumps(profile['injury_areas'])}")
+    if not lines:
+        return ""
+    return "<user_profile>\n" + "\n".join(lines) + "\n</user_profile>\n\n"
+
+
+async def run_anonymous_plan_generation(
+    profile: dict, db: AsyncClient, personality_preset: str | None = None
+) -> dict:
+    """
+    Pre-signup generation: no user rows exist, so the answers ride in as the
+    profile block and the proposal tool runs without persisting (proposal_id
+    is None). The client stashes the returned plan and adopts it post-signup.
+    """
+    preset = personality_preset if personality_preset in _VALID_PRESETS else None
+    message = _anonymous_profile_block(profile) + GENERATION_MESSAGE
+    return await _drive_plan_generation(
+        message, "", db, anonymous_profile=profile, personality_preset=preset
+    )

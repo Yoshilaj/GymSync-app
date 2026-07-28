@@ -144,6 +144,67 @@ export async function generatePlan(token: string): Promise<GeneratedProposal> {
   }
 }
 
+/** The onboarding answers, shaped like the profile row they'll become —
+ * mirrors the server's AnonymousProfile model. */
+export interface AnonymousProfilePayload {
+  goals: string[];
+  experience: string | null;
+  training_days: number | null;
+  session_minutes: number | null;
+  equipment: string[];
+  sex: string | null;
+  birth_year: number | null;
+  activity_level: string | null;
+  height_cm: number | null;
+  weight_kg: number | null;
+  units: string | null;
+  injuries_note: string | null;
+  injury_areas: string[];
+  coach_preset: string | null;
+}
+
+/** Pre-signup generation for the onboarding reveal. No token, nothing
+ * persists server-side — the plan rides the draft stash across signup. */
+export async function generateAnonymousPlan(
+  payload: AnonymousProfilePayload,
+): Promise<{ plan: PlanProposalWire; warnings: string[] }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(
+      `${voiceConfig.apiBaseUrl}/api/plans/generate-anonymous`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      },
+    );
+    if (!res.ok) throw new Error(`Plan generation failed (HTTP ${res.status})`);
+    return (await res.json()) as { plan: PlanProposalWire; warnings: string[] };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Store a pre-signup plan as this user's pending proposal — the plan the
+ * user was already shown must not be silently regenerated after signup. */
+export async function adoptPlanProposal(
+  token: string,
+  plan: PlanProposalWire,
+): Promise<{ proposal_id: string; plan: PlanProposalWire }> {
+  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/plans/proposals/adopt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ plan }),
+  });
+  if (!res.ok) throw new Error(`Plan adopt failed (HTTP ${res.status})`);
+  return (await res.json()) as { proposal_id: string; plan: PlanProposalWire };
+}
+
 /** The still-pending proposal, if any (crash/reload recovery in onboarding). */
 export async function fetchLatestProposal(
   token: string,

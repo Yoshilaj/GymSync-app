@@ -24,6 +24,10 @@ interface Props {
   /** Onboarding overrides: "Start training" / "Regenerate". */
   acceptLabel?: string;
   secondaryLabel?: string;
+  /** Which day starts expanded. Default: the first (chat's behavior); pass
+   *  null for all-collapsed — the onboarding reveal reads better as a
+   *  scannable week than with one day pre-opened. */
+  initialOpenDay?: number | null;
 }
 
 /** "4 – 6 reps × 4 sets" — reps range first, then sets, spelled out. */
@@ -122,10 +126,11 @@ export function PlanCard({
   onViewPlan,
   acceptLabel = 'Accept plan',
   secondaryLabel = 'Request changes',
+  initialOpenDay = 0,
 }: Props) {
   const { colors, gradients } = useTheme();
   const styles = useStyles();
-  const [openDay, setOpenDay] = useState(0);
+  const [openDay, setOpenDay] = useState<number | null>(initialOpenDay);
 
   if (status === 'superseded') {
     // A dead draft doesn't earn decoration.

@@ -13,6 +13,7 @@
  * draft PUT and onboarding completion can always resume.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { PlanProposalWire } from '@/voice/protocol';
 import type { OnboardingDraft } from './OnboardingContext';
 
 export const DRAFT_STASH_KEY = '@gymsync/onboarding-draft';
@@ -28,13 +29,31 @@ interface Stash {
   version: number;
   savedAt: number;
   draft: OnboardingDraft;
+  /** The plan generated (and shown) pre-signup — adopted after signup so the
+   *  user gets the exact plan they saw, not a silent regeneration. Optional:
+   *  a stash written before generation (or after its failure) has none. */
+  plan?: PlanProposalWire | null;
 }
 
-/** Persist a completed pre-auth draft. Returns false instead of throwing —
- *  a storage failure must never block account creation. */
-export async function stashPendingDraft(draft: OnboardingDraft): Promise<boolean> {
+export interface PendingStash {
+  draft: OnboardingDraft;
+  plan: PlanProposalWire | null;
+}
+
+/** Persist a completed pre-auth draft (and, once generated, its plan).
+ *  Returns false instead of throwing — a storage failure must never block
+ *  account creation. */
+export async function stashPendingDraft(
+  draft: OnboardingDraft,
+  plan?: PlanProposalWire | null,
+): Promise<boolean> {
   try {
-    const stash: Stash = { version: STASH_VERSION, savedAt: Date.now(), draft };
+    const stash: Stash = {
+      version: STASH_VERSION,
+      savedAt: Date.now(),
+      draft,
+      plan: plan ?? null,
+    };
     await AsyncStorage.setItem(DRAFT_STASH_KEY, JSON.stringify(stash));
     return true;
   } catch {
@@ -44,7 +63,7 @@ export async function stashPendingDraft(draft: OnboardingDraft): Promise<boolean
 
 /** Read-and-validate. Anything unusable (parse failure, version mismatch,
  *  expired) is treated as absent and cleaned up. */
-export async function readPendingDraft(): Promise<OnboardingDraft | null> {
+export async function readPendingStash(): Promise<PendingStash | null> {
   try {
     const raw = await AsyncStorage.getItem(DRAFT_STASH_KEY);
     if (!raw) return null;
@@ -59,7 +78,11 @@ export async function readPendingDraft(): Promise<OnboardingDraft | null> {
       void AsyncStorage.removeItem(DRAFT_STASH_KEY);
       return null;
     }
-    return stash.draft as OnboardingDraft;
+    const plan =
+      stash.plan && Array.isArray(stash.plan.days) && stash.plan.days.length
+        ? stash.plan
+        : null;
+    return { draft: stash.draft as OnboardingDraft, plan };
   } catch {
     return null;
   }

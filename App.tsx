@@ -21,8 +21,7 @@ import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { LaunchScreen } from '@/components/LaunchScreen';
-import { readPendingDraft } from '@/screens/onboarding/draftStash';
-import type { OnboardingDraft } from '@/screens/onboarding/OnboardingContext';
+import { readPendingStash, type PendingStash } from '@/screens/onboarding/draftStash';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
 
 /**
@@ -70,7 +69,7 @@ function useAuthDeepLinks() {
  */
 type DraftGate =
   | { state: 'idle' | 'loading' }
-  | { state: 'resolved'; draft: OnboardingDraft | null };
+  | { state: 'resolved'; stash: PendingStash | null };
 
 function usePendingOnboardingDraft(userId: string | null): DraftGate {
   const [gate, setGate] = useState<DraftGate>({ state: 'idle' });
@@ -81,8 +80,8 @@ function usePendingOnboardingDraft(userId: string | null): DraftGate {
     }
     let cancelled = false;
     setGate({ state: 'loading' });
-    void readPendingDraft().then((draft) => {
-      if (!cancelled) setGate({ state: 'resolved', draft });
+    void readPendingStash().then((stash) => {
+      if (!cancelled) setGate({ state: 'resolved', stash });
     });
     return () => {
       cancelled = true;
@@ -133,12 +132,13 @@ function RootGate() {
       !!session && profileStatus === 'ready' && !profile?.onboarded_at;
     if (!session) return <AuthNavigator />;
     if (needsOnboarding) {
-      const pending = draftGate.state === 'resolved' ? draftGate.draft : null;
+      const pending = draftGate.state === 'resolved' ? draftGate.stash : null;
       // With a stashed pre-auth draft: straight to BuildingPlan, which PUTs
-      // the answers then generates. Without one (legacy accounts): the
-      // post-auth question flow, exactly as before.
+      // the answers then adopts the already-shown plan (or generates if none
+      // survived). Without one (legacy accounts): the post-auth question
+      // flow, exactly as before.
       return pending ? (
-        <OnboardingNavigator resumeDraft={pending} />
+        <OnboardingNavigator resumeDraft={pending.draft} resumePlan={pending.plan} />
       ) : (
         <OnboardingNavigator />
       );

@@ -355,6 +355,10 @@ class ToolContext:
     session_id: str | None
     db: AsyncClient
     app_actions: list[dict] = field(default_factory=list)
+    # Pre-signup plan generation: profile facts come from the request payload
+    # instead of the DB, and NOTHING persists. When set, only the read-only
+    # generation tools are callable (enforced in execute_tool).
+    anonymous_profile: dict | None = None
 
 
 # ── Session plan helpers ──────────────────────────────────────────────────────
@@ -636,6 +640,14 @@ async def execute_tool(
     the request (never a model-supplied argument). A missing user_id scope is a P0 bug.
     """
     ctx.app_actions = []
+
+    # Anonymous generation has no user rows to read or write — anything beyond
+    # the catalog and the (non-persisting) proposal is off the table.
+    if ctx.anonymous_profile is not None and name not in (
+        "list_exercises",
+        "propose_workout_plan",
+    ):
+        return {"error": f"{name} is not available before an account exists."}, []
 
     if name == "start_timer":
         duration = args.get("duration_seconds", 90)
@@ -1059,17 +1071,23 @@ async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, lis
     if not days:
         return {"error": "A plan needs at least one day."}, []
 
-    profile_res = await ctx.db.table("profiles").select(
-        "training_days, session_minutes, equipment"
-    ).eq("user_id", ctx.user_id).execute()
-    profile = profile_res.data[0] if profile_res.data else {}
+    if ctx.anonymous_profile is not None:
+        # Pre-signup: the answers ARE the profile. No injuries rows exist yet
+        # (areas ride the payload as plain strings), so movement checks skip.
+        profile = ctx.anonymous_profile
+        avoid_movements: set[str] = set()
+    else:
+        profile_res = await ctx.db.table("profiles").select(
+            "training_days, session_minutes, equipment"
+        ).eq("user_id", ctx.user_id).execute()
+        profile = profile_res.data[0] if profile_res.data else {}
 
-    injuries_res = await ctx.db.table("injuries").select(
-        "body_part, avoid_movements"
-    ).eq("user_id", ctx.user_id).eq("status", "active").execute()
-    avoid_movements = {
-        m for row in (injuries_res.data or []) for m in (row.get("avoid_movements") or [])
-    }
+        injuries_res = await ctx.db.table("injuries").select(
+            "body_part, avoid_movements"
+        ).eq("user_id", ctx.user_id).eq("status", "active").execute()
+        avoid_movements = {
+            m for row in (injuries_res.data or []) for m in (row.get("avoid_movements") or [])
+        }
 
     warnings: list[str] = []
     _normalize_day_labels(days, warnings)
@@ -1125,14 +1143,19 @@ async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, lis
         "days": normalized_days,
     }
 
-    # One pending proposal at a time — a fresh one supersedes stale drafts.
-    await ctx.db.table("plan_proposals").update({"status": "superseded", "updated_at": utcnow()}).eq(
-        "user_id", ctx.user_id
-    ).eq("status", "pending").execute()
-    ins = await ctx.db.table("plan_proposals").insert(
-        {"user_id": ctx.user_id, "payload": payload, "status": "pending"}
-    ).execute()
-    proposal_id = ins.data[0]["id"]
+    if ctx.anonymous_profile is not None:
+        # Nothing persists pre-signup — the client carries the payload across
+        # the auth boundary and POSTs /plans/proposals/adopt once a user exists.
+        proposal_id = None
+    else:
+        # One pending proposal at a time — a fresh one supersedes stale drafts.
+        await ctx.db.table("plan_proposals").update({"status": "superseded", "updated_at": utcnow()}).eq(
+            "user_id", ctx.user_id
+        ).eq("status", "pending").execute()
+        ins = await ctx.db.table("plan_proposals").insert(
+            {"user_id": ctx.user_id, "payload": payload, "status": "pending"}
+        ).execute()
+        proposal_id = ins.data[0]["id"]
 
     ctx.app_actions.append(
         {

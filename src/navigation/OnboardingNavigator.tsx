@@ -36,7 +36,9 @@ import { ActivityScreen } from '@/screens/onboarding/ActivityScreen';
 import { LimitationsScreen } from '@/screens/onboarding/LimitationsScreen';
 import { ReferralScreen } from '@/screens/onboarding/ReferralScreen';
 import { PreparingScreen } from '@/screens/onboarding/PreparingScreen';
+import { PlanPreviewScreen } from '@/screens/onboarding/PlanPreviewScreen';
 import { BuildingPlanScreen } from '@/screens/onboarding/BuildingPlanScreen';
+import type { PlanProposalWire } from '@/voice/protocol';
 
 const SCREENS: Record<string, ComponentType> = {
   Goal: GoalScreen,
@@ -66,14 +68,22 @@ export function OnboardingNavigator({
   preview = false,
   preAuth = false,
   resumeDraft,
+  resumePlan,
 }: {
   preview?: boolean;
   preAuth?: boolean;
   /** Stashed pre-auth draft: seed the provider and open on BuildingPlan. */
   resumeDraft?: OnboardingDraft;
+  /** Plan generated pre-signup — BuildingPlan adopts it, not regenerates. */
+  resumePlan?: PlanProposalWire | null;
 }) {
   return (
-    <OnboardingProvider preview={preview} preAuth={preAuth} resumeDraft={resumeDraft}>
+    <OnboardingProvider
+      preview={preview}
+      preAuth={preAuth}
+      resumeDraft={resumeDraft}
+      resumePlan={resumePlan}
+    >
       <Stack.Navigator
         initialRouteName={resumeDraft ? BUILDING_ROUTE : ONBOARDING_STEPS[0].key}
         screenOptions={{
@@ -94,12 +104,13 @@ export function OnboardingNavigator({
             options={step.key === 'CoachMatching' ? { gestureEnabled: false } : undefined}
           />
         ))}
-        {/* Pre-auth interstitial between the last question and SignUp. */}
+        {/* Pre-auth: the real plan builds here, then reveals, then SignUp. */}
         <Stack.Screen
           name="Preparing"
           component={PreparingScreen}
           options={{ gestureEnabled: false }}
         />
+        <Stack.Screen name="PlanPreview" component={PlanPreviewScreen} />
         <Stack.Screen
           name={BUILDING_ROUTE}
           component={BuildingPlanScreen}
