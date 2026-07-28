@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -26,11 +26,21 @@ import { Exercise } from '@/types';
 // Mounted in both PlanStack (browse) and ProgressStack (browse + picker) —
 // type against the minimal structural params this screen actually navigates.
 type ExerciseListParams = {
-  ExerciseList: { mode?: 'browse' | 'picker'; returnKey?: 'strength' | 'volume' };
+  ExerciseList: {
+    mode?: 'browse' | 'picker';
+    /** Caller-supplied header title (the Plan tab's add flow). */
+    title?: string;
+    returnKey?: 'strength' | 'volume';
+    /** Plan-tab add flow: who consumes the pick, and for which day. */
+    returnTo?: 'PlanHome';
+    targetWorkoutId?: string;
+    existingKeys?: string[];
+  };
   ExerciseDetail: { exerciseId: string };
   ProgressHome:
     | { pickedExercise?: string; returnKey?: 'strength' | 'volume' }
     | undefined;
+  PlanHome: { pickedExercise?: string; targetWorkoutId?: string } | undefined;
 };
 
 type Nav = NativeStackNavigationProp<ExerciseListParams, 'ExerciseList'>;
@@ -45,7 +55,17 @@ export function ExerciseListScreen() {
   const route = useRoute<Rt>();
   const mode = route.params?.mode ?? 'browse';
   const returnKey = route.params?.returnKey;
+  const returnTo = route.params?.returnTo;
+  const targetWorkoutId = route.params?.targetWorkoutId;
+  // Already in the target day — shown as "Added" and not selectable, so a
+  // duplicate can't be attempted in the first place.
+  const existingKeys = useMemo(
+    () => new Set(route.params?.existingKeys ?? []),
+    [route.params?.existingKeys],
+  );
 
+  // A pick navigates away; latch so a double-tap can't fire two adds.
+  const pickedRef = useRef(false);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Category | 'All'>(ALL);
   const clearance = useTabBarClearance();
@@ -64,22 +84,40 @@ export function ExerciseListScreen() {
   }, [query, filter]);
 
   const handlePress = (ex: Exercise) => {
-    if (mode === 'picker' && returnKey) {
-      nav.navigate({
-        name: 'ProgressHome',
-        params: { pickedExercise: ex.id, returnKey },
-        merge: true,
-      } as never);
-    } else {
-      nav.navigate('ExerciseDetail', { exerciseId: ex.id });
+    if (mode === 'picker') {
+      if (pickedRef.current) return;
+      // Plan tab: add to a specific day. Guarded on returnTo, so the Progress
+      // tab's picker below is untouched.
+      if (returnTo === 'PlanHome' && targetWorkoutId) {
+        pickedRef.current = true;
+        nav.navigate({
+          name: 'PlanHome',
+          params: { pickedExercise: ex.id, targetWorkoutId },
+          merge: true,
+        } as never);
+        return;
+      }
+      if (returnKey) {
+        pickedRef.current = true;
+        nav.navigate({
+          name: 'ProgressHome',
+          params: { pickedExercise: ex.id, returnKey },
+          merge: true,
+        } as never);
+        return;
+      }
     }
+    nav.navigate('ExerciseDetail', { exerciseId: ex.id });
   };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       <ScreenHeader
         variant="detail"
-        title={mode === 'picker' ? 'Select exercise' : 'Exercise library'}
+        title={
+          route.params?.title ??
+          (mode === 'picker' ? 'Select exercise' : 'Exercise library')
+        }
       />
 
       <View style={styles.searchWrap}>
@@ -134,11 +172,20 @@ export function ExerciseListScreen() {
         data={filtered}
         keyExtractor={(i) => i.id}
         contentContainerStyle={[styles.listContent, { paddingBottom: clearance.scroll }]}
-        renderItem={({ item, index }) => (
+        renderItem={({ item, index }) => {
+          const added =
+            existingKeys.has(item.id) || existingKeys.has(item.name.toLowerCase());
+          return (
           <Entering index={index}>
           <Pressable
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            onPress={() => handlePress(item)}
+            style={({ pressed }) => [
+              styles.row,
+              pressed && !added && styles.rowPressed,
+              added && styles.rowAdded,
+            ]}
+            onPress={() => !added && handlePress(item)}
+            disabled={added}
+            accessibilityState={{ disabled: added }}
           >
             <ExerciseImage
               exerciseId={item.id}
@@ -152,16 +199,30 @@ export function ExerciseListScreen() {
               </AppText>
               <View style={styles.metaRow}>
                 <AppText variant="caption" color="accentText">
-                  {item.muscleGroup}
+                  {getCategory(item.muscleGroup)}
                 </AppText>
                 <View style={styles.metaDot} />
                 <AppText variant="caption">{item.equipment}</AppText>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            {added ? (
+              <View style={styles.addedRow}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={colors.successText}
+                />
+                <AppText variant="caption" color="successText">
+                  Added
+                </AppText>
+              </View>
+            ) : (
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            )}
           </Pressable>
           </Entering>
-        )}
+          );
+        }}
         ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
         ListEmptyComponent={
           <EmptyState
@@ -271,6 +332,10 @@ const useStyles = makeStyles((t) => ({
     ...t.shadows.xs,
   },
   rowPressed: { backgroundColor: t.colors.accentFaint },
+  // Present but clearly spent — the exercise is still findable, just not
+  // addable twice.
+  rowAdded: { opacity: 0.55 },
+  addedRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',

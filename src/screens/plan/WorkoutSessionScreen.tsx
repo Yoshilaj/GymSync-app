@@ -104,11 +104,14 @@ export function WorkoutSessionScreen() {
     [route.params?.workoutId, getWorkoutById, todaysWorkout],
   );
 
+  // Lazy initializer: the plan is read ONCE, at mount. Editing the plan mid
+  // session (Plan tab add/delete) deliberately doesn't reach in here — the
+  // list must not shift under someone who's between sets.
   const [exercises, setExercises] = useState<SessionExercise[]>(() =>
     workout.exercises.map((pe) => {
       const meta = getExerciseById(pe.exerciseId);
       return {
-        key: pe.exerciseId,
+        key: pe.id ?? pe.exerciseId,
         name: meta?.name ?? pe.name ?? pe.exerciseId,
         meta,
         sets: pe.sets.map((s) => ({ ...s })),

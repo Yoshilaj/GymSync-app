@@ -3,7 +3,8 @@ Workout plans — read the active plan, rehydrate/accept agent proposals.
 
 Proposals are created ONLY by the agent's propose_workout_plan tool (a
 plan_proposals row + a plan_proposal wire packet). Accepting one here is the
-single consent gate that materializes it into the real plan tables.
+consent gate that materializes a WHOLE plan into the real tables; the Plan tab
+edits the active one an exercise at a time (add/delete below).
 Request-changes needs no endpoint: it's a chat message; the agent emits a
 fresh proposal which supersedes the old pending row.
 """
@@ -117,6 +118,64 @@ async def adopt_proposal(
         {"user_id": user_id, "payload": payload, "status": "pending"}
     ).execute()
     return {"proposal_id": ins.data[0]["id"], "plan": payload}
+
+
+class AddPlanExerciseRequest(BaseModel):
+    exercise_id: str | None = Field(default=None, max_length=100)
+    exercise_name: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/plans/workouts/{workout_id}/exercises", status_code=201)
+async def add_plan_exercise(
+    workout_id: str,
+    body: AddPlanExerciseRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncClient = Depends(get_db),
+) -> dict:
+    """Append an exercise to a day of the caller's ACTIVE plan.
+
+    The client picks from a static catalog that has drifted from this one, so
+    an unknown exercise_id degrades to a named ad-hoc row instead of failing.
+    """
+    try:
+        row = await plan_store.add_plan_exercise(
+            user_id,
+            workout_id,
+            body.exercise_id,
+            body.exercise_name,
+            db,
+            note=body.note,
+        )
+    except ValueError as exc:
+        reason = str(exc)
+        if reason == "duplicate":
+            # 422, not 409: the plan is fine and refetching it would change
+            # nothing — only this request was unprocessable. That split is
+            # what lets the client skip a pointless refresh.
+            raise HTTPException(
+                status_code=422, detail="That exercise is already in this workout."
+            ) from exc
+        if reason == "stale":
+            # Distinct from 404 on purpose: the client can act on this by
+            # refreshing, where "not found" would just look like a bug.
+            raise HTTPException(
+                status_code=409, detail="That workout belongs to a superseded plan"
+            ) from exc
+        raise HTTPException(status_code=404, detail="Workout not found") from exc
+    return {"exercise": row}
+
+
+@router.delete("/plans/exercises/{plan_exercise_id}")
+async def delete_plan_exercise(
+    plan_exercise_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncClient = Depends(get_db),
+) -> dict:
+    ok = await plan_store.delete_plan_exercise(user_id, plan_exercise_id, db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return {"status": "deleted", "plan_exercise_id": plan_exercise_id}
 
 
 @router.get("/plans/active")

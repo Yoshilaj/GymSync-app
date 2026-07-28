@@ -9,7 +9,7 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { usePlan } from '@/context/PlanContext';
-import { getExerciseById } from '@/data/mockExercises';
+import { getCategory, getExerciseById } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { useTabBarClearance } from '@/hooks';
 import { PlannedWorkout, Units } from '@/types';
@@ -106,11 +106,13 @@ function DayWorkout({
     (sum, pe) => sum + pe.sets.reduce((s, set) => s + set.targetReps * set.weight, 0),
     0,
   );
+  // Library categories, matching the Plan tab — "Back", never "Lats".
   const muscles = Array.from(
     new Set(
       workout.exercises
         .map((pe) => getExerciseById(pe.exerciseId)?.muscleGroup)
-        .filter(Boolean) as string[],
+        .filter((m) => !!m && m !== 'Full Body')
+        .map((m) => getCategory(m!)),
     ),
   );
 

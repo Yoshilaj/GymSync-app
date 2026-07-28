@@ -11,12 +11,18 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PlannedWorkout, WeeklyPlan } from '@/types';
-import { fetchActivePlan } from '@/api/plan';
+import {
+  addPlanExercise,
+  deletePlanExercise,
+  fetchActivePlan,
+  PlanApiError,
+} from '@/api/plan';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
 
@@ -32,6 +38,13 @@ interface PlanContextValue {
   /** Today's scheduled workout, or null on rest days / no plan. */
   todaysWorkout: PlannedWorkout | null;
   getWorkoutById: (id: string) => PlannedWorkout | undefined;
+  /** Append an exercise to a plan day. Rejects if the write fails. */
+  addExercise: (
+    workoutId: string,
+    ex: { exerciseId: string | null; exerciseName: string },
+  ) => Promise<void>;
+  /** Remove an exercise. Applied locally at once, rolled back on failure. */
+  removeExercise: (workoutId: string, planExerciseId: string) => Promise<void>;
 }
 
 const PlanContext = createContext<PlanContextValue | undefined>(undefined);
@@ -42,27 +55,102 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const [plan, setPlan] = useState<WeeklyPlan | null>(null);
   const [status, setStatus] = useState<PlanStatus>('loading');
 
+  // Mutations run across awaits, so they can't trust a captured `plan`.
+  const planRef = useRef<WeeklyPlan | null>(plan);
+  planRef.current = plan;
+
+  /** The one place that touches the cache, so all three writers stay coherent. */
+  const persist = useCallback((next: WeeklyPlan | null) => {
+    if (next) {
+      AsyncStorage.setItem(PLAN_KEY, JSON.stringify(next)).catch(() => {});
+    } else {
+      AsyncStorage.removeItem(PLAN_KEY).catch(() => {});
+    }
+  }, []);
+
+  /** Deliberately NOT inside a setPlan updater — StrictMode double-invokes
+   *  those, which would double-write the cache. */
+  const commit = useCallback(
+    (next: WeeklyPlan) => {
+      planRef.current = next;
+      setPlan(next);
+      persist(next);
+    },
+    [persist],
+  );
+
   const refresh = useCallback(async () => {
     try {
       const token = await getToken();
       const fetched = await fetchActivePlan(token);
+      planRef.current = fetched;
       setPlan(fetched);
       setStatus(fetched ? 'ready' : 'empty');
-      if (fetched) {
-        AsyncStorage.setItem(PLAN_KEY, JSON.stringify(fetched)).catch(() => {});
-      } else {
-        AsyncStorage.removeItem(PLAN_KEY).catch(() => {});
-      }
+      persist(fetched);
     } catch {
       const cached = await AsyncStorage.getItem(PLAN_KEY).catch(() => null);
       if (cached) {
-        setPlan(JSON.parse(cached) as WeeklyPlan);
+        const parsed = JSON.parse(cached) as WeeklyPlan;
+        planRef.current = parsed;
+        setPlan(parsed);
         setStatus('ready');
       } else {
         setStatus('error');
       }
     }
-  }, [getToken]);
+  }, [getToken, persist]);
+
+  const addExercise = useCallback<PlanContextValue['addExercise']>(
+    async (workoutId, ex) => {
+      const token = await getToken();
+      let created;
+      try {
+        created = await addPlanExercise(token, workoutId, ex);
+      } catch (err) {
+        // 409 = the plan was replaced elsewhere; resync so the screen stops
+        // lying. A 422 (duplicate) leaves the plan correct, so refetching it
+        // would only replay every row's entrance animation for nothing.
+        if (err instanceof PlanApiError && err.status === 409) await refresh();
+        throw err;
+      }
+      // Read state AFTER the await: a refresh may have landed mid-flight.
+      const cur = planRef.current;
+      if (!cur || !cur.workouts.some((w) => w.id === workoutId)) {
+        await refresh();
+        return;
+      }
+      commit({
+        ...cur,
+        workouts: cur.workouts.map((w) =>
+          w.id === workoutId ? { ...w, exercises: [...w.exercises, created] } : w,
+        ),
+      });
+    },
+    [getToken, refresh, commit],
+  );
+
+  const removeExercise = useCallback<PlanContextValue['removeExercise']>(
+    async (workoutId, planExerciseId) => {
+      const before = planRef.current;
+      if (!before) return;
+      // Optimistic: a swipe-to-delete that waits for a round trip reads broken.
+      commit({
+        ...before,
+        workouts: before.workouts.map((w) =>
+          w.id === workoutId
+            ? { ...w, exercises: w.exercises.filter((e) => e.id !== planExerciseId) }
+            : w,
+        ),
+      });
+      try {
+        await deletePlanExercise(await getToken(), planExerciseId);
+      } catch (err) {
+        commit(before);
+        throw err;
+      }
+    },
+    [getToken, commit],
+  );
 
   useEffect(() => {
     if (!session) {
@@ -96,6 +184,8 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     refresh,
     todaysWorkout,
     getWorkoutById,
+    addExercise,
+    removeExercise,
   };
 
   return <PlanContext.Provider value={value}>{children}</PlanContext.Provider>;

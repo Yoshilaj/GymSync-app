@@ -16,6 +16,8 @@ export type ProgressStackParamList = {
   DayDetail: { iso: string };
   ExerciseList: {
     mode?: 'browse' | 'picker';
+    /** Optional header override; this tab keeps the default. */
+    title?: string;
     returnKey?: 'strength' | 'volume';
   };
   ExerciseDetail: { exerciseId: string };

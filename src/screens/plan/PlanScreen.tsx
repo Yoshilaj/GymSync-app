@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppText, EmptyState, Entering, Screen } from '@/components/ui';
 import { DayStrip, getWeekDates } from '@/components/DayStrip';
@@ -9,14 +11,16 @@ import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { BodyWeightCard } from '@/components/BodyWeightCard';
 import { LibraryCard } from '@/components/LibraryCard';
-import { layout, spacing, useTheme } from '@/theme';
+import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import {
+  getCategory,
   getExerciseById,
   mockExercises,
   resolvePlannedExercise,
 } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
+import { PlanApiError } from '@/api/plan';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { PlannedWorkout, Units } from '@/types';
 
@@ -26,9 +30,11 @@ const WEEK_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function PlanScreen() {
   const nav = useNavigation<Nav>();
+  const route = useRoute<RouteProp<PlanStackParamList, 'PlanHome'>>();
   const { colors } = useTheme();
+  const styles = useStyles();
   const { user } = useUser();
-  const { plan, status } = usePlan();
+  const { plan, addExercise, removeExercise } = usePlan();
 
   const today = useMemo(() => new Date(), []);
   const todayIso = today.toDateString();
@@ -70,6 +76,46 @@ export function PlanScreen() {
     return undefined;
   }, [plan, selectedDay]);
 
+  // The exercise picker hands its choice back through route params. Consume
+  // once: clear the params BEFORE the async add, and latch, so a re-render or
+  // a screen re-focus can't post the same exercise twice.
+  const consumingRef = useRef(false);
+  useEffect(() => {
+    const { pickedExercise, targetWorkoutId } = route.params ?? {};
+    if (!pickedExercise || !targetWorkoutId || consumingRef.current) return;
+    consumingRef.current = true;
+    nav.setParams({ pickedExercise: undefined, targetWorkoutId: undefined });
+    const meta = getExerciseById(pickedExercise);
+    void addExercise(targetWorkoutId, {
+      exerciseId: pickedExercise,
+      exerciseName: meta?.name ?? pickedExercise,
+    })
+      .then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
+      .catch((err: unknown) =>
+        Alert.alert(
+          'Could not add exercise',
+          // The server explains refusals ("already in this workout"); a
+          // transport failure has nothing to say, so fall back.
+          (err instanceof PlanApiError && err.detail) ||
+            'Check your connection and try again.',
+        ),
+      )
+      .finally(() => {
+        consumingRef.current = false;
+      });
+  }, [route.params?.pickedExercise, route.params?.targetWorkoutId]);
+
+  const onDeleteExercise = (workoutId: string, planExerciseId: string) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // The row is already gone locally; the context restores it if this fails.
+    removeExercise(workoutId, planExerciseId).catch(() =>
+      Alert.alert(
+        'Could not remove exercise',
+        'Check your connection and try again.',
+      ),
+    );
+  };
+
   return (
     <Screen scroll padded={false}>
       <View style={styles.headerGap} />
@@ -93,6 +139,20 @@ export function PlanScreen() {
             onOpenExercise={(exerciseId) =>
               nav.navigate('ExerciseDetail', { exerciseId })
             }
+            onAddExercise={() =>
+              nav.navigate('ExerciseList', {
+                mode: 'picker',
+                title: 'Add exercise',
+                returnTo: 'PlanHome',
+                targetWorkoutId: workoutForDay.id,
+                // Both keys: a row saved ad-hoc has no catalog id to match on.
+                existingKeys: workoutForDay.exercises.flatMap((pe) => [
+                  pe.exerciseId,
+                  (pe.name ?? '').toLowerCase(),
+                ]),
+              })
+            }
+            onDeleteExercise={onDeleteExercise}
           />
         ) : isRest ? (
           <Entering>
@@ -141,6 +201,8 @@ function WorkoutDay({
   units,
   onStart,
   onOpenExercise,
+  onAddExercise,
+  onDeleteExercise,
 }: {
   workout: PlannedWorkout;
   isToday: boolean;
@@ -148,17 +210,25 @@ function WorkoutDay({
   units: Units;
   onStart: (id: string) => void;
   onOpenExercise: (exerciseId: string) => void;
+  onAddExercise: () => void;
+  onDeleteExercise: (workoutId: string, planExerciseId: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useStyles();
   const totalSets = workout.exercises.reduce((a, e) => a + e.sets.length, 0);
   const volume = workout.exercises.reduce(
     (sum, pe) => sum + pe.sets.reduce((s, set) => s + set.targetReps * set.weight, 0),
     0,
   );
+  // Library categories, not primary muscles: a back day should read "Back",
+  // not "Lats" next to a chest day's "Chest". Resolve by name too so ad-hoc
+  // rows still count, and drop unresolved ones rather than guessing.
   const muscles = Array.from(
     new Set(
       workout.exercises
-        .map((pe) => getExerciseById(pe.exerciseId)?.muscleGroup)
-        .filter(Boolean) as string[],
+        .map((pe) => resolvePlannedExercise(pe.exerciseId, pe.name).muscleGroup)
+        .filter((m) => m !== 'Full Body')
+        .map(getCategory),
     ),
   );
 
@@ -189,23 +259,44 @@ function WorkoutDay({
         </AppText>
         {workout.exercises.map((pe, i) => {
           const ex = resolvePlannedExercise(pe.exerciseId, pe.name);
+          const rowId = pe.id;
           return (
-            <Entering key={pe.exerciseId} index={i + 1}>
+            // Keyed on the server row id: a day can legitimately hold the same
+            // exercise twice, and exit animations need unique keys.
+            <Entering key={rowId ?? pe.exerciseId} index={i + 1} animateExit>
               <ExerciseRow
                 exercise={ex}
                 sets={pe.sets}
                 units={units}
                 onPress={() => onOpenExercise(ex.id)}
+                // Rows from a pre-upgrade cache have no id yet — they become
+                // deletable after the next refresh rather than crashing.
+                onDelete={
+                  rowId ? () => onDeleteExercise(workout.id, rowId) : undefined
+                }
               />
             </Entering>
           );
         })}
+
+        {workout.exercises.length === 0 && (
+          <AppText variant="caption" color="textTertiary" style={styles.listHeading}>
+            No exercises yet.
+          </AppText>
+        )}
+
+        <Pressable onPress={onAddExercise} style={styles.addExerciseRow}>
+          <Ionicons name="add" size={16} color={colors.accentText} />
+          <AppText variant="caption" color="accentText">
+            Add exercise
+          </AppText>
+        </Pressable>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((t) => ({
   content: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
     marginTop: spacing.lg,
@@ -218,4 +309,18 @@ const styles = StyleSheet.create({
   },
   librarySection: { marginTop: spacing.lg, gap: spacing.md },
   headerGap: { height: spacing.sm },
-});
+  // Dashed placeholder at radius.lg so it lines up with the exercise cards
+  // above it rather than looking like a different kind of object.
+  addExerciseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: t.colors.border,
+    marginTop: spacing.xs,
+  },
+}));

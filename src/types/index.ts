@@ -51,6 +51,12 @@ export interface PlannedSet {
 }
 
 export interface PlannedExercise {
+  /**
+   * Server row id (plan_exercises.id) — what delete addresses. Optional
+   * because a plan cached before this field existed is parsed straight back
+   * into this type; such a row simply isn't editable until the next refresh.
+   */
+  id?: string;
   exerciseId: string;
   /** Denormalized display name — the fallback when exerciseId isn't in the library. */
   name?: string;

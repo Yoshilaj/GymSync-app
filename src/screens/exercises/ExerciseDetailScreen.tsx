@@ -15,7 +15,7 @@ import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Card, Chip, EmptyState } from '@/components/ui';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { ExerciseImage } from '@/components/ExerciseImage';
-import { getExerciseById, mockExercises } from '@/data/mockExercises';
+import { getCategory, getExerciseById, mockExercises } from '@/data/mockExercises';
 import { getExerciseDetails } from '@/data/exerciseDetails.gen';
 import { getExerciseHowTo } from '@/data/exerciseHowTo';
 import { useTabBarClearance } from '@/hooks';
@@ -107,7 +107,9 @@ export function ExerciseDetailScreen() {
         <View style={styles.titleBlock}>
           <AppText variant="h1">{ex.name}</AppText>
           <View style={styles.chipRow}>
-            <Chip label={ex.muscleGroup} selected />
+            {/* The library's category — the precise muscle is right below
+                under "Primary", so repeating it here said nothing twice. */}
+            <Chip label={getCategory(ex.muscleGroup)} selected />
             <Chip
               label={ex.equipment}
               tone="accent"

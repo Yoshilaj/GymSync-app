@@ -7,11 +7,20 @@ import { ExerciseListScreen } from '@/screens/exercises/ExerciseListScreen';
 import { useTheme } from '@/theme';
 
 export type PlanStackParamList = {
-  PlanHome: undefined;
+  /** Params arrive only as the picker's return channel (add exercise). */
+  PlanHome: { pickedExercise?: string; targetWorkoutId?: string } | undefined;
   LiveWorkoutStart: { workoutId: string };
   WorkoutSession: { workoutId: string };
   ExerciseDetail: { exerciseId: string };
-  ExerciseList: { mode?: 'browse' };
+  ExerciseList: {
+    mode?: 'browse' | 'picker';
+    /** Overrides the header title — the add flow says "Add exercise". */
+    title?: string;
+    returnTo?: 'PlanHome';
+    targetWorkoutId?: string;
+    /** Catalog ids and lowercased names already in the target day. */
+    existingKeys?: string[];
+  };
 };
 
 const Stack = createNativeStackNavigator<PlanStackParamList>();
