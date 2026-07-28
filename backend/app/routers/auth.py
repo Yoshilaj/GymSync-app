@@ -21,6 +21,7 @@ from supabase_auth.errors import AuthApiError, AuthWeakPasswordError
 
 from app.config import settings
 from app.database import get_db
+from app.password import validate_password
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,11 @@ class UserOut(BaseModel):
 
 class SignupRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
+    # No Field(min_length=...) on purpose: a pydantic failure returns a 422
+    # whose `detail` is an ARRAY, and the app's error funnel only reads string
+    # details — the user would get "Something went wrong." Password rules are
+    # enforced in the endpoint instead, as a readable 400.
+    password: str
     display_name: str | None = Field(default=None, max_length=80)
 
 
@@ -137,6 +142,11 @@ async def signup(
     auth: AsyncGoTrueClient = Depends(get_auth_client),
     db: AsyncClient = Depends(get_db),
 ) -> SignupResponse:
+    # Server-side authority for the rules the sign-up screen shows live.
+    weak = validate_password(body.password, body.email, body.display_name)
+    if weak:
+        raise HTTPException(status_code=400, detail=weak)
+
     try:
         res = await auth.sign_up(
             {

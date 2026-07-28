@@ -5,6 +5,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
+import { PasswordStrength } from '@/components/PasswordStrength';
+import { checkPassword } from '@/lib/passwordStrength';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { FormError } from '@/components/auth/FormKit';
 import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
@@ -34,6 +36,9 @@ export function SignUpScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
+  // The strength meter only exists while the field is focused, so the resting
+  // sheet keeps its one-screen budget.
+  const [passwordFocused, setPasswordFocused] = useState(false);
 
   const onSubmit = async () => {
     const trimmedEmail = email.trim();
@@ -41,8 +46,10 @@ export function SignUpScreen() {
       setError('Enter a valid email address.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    // Same rules the meter shows live, and the same ones the server enforces.
+    const strength = checkPassword(password, { email: trimmedEmail, name });
+    if (!strength.meetsMinimum) {
+      setError(strength.hint ?? 'Please choose a stronger password.');
       return;
     }
     setSubmitting(true);
@@ -132,10 +139,21 @@ export function SignUpScreen() {
             textContentType="newPassword"
             returnKeyType="go"
             onSubmitEditing={onSubmit}
+            onFocus={() => setPasswordFocused(true)}
+            onBlur={() => setPasswordFocused(false)}
           />
-          <AppText variant="caption" color="textTertiary" style={styles.hint}>
-            At least 8 characters.
-          </AppText>
+          {passwordFocused ? (
+            <PasswordStrength
+              value={password}
+              visible
+              context={{ email, name }}
+              style={styles.hint}
+            />
+          ) : (
+            <AppText variant="caption" color="textTertiary" style={styles.hint}>
+              At least 8 characters.
+            </AppText>
+          )}
         </View>
       </View>
 

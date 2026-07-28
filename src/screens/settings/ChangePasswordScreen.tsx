@@ -3,6 +3,8 @@ import { View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { makeStyles, spacing } from '@/theme';
 import { AppText, Button, Input } from '@/components/ui';
+import { PasswordStrength } from '@/components/PasswordStrength';
+import { checkPassword } from '@/lib/passwordStrength';
 import { useAuth } from '@/auth/AuthContext';
 import { supabase } from '@/auth/supabase';
 import { SettingsPage } from './SettingsKit';
@@ -16,8 +18,13 @@ export function ChangePasswordScreen() {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [nextFocused, setNextFocused] = useState(false);
 
-  const valid = current.length >= 6 && next.length >= 8 && next === confirm;
+  // The current password only has to be present — the server re-auth decides
+  // whether it's right, and an existing password may predate today's rules.
+  // The NEW one gets the full check, same as sign-up.
+  const strength = checkPassword(next, { email: user?.email ?? undefined });
+  const valid = current.length > 0 && strength.meetsMinimum && next === confirm;
 
   const submit = async () => {
     setBusy(true);
@@ -56,13 +63,23 @@ export function ChangePasswordScreen() {
           secure
           placeholder="••••••••"
         />
-        <Input
-          label="New password"
-          value={next}
-          onChangeText={setNext}
-          secure
-          placeholder="At least 8 characters"
-        />
+        <View>
+          <Input
+            label="New password"
+            value={next}
+            onChangeText={setNext}
+            secure
+            placeholder="At least 8 characters"
+            onFocus={() => setNextFocused(true)}
+            onBlur={() => setNextFocused(false)}
+          />
+          <PasswordStrength
+            value={next}
+            visible={nextFocused}
+            context={{ email: user?.email ?? undefined }}
+            style={styles.strength}
+          />
+        </View>
         <Input
           label="Confirm new password"
           value={confirm}
@@ -83,6 +100,7 @@ export function ChangePasswordScreen() {
 
 const useStyles = makeStyles(() => ({
   fields: { gap: spacing.md },
+  strength: { marginTop: spacing.sm },
   error: { marginTop: spacing.sm },
   footer: { padding: spacing.lg },
 }));
