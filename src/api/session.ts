@@ -1,11 +1,22 @@
 import { voiceConfig } from '@/voice/config';
 
+export interface SessionSetRow {
+  exercise_name: string;
+  set_index: number;
+  reps: number;
+  weight: number | null;
+  weight_unit: string | null;
+}
+
 export interface WorkoutSessionRow {
   id: string;
   user_id: string;
   current_exercise: string | null;
   is_active: boolean;
   plan_snapshot: unknown;
+  updated_at?: string;
+  /** Sent by GET /session/active only — the session's logged sets, for resume. */
+  completed_sets?: SessionSetRow[];
   [key: string]: unknown;
 }
 

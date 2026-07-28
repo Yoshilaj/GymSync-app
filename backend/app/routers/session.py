@@ -47,10 +47,17 @@ async def get_active_session(
 ) -> dict:
     res = await db.table("workout_sessions").select("*").eq(
         "user_id", user_id
-    ).eq("is_active", True).limit(1).execute()
+    ).eq("is_active", True).order("updated_at", desc=True).limit(1).execute()
     if not res.data:
         return {"session": None}
-    return {"session": res.data[0]}
+    session = res.data[0]
+    # Include the session's logged sets so a reopening client can restore its
+    # checkmarks and position in one round trip (session resume).
+    sets = await db.table("completed_sets").select(
+        "exercise_name, set_index, reps, weight, weight_unit"
+    ).eq("session_id", session["id"]).order("logged_at").execute()
+    session["completed_sets"] = sets.data or []
+    return {"session": session}
 
 
 @router.post("/session", status_code=201)

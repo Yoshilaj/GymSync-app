@@ -425,6 +425,7 @@ function ExerciseTrends({
 }) {
   const { colors } = useTheme();
   const styles = useStyles();
+  const { user } = useUser();
   const ex = getExerciseById(exerciseId) ?? mockExercises[0];
 
   // Real logged history only, as daily points for the interactive chart.
@@ -438,7 +439,7 @@ function ExerciseTrends({
     ? Math.round(points[points.length - 1].value - points[0].value)
     : 0;
   const up = diff >= 0;
-  const unit = 'lbs';
+  const unit = user.units === 'kg' ? 'kg' : 'lbs';
 
   // 1RMs move by pounds, volume by hundreds — the pad scales with the series.
   const values = points.map((d) => d.value);
@@ -509,6 +510,22 @@ function ExerciseTrends({
           formatValue={(v) => `${Math.round(v).toLocaleString()} ${unit}`}
           aggregate={metric === 'strength' ? 'max' : 'avg'}
         />
+      ) : points.length === 1 ? (
+        // A trend needs two training days — but "No history yet" over a real
+        // logged workout reads as "it wasn't saved". Show the number instead.
+        <View style={styles.firstPoint}>
+          <AppText variant="statLg">
+            {Math.round(points[0].value).toLocaleString()} {unit}
+          </AppText>
+          <AppText variant="caption" color="textSecondary" align="center">
+            {metric === 'strength' ? 'Est. 1RM' : 'Total moved'} ·{' '}
+            {new Date(points[0].day).toLocaleDateString(undefined, {
+              month: 'short',
+              day: 'numeric',
+            })}
+            {'\n'}One more session and your trend line appears.
+          </AppText>
+        </View>
       ) : (
         <EmptyState
           icon="trending-up"
@@ -726,5 +743,10 @@ const useStyles = makeStyles((t) => ({
     alignItems: 'center',
     gap: 8,
     flex: 1,
+  },
+  firstPoint: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    gap: spacing.xs,
   },
 }));

@@ -35,6 +35,7 @@ import {
   voicePlayer,
   type AppActionMessage,
   type PlanChange,
+  type SessionResume,
   type VoicePhase,
 } from '@/voice';
 import { Exercise, PlannedSet } from '@/types';
@@ -402,6 +403,119 @@ export function WorkoutSessionScreen() {
     [actions.apply, applyLogSet, applySwap, applyAdd, applyModifyPlan, applyGoTo],
   );
 
+  // When a resumed session belongs to a DIFFERENT workout than the screen was
+  // opened with, the header shows the session's real day.
+  const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+
+  // Reattached to a live session (screen reopened mid-workout): rebuild the
+  // checkmarks and position from the server's logged sets. The server's
+  // set_index is the slot, mirroring applyLogSet; unknown exercises come back
+  // as extra work. If the session is for another workout day, the exercise
+  // list is rebuilt from the session's own snapshot first.
+  const applyResume = useCallback(
+    (resume: SessionResume) => {
+      const redirected = resume.workout ?? null;
+      if (!resume.sets.length && !resume.currentExercise && !redirected) return;
+      const next: SessionExercise[] = redirected
+        ? (redirected.exercises ?? []).map((e, i) => {
+            const meta =
+              (e.exercise_id ? getExerciseById(e.exercise_id) : undefined) ??
+              getExerciseByName(e.exercise_name ?? '');
+            return {
+              key: e.exercise_id ?? `snap-${i}`,
+              name: e.exercise_name ?? meta?.name ?? 'Exercise',
+              meta,
+              note: e.note,
+              sets: (e.target_sets ?? []).map((s, si) => ({
+                id: s.id ?? `snap-${i}-${si}`,
+                exerciseId: s.exerciseId ?? e.exercise_id ?? '',
+                targetReps: s.targetReps ?? 10,
+                repsHigh: s.repsHigh,
+                weight: s.weight ?? 0,
+              })),
+            };
+          })
+        : exercisesRef.current.map((ex) => ({
+            ...ex,
+            sets: ex.sets.map((s) => ({ ...s })),
+          }));
+      for (const row of resume.sets) {
+        let idx = next.findIndex((ex) => matchesName(ex.name, row.exercise_name));
+        if (idx === -1) {
+          const meta = getExerciseByName(row.exercise_name);
+          next.push({
+            key: `extra-${newSetId()}`,
+            name: meta?.name ?? row.exercise_name,
+            meta,
+            addedBySync: true,
+            sets: [],
+          });
+          idx = next.length - 1;
+        }
+        const ex = next[idx];
+        while (ex.sets.length <= row.set_index) {
+          const last = ex.sets[ex.sets.length - 1];
+          ex.sets.push({
+            id: newSetId(),
+            exerciseId: last?.exerciseId ?? ex.meta?.id ?? '',
+            targetReps: row.reps,
+            weight: last?.weight ?? 0,
+          });
+        }
+        ex.sets[row.set_index] = {
+          ...ex.sets[row.set_index],
+          achievedReps: row.reps,
+          weight: row.weight ?? ex.sets[row.set_index].weight,
+          completed: true,
+        };
+      }
+      setExercises(next);
+      if (redirected) {
+        setSessionTitle(redirected.title ?? null);
+        setExerciseIdx(0);
+      }
+      if (resume.currentExercise) {
+        const pos = next.findIndex((ex) =>
+          matchesName(ex.name, resume.currentExercise as string),
+        );
+        if (pos >= 0) setExerciseIdx(pos);
+      }
+      pushToast(
+        redirected?.title
+          ? `Resumed ${redirected.title} in progress`
+          : 'Resumed where you left off',
+        'play',
+      );
+    },
+    [pushToast],
+  );
+
+  // A different day's workout is mid-session with logged sets: the user
+  // decides — resume it (screen switches to that day) or end it and start
+  // the day they just opened.
+  const resolveConflict = useCallback(
+    (info: { title?: string }) =>
+      new Promise<'resume' | 'fresh'>((resolve) => {
+        Alert.alert(
+          'Workout in progress',
+          `${info.title ?? 'Another workout'} is still running with logged sets.`,
+          [
+            {
+              text: `Start ${workout.title}`,
+              style: 'destructive',
+              onPress: () => resolve('fresh'),
+            },
+            {
+              text: `Resume ${info.title ?? 'it'}`,
+              onPress: () => resolve('resume'),
+            },
+          ],
+          { cancelable: false },
+        );
+      }),
+    [workout.title],
+  );
+
   // ---- Session + voice ownership -------------------------------------------
   // The workout owns the backend session; the voice socket attaches to it and
   // can drop (mic off) without ending the workout.
@@ -413,6 +527,8 @@ export function WorkoutSessionScreen() {
     getToken,
     planId: plan?.planId ?? null,
     workoutId: workout.id === 'freeform' ? null : workout.id,
+    onResume: applyResume,
+    resolveConflict,
   });
   const voice = useVoiceSession({
     userId: authUser?.id ?? '',
@@ -607,6 +723,12 @@ export function WorkoutSessionScreen() {
     );
   };
 
+  // Leaving ≠ finishing: the header X just closes the screen. The session
+  // stays active server-side and the next open resumes it (checkmarks,
+  // position, coach memory); voice tears down on unmount. Actually finishing
+  // the workout goes through the dock's End button / the last exercise.
+  const leaveWorkout = () => nav.goBack();
+
   if (!current) return null;
   const meta = current.meta;
   const voiceError = voice.phase === 'error';
@@ -623,11 +745,11 @@ export function WorkoutSessionScreen() {
         {/* Absolutely centered so uneven side widths can't skew the title. */}
         <View style={styles.headerTitleWrap} pointerEvents="none">
           <AppText variant="h3" align="center" numberOfLines={1}>
-            {workout.title}
+            {sessionTitle ?? workout.title}
           </AppText>
         </View>
-        <Pressable onPress={endWorkout} hitSlop={8} style={styles.closeBtn}>
-          <Ionicons name="close" size={20} color={colors.textPrimary} />
+        <Pressable onPress={leaveWorkout} hitSlop={8} style={styles.closeBtn}>
+          <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
         </Pressable>
         <View style={styles.headerSpacer} />
         {timer.status === 'idle' ? (
@@ -930,7 +1052,11 @@ export function WorkoutSessionScreen() {
         </Animated.View>
       )}
 
-      <SessionToasts toasts={toasts} onDismiss={dismissToast} />
+      <SessionToasts
+        toasts={toasts}
+        onDismiss={dismissToast}
+        topOffset={headerBottom > 0 ? headerBottom + spacing.sm : undefined}
+      />
     </SafeAreaView>
   );
 }

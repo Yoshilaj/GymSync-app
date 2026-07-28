@@ -5,6 +5,8 @@ export type {
   UseWorkoutSessionArgs,
   WorkoutSessionApi,
   WorkoutSessionStatus,
+  SessionResume,
+  SnapshotWorkout,
 } from './useWorkoutSession';
 export { useTextChat } from './useTextChat';
 export type {

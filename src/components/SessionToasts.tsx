@@ -18,6 +18,9 @@ interface Props {
   durationMs?: number;
   /** At most this many visible at once (oldest dismissed first). */
   maxVisible?: number;
+  /** Absolute top of the stack — pass the header's bottom edge so toasts land
+   * below it instead of colliding with the title. */
+  topOffset?: number;
 }
 
 /**
@@ -29,6 +32,7 @@ export function SessionToasts({
   onDismiss,
   durationMs = 2500,
   maxVisible = 2,
+  topOffset,
 }: Props) {
   const { colors } = useTheme();
   const styles = useStyles();
@@ -44,7 +48,10 @@ export function SessionToasts({
   if (visible.length === 0) return null;
 
   return (
-    <View style={styles.stack} pointerEvents="box-none">
+    <View
+      style={[styles.stack, topOffset != null && { top: topOffset }]}
+      pointerEvents="box-none"
+    >
       {visible.map((t) => (
         <Animated.View
           key={t.id}
