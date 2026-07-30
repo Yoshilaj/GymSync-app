@@ -285,18 +285,66 @@ WHAT YOU KNOW:
 """
 
 
-def build_system_prompt(preset_id: str, custom_override: str | None = None) -> str:
+# Rules that name a Premium-only tool, and what they become without it.
+#
+# The prompt has to describe the toolset the model actually receives. Left
+# as-is below Premium, these lines instruct the model to call tools that were
+# filtered out — it would attempt the call, get nothing, and stall the turn.
+# Each replacement keeps the BEHAVIOUR (still notice an injury, still answer the
+# question) and drops only the tool call.
+_TOOL_DOWNGRADES: tuple[tuple[str, str], ...] = (
+    (
+        "- When the user reports pain, soreness, a tweak, or an injury, call report_injury so it is\n"
+        "  remembered. If you then substitute an exercise, use swap_exercise.",
+        "- When the user reports pain, soreness, a tweak, or an injury, take it seriously in the\n"
+        "  moment. If you then substitute an exercise, use swap_exercise.",
+    ),
+    (
+        "- For substantive training / programming / nutrition / recovery questions, ground your\n"
+        "  answer with search_knowledge and mention the evidence briefly (it returns cited passages).",
+        "- For substantive training / programming / nutrition / recovery questions, answer from\n"
+        "  established training principles. Do not claim to be citing a source.",
+    ),
+    (
+        "- When the user wants a new or revised weekly plan: call escalate_to_reasoning, use\n"
+        "  search_knowledge to ground the programming choices (frequency, volume, split, rep\n"
+        "  ranges), call list_exercises for the catalog, then call propose_workout_plan with\n"
+        "  the COMPLETE plan using exact exercise_id values from the catalog.",
+        "- When the user wants a new or revised weekly plan: call escalate_to_reasoning, call\n"
+        "  list_exercises for the catalog, then call propose_workout_plan with the COMPLETE\n"
+        "  plan using exact exercise_id values from the catalog.",
+    ),
+)
+
+
+def _rules_for_tier(rules: str, tier: str) -> str:
+    if tier == "premium":
+        return rules
+    for premium_text, downgraded in _TOOL_DOWNGRADES:
+        rules = rules.replace(premium_text, downgraded)
+    return rules
+
+
+def build_system_prompt(
+    preset_id: str, custom_override: str | None = None, tier: str = "premium"
+) -> str:
     """Mechanics, then how to talk, then who you are, then proof.
 
     Voice guidance sits last so it lands closest to the conversation, where it
     carries the most weight against 70 lines of tool mechanics.
+
+    `tier` keeps the rules in step with the filtered tool list — see
+    _TOOL_DOWNGRADES. It defaults to premium so callers that don't care (tests,
+    prompt inspection) get the full text.
     """
+    rules = _rules_for_tier(_APP_RULES, tier)
+
     if custom_override:
-        return f"{_APP_RULES}\n{_VOICE_RULES}\n{custom_override}"
+        return f"{rules}\n{_VOICE_RULES}\n{custom_override}"
 
     preset = PRESETS.get(preset_id, PRESETS[DEFAULT_PRESET])
     return (
-        f"{_APP_RULES}\n"
+        f"{rules}\n"
         f"{_VOICE_RULES}\n"
         f"{preset['system_prompt']}\n\n"
         f"Examples of your voice:\n{preset['voice_examples']}"

@@ -1,4 +1,12 @@
-from fastapi import APIRouter, Depends
+"""
+Coach personality — read the active preset, change it.
+
+"Choice of Coach Personality" is a Pro capability, but the gate is on CHANGING
+an established choice, not on writing at all: onboarding's coach-matching quiz
+calls PUT for every new user, long before anyone could have paid. Free keeps
+whatever the quiz picked and can't switch later. See update_personality.
+"""
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from supabase import AsyncClient
 
@@ -10,6 +18,8 @@ from app.agents.personalities import (
 )
 from app.agents.tools import utcnow
 from app.auth import get_current_user_id
+from app.billing import store
+from app.billing.entitlement import meets
 from app.database import get_db
 
 router = APIRouter(tags=["personality"])
@@ -48,8 +58,33 @@ async def update_personality(
     db: AsyncClient = Depends(get_db),
 ) -> PersonalityResponse:
     if body.preset_id not in PRESETS:
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"Unknown preset_id: {body.preset_id}")
+
+    # Gate the CHANGE, not the write. The first write — onboarding's quiz result
+    # — always lands, so a free user keeps the coach they were matched with.
+    # Switching afterwards is the Pro capability.
+    existing = (
+        await db.table("personalities")
+        .select("preset_id")
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    current = existing.data[0]["preset_id"] if existing.data else None
+
+    if current is not None and current != body.preset_id:
+        tier = await store.tier_for_user(user_id, db)
+        if not meets(tier, "pro"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "upgrade_required",
+                    "feature": "coach_personality",
+                    "current_tier": tier,
+                    "required_tier": "pro",
+                    "message": "Choosing a different coach is a Pro feature.",
+                },
+            )
 
     await db.table("personalities").upsert(
         {"user_id": user_id, "preset_id": body.preset_id, "updated_at": utcnow()},

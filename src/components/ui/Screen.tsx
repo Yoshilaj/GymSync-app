@@ -29,6 +29,13 @@ interface Props {
   fill?: GradientKey;
   /** Pad scroll content so it clears the floating tab bar (off for non-tab screens). */
   tabBarClearance?: boolean;
+  /**
+   * Override the scroll content's bottom padding. Only useful with
+   * `tabBarClearance={false}`, where the default `spacing.xxxl` is generous
+   * breathing room for a scrolling page but pure dead space on a screen
+   * designed to fit exactly (see the paywall).
+   */
+  padBottom?: number;
 }
 
 /**
@@ -45,12 +52,14 @@ export function Screen({
   wash = false,
   fill,
   tabBarClearance = true,
+  padBottom,
 }: Props) {
   const { gradients } = useTheme();
   const styles = useStyles();
   const clearance = useTabBarClearance();
   const insets = useSafeAreaInsets();
-  const bottomPad = tabBarClearance ? clearance.scroll : spacing.xxxl;
+  const bottomPad =
+    padBottom ?? (tabBarClearance ? clearance.scroll : spacing.xxxl);
   // A pinned footer must never sit under the floating tab bar (tab screens) or
   // the home indicator (modal/pushed screens outside the tabs).
   const footerPad = tabBarClearance

@@ -10,7 +10,8 @@ import { ProfileEditScreen } from '@/screens/settings/ProfileEditScreen';
 import { AccountSettingsScreen } from '@/screens/settings/AccountSettingsScreen';
 import { ChangeEmailScreen } from '@/screens/settings/ChangeEmailScreen';
 import { ChangePasswordScreen } from '@/screens/settings/ChangePasswordScreen';
-import { PlanSettingsScreen } from '@/screens/settings/PlanSettingsScreen';
+import { PricingSettingsRoute } from '@/screens/pricing';
+import type { PricingContext, PaidTierId } from '@/screens/pricing';
 import { NotificationsSettingsScreen } from '@/screens/settings/NotificationsSettingsScreen';
 import { WorkoutSettingsScreen } from '@/screens/settings/WorkoutSettingsScreen';
 import { LanguageSettingsScreen } from '@/screens/settings/LanguageSettingsScreen';
@@ -30,7 +31,9 @@ export type SettingsStackParamList = {
   ChangePassword: undefined;
   // No `DeleteAccount` route: deleting is confirmed by a dialog over Account
   // settings (DeleteAccountDialog), not by a page you navigate to.
-  PlanSettings: undefined;
+  // Named `Pricing`, not `Plan*`: in this codebase "plan" means the workout
+  // plan (PlanStack, PlanContext, api/plan.ts), and reusing it here reads wrong.
+  Pricing: { context?: PricingContext; highlight?: PaidTierId } | undefined;
   Notifications: undefined;
   WorkoutSettings: undefined;
   Language: undefined;
@@ -39,7 +42,8 @@ export type SettingsStackParamList = {
   Inquiry: undefined;
   Faq: undefined;
   AboutUs: undefined;
-  Legal: { kind: 'privacy' | 'terms' };
+  /** `fromModal` when pushed over the paywall — no tab bar to clear. */
+  Legal: { kind: 'privacy' | 'terms'; fromModal?: boolean };
   /** Dev-only: walks the real onboarding flow without touching the profile. */
   OnboardingPreview: undefined;
 };
@@ -60,7 +64,13 @@ export function SettingsNavigator() {
       <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-      <Stack.Screen name="PlanSettings" component={PlanSettingsScreen} />
+      {/* The paywall is a decision, not a settings sub-page: presented full
+          screen so the floating tab bar can't compete with the CTA. */}
+      <Stack.Screen
+        name="Pricing"
+        component={PricingSettingsRoute}
+        options={{ presentation: 'fullScreenModal' }}
+      />
       <Stack.Screen name="Notifications" component={NotificationsSettingsScreen} />
       <Stack.Screen name="WorkoutSettings" component={WorkoutSettingsScreen} />
       <Stack.Screen name="Language" component={LanguageSettingsScreen} />

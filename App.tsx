@@ -20,6 +20,7 @@ import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
 import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
+import { BillingProvider } from '@/billing/BillingProvider';
 import { LaunchScreen } from '@/components/LaunchScreen';
 import { readPendingStash, type PendingStash } from '@/screens/onboarding/draftStash';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
@@ -171,7 +172,13 @@ export default function App() {
             <UserProvider>
               <ThemeProvider>
                 <PlanProvider>
-                  {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
+                  {/* Inside AuthProvider because it needs the token, and
+                      mounted exactly once: useIAP opens a native StoreKit
+                      connection and registers transaction listeners, so a
+                      second instance would deliver every purchase twice. */}
+                  <BillingProvider>
+                    {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
+                  </BillingProvider>
                 </PlanProvider>
               </ThemeProvider>
             </UserProvider>

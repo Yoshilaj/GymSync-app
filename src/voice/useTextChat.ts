@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import { AppActionMessage, PlanProposalWire, ServerMessage } from './protocol';
+import { parseUpgrade, type UpgradeRequired } from '@/billing/upgrade';
 
 /**
  * pending → the card shows Accept / Request changes;
@@ -46,6 +47,12 @@ export type ChatItem =
       createdAt: number;
       streaming?: boolean;
       failed?: boolean;
+      /**
+       * Refused by the message quota rather than by a transient failure.
+       * Distinct from `failed` because retrying would hit the same wall — the
+       * way out is upgrading, not tapping again.
+       */
+      blocked?: boolean;
     }
   | { kind: 'action'; id: string; text: string; createdAt: number }
   | {
@@ -125,9 +132,16 @@ export interface TextChatApi {
 export function useTextChat({
   userId,
   getToken,
+  onUpgradeRequired,
 }: {
   userId: string;
   getToken: () => Promise<string>;
+  /**
+   * The free-tier message allowance is spent. The screen opens the paywall;
+   * the refused message stays on screen marked unsent so nothing is silently
+   * lost.
+   */
+  onUpgradeRequired?: (upgrade: UpgradeRequired) => void;
 }): TextChatApi {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -143,6 +157,10 @@ export function useTextChat({
   // any further narration deltas for this turn are dropped (de-duplication).
   const suppressDeltasRef = useRef(false);
   const pendingUserIdRef = useRef<string | null>(null);
+  // The message most recently handed to the socket. A quota refusal arrives
+  // asynchronously, after pendingUserIdRef has already been cleared, so this
+  // is what lets the refusal find the right bubble to mark.
+  const lastSentIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
   // Read at handshake time (never closure-captured) so a mid-conversation
   // reconnect resumes the same server conversation instead of forking one.
@@ -259,11 +277,33 @@ export function useTextChat({
           finalizeStream();
           if (mountedRef.current) setError(msg.message);
           break;
+        case 'upgrade_required': {
+          // Out of free messages. The turn never ran, so mark the message
+          // unsent and hand the prompt up — but do NOT set `error`, which
+          // renders a red connection banner for what is a sales moment.
+          finalizeStream();
+          const upgrade = parseUpgrade(msg);
+          const blockedId = lastSentIdRef.current;
+          if (mountedRef.current) {
+            setBusy(false);
+            if (blockedId) {
+              setItems((prev) =>
+                prev.map((it) =>
+                  it.kind === 'message' && it.id === blockedId
+                    ? { ...it, failed: true, blocked: true }
+                    : it,
+                ),
+              );
+            }
+          }
+          if (upgrade) onUpgradeRequired?.(upgrade);
+          break;
+        }
         default:
           break;
       }
     },
-    [finalizeStream],
+    [finalizeStream, onUpgradeRequired],
   );
 
   const dropSocket = useCallback(() => {
@@ -341,6 +381,7 @@ export function useTextChat({
       pendingUserIdRef.current = userItemId;
       try {
         const socket = await ensureConnected();
+        lastSentIdRef.current = userItemId;
         socket.send({ type: 'message', text });
         pendingUserIdRef.current = null;
       } catch (e) {
@@ -379,6 +420,9 @@ export function useTextChat({
     (id: string) => {
       const item = items.find((it) => it.kind === 'message' && it.id === id);
       if (!item || item.kind !== 'message' || !item.failed) return;
+      // Blocked by the quota, not by a transient failure. Retrying would hit
+      // the same wall and re-open the paywall, which reads as a broken button.
+      if (item.blocked) return;
       setItems((prev) =>
         prev.map((it) =>
           it.kind === 'message' && it.id === id ? { ...it, failed: false } : it,

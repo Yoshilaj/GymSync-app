@@ -3,10 +3,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware 
 
+from app.billing.apple import validate_billing_settings
 from app.database import close_db, init_db
 from app.routers import (
     account,
     auth,
+    billing,
     chat,
     conversations,
     personality,
@@ -22,6 +24,11 @@ from app.routers.auth import close_auth_client, init_auth_client
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Before anything else: refuse to start on a billing config that could hand
+    # out paid access for free (unsigned Xcode transactions in production, a
+    # Production environment with no App Store ID). A startup crash with a clear
+    # message beats discovering it as an entitlement bug.
+    validate_billing_settings()
     await init_db()
     await init_auth_client()
     yield
@@ -48,6 +55,7 @@ app.include_router(progress.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
+app.include_router(billing.router, prefix="/api")
 app.include_router(voice_ws.router)
 
 

@@ -146,7 +146,31 @@ export type ServerMessage =
    * A missing `fatal` key (older server) is treated as non-fatal while the
    * socket stays open.
    */
-  | { type: 'error'; message: string; fatal?: boolean };
+  | { type: 'error'; message: string; fatal?: boolean }
+  /**
+   * A paid feature was refused (voice session, chat message).
+   *
+   * Deliberately NOT an `error`, and deliberately not a socket close. This
+   * socket is shared between voice and text chat, so closing over a voice
+   * quota would take chat down with it — and the client silently retries
+   * every close code except 4001, which would turn "upgrade to Pro" into a
+   * generic "Connection closed". The socket stays open; the client opens the
+   * paywall on `required_tier`.
+   *
+   * Snake_case because it is the server's HTTP 403 detail put on the wire
+   * verbatim; parse it with parseUpgrade() from @/billing/upgrade.
+   */
+  | {
+      type: 'upgrade_required';
+      code: 'upgrade_required' | 'quota_exhausted';
+      feature: string;
+      current_tier: string;
+      required_tier: string;
+      message: string;
+      limit?: number;
+      used?: number;
+      resets_at?: string | null;
+    };
 
 /**
  * Conversation phase — "Machine A" from docs/voice-client-plan.md §5.

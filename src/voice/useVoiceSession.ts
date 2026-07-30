@@ -14,6 +14,7 @@ import { MicGate } from './MicGate';
 import { SileroVad } from './SileroVad';
 import { LevelEmitter, type WaveformSource } from './levels';
 import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
+import { parseUpgrade, type UpgradeRequired } from '@/billing/upgrade';
 
 /** How long a non-fatal notice banner stays up before auto-clearing. */
 const NOTICE_MS = 5000;
@@ -53,6 +54,12 @@ export interface UseVoiceSessionArgs {
    * fallback — render it so a voiceless turn still reaches the user.
    */
   onText?: (delta: string) => void;
+  /**
+   * Live voice coaching was refused — not subscribed, or this month's sessions
+   * are spent. The screen should open the paywall on `requiredTier` rather than
+   * show an error: the session simply didn't start, and nothing is broken.
+   */
+  onUpgradeRequired?: (upgrade: UpgradeRequired) => void;
 }
 
 export interface VoiceSessionApi {
@@ -110,6 +117,7 @@ export function useVoiceSession({
   onTranscript,
   onAppAction,
   onText,
+  onUpgradeRequired,
 }: UseVoiceSessionArgs): VoiceSessionApi {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -382,9 +390,19 @@ export function useVoiceSession({
           if (msg.fatal) fail(msg.message);
           else showNotice(msg.message);
           break;
+        case 'upgrade_required': {
+          // The voice session never started, so there is nothing to tear down
+          // and nothing failed. Return to idle and let the screen offer the
+          // upgrade — calling fail() here would paint a red error over what is
+          // really a sales moment.
+          const upgrade = parseUpgrade(msg);
+          if (upgrade) onUpgradeRequired?.(upgrade);
+          goto('idle');
+          break;
+        }
       }
     },
-    [goto, fail, showNotice, startMic, finishTurn],
+    [goto, fail, showNotice, startMic, finishTurn, onUpgradeRequired],
   );
 
   // Open a socket against the given session id. Extracted from start() so the

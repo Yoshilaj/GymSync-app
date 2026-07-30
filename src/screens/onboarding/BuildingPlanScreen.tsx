@@ -41,6 +41,7 @@ import { updatePersonality } from '@/api/personality';
 import { useOnboarding } from './OnboardingContext';
 import { matchCoach } from './coachMatch';
 import { GOALS } from './options';
+import { isUpgradeError } from '@/billing/upgrade';
 
 /** Dev replay only — lets the reveal be reviewed without burning a generation.
  *  (Exported for PreparingScreen's preview path.) */
@@ -144,6 +145,9 @@ export function BuildingPlanScreen() {
   ].filter((s): s is string => !!s);
 
   const [phase, setPhase] = useState<Phase>('generating');
+  // Set when generation was REFUSED (free plan already used) rather than
+  // failing. The default copy blames the network, which would be a lie here.
+  const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanProposalWire | null>(null);
   const [status, setStatus] = useState<ProposalStatus>('pending');
@@ -221,7 +225,11 @@ export function BuildingPlanScreen() {
         setProposalId(result.proposal_id);
         setPlan(result.plan);
         setPhase('ready');
-      } catch {
+      } catch (e) {
+        // A refusal is not a failure: the request was understood and declined
+        // because the free plan generation is spent. Say that, instead of
+        // showing an offline icon and inviting a retry that can't succeed.
+        setBlockedMsg(isUpgradeError(e) ? e.upgrade.message : null);
         setPhase('error');
       }
     },
@@ -331,15 +339,17 @@ export function BuildingPlanScreen() {
                 color={colors.warningText}
               />
             </View>
-            <AppText variant="h3">That didn't work</AppText>
+            <AppText variant="h3">
+              {blockedMsg ? 'Plan limit reached' : "That didn't work"}
+            </AppText>
             <AppText
               variant="body"
               color="textSecondary"
               align="center"
               style={styles.errorBody}
             >
-              We couldn't build your plan just now. You can try again, or skip
-              ahead and ask your coach for a plan anytime.
+              {blockedMsg ??
+                "We couldn't build your plan just now. You can try again, or skip ahead and ask your coach for a plan anytime."}
             </AppText>
             {submitError ? (
               <AppText variant="caption" color="dangerText" align="center">

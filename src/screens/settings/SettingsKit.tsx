@@ -45,17 +45,24 @@ export function SettingsPage({
   subtitle,
   children,
   footer,
+  tabBarClearance = true,
 }: {
   title?: string;
   subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /**
+   * Off when this page is pushed on top of a modal (the paywall pushes Legal),
+   * where there is no floating tab bar to clear and the clearance would read as
+   * a dead gap at the end of the page.
+   */
+  tabBarClearance?: boolean;
 }) {
   const styles = useStyles();
   return (
-    // Settings screens live INSIDE the tab navigator, so both the scroll
-    // content and any pinned footer must clear the floating tab bar.
-    <Screen scroll padded={false} footer={footer}>
+    // Settings screens normally live INSIDE the tab navigator, so both the
+    // scroll content and any pinned footer must clear the floating tab bar.
+    <Screen scroll padded={false} footer={footer} tabBarClearance={tabBarClearance}>
       <ScreenHeader variant="detail" title={title} subtitle={subtitle} />
       <View style={styles.content}>{children}</View>
     </Screen>

@@ -347,6 +347,30 @@ UI_ACTION_TOOLS = {
 ROUTING_TOOLS = {"escalate_to_reasoning"}
 
 
+# Tools that must remain callable no matter the tier, because onboarding's plan
+# generation runs through this same loop and breaks without them.
+ESSENTIAL_TOOLS = frozenset({"list_exercises", "propose_workout_plan"})
+
+
+def tools_for_tier(tier: str) -> list[dict]:
+    """
+    The tool list for one tier — Premium capabilities removed below it.
+
+    Filtering the definitions (rather than only refusing at execution) means the
+    model never learns the tool exists, so it doesn't narrate a capability the
+    customer doesn't have. execute_tool re-checks anyway; see the tier gate there.
+
+    Cost of doing this: TOOL_DEFINITIONS sits in the cached system block, so
+    there is now one prompt-cache variant per tier. Three variants is cheap
+    against not shipping paid features for free.
+    """
+    from app.entitlements import PREMIUM_TOOLS  # local: avoids an import cycle
+
+    if tier == "premium":
+        return TOOL_DEFINITIONS
+    return [t for t in TOOL_DEFINITIONS if t["name"] not in PREMIUM_TOOLS]
+
+
 # ── Execution context ─────────────────────────────────────────────────────────
 
 @dataclass
@@ -359,6 +383,10 @@ class ToolContext:
     # instead of the DB, and NOTHING persists. When set, only the read-only
     # generation tools are callable (enforced in execute_tool).
     anonymous_profile: dict | None = None
+    # The caller's subscription tier, for the Premium tool gate in execute_tool.
+    # Defaults to "premium" so internal callers that build a context directly
+    # keep working; every request path sets it explicitly.
+    tier: str = "premium"
 
 
 # ── Session plan helpers ──────────────────────────────────────────────────────
@@ -648,6 +676,14 @@ async def execute_tool(
         "propose_workout_plan",
     ):
         return {"error": f"{name} is not available before an account exists."}, []
+
+    # Defence in depth for the Premium tools. They are already filtered out of
+    # the definitions the model receives, so reaching here means either a stale
+    # cached tool list or a model inventing a call — neither should execute.
+    from app.entitlements import PREMIUM_TOOLS
+
+    if name in PREMIUM_TOOLS and ctx.tier != "premium":
+        return {"error": f"{name} requires a Premium subscription."}, []
 
     if name == "start_timer":
         duration = args.get("duration_seconds", 90)

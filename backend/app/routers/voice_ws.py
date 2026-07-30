@@ -49,6 +49,11 @@ Server → Client:
                                             ← fatal:false = per-turn failure, always
                                               followed by "done" (session continues);
                                               fatal:true = session dead, socket closes
+  {"type": "upgrade_required", "code": ..., "feature": ..., "required_tier": ...,
+   "current_tier": ..., "message": ..., "limit"?: n, "used"?: n, "resets_at"?: iso}
+                                            ← a paid feature was refused. NOT an
+                                              error: the socket stays open and the
+                                              client opens the paywall
   <binary>                                  ← MP3 audio chunks (voice mode)
 
 Auth: ?token=<supabase_jwt> query param.
@@ -61,8 +66,29 @@ from app.agents import conversation_store
 from app.agents.core import _agent_events
 from app.agents.voice import VoiceSession
 from app.database import get_db
+from app.entitlements import (
+    CHAT_MESSAGE,
+    VOICE_SESSION,
+    QuotaExceeded,
+    check_quota,
+    consume_quota,
+)
 
 router = APIRouter(tags=["voice"])
+
+
+async def _refuse(websocket: WebSocket, exc: QuotaExceeded) -> None:
+    """
+    Tell the client a paid feature is unavailable, and keep the socket open.
+
+    Deliberately NOT a close, and NOT {"type":"error"}. This socket is shared:
+    voice mode and text chat both ride it, so closing over a voice quota would
+    also kill chat. And the client auto-retries every close code except 4001
+    (useVoiceSession.ts), so a quota close would be retried and then surface as
+    a generic "Connection closed" — the customer would never learn they need to
+    upgrade.
+    """
+    await websocket.send_json({"type": "upgrade_required", **exc.detail()})
 
 
 async def _authenticate(token: str, db) -> str | None:
@@ -156,12 +182,29 @@ async def voice_ws(
                     voice_session = None
 
                 if voice_enabled:
-                    voice_session = VoiceSession(websocket, user_id, session_id, db)
-                    await voice_session.start()
+                    # Live voice coaching is the paid capability. Gated on
+                    # voice_enabled rather than on connect, because a text-chat
+                    # client opens this same socket with voice:false and must
+                    # not be charged against a voice allowance.
+                    #
+                    # The allowance is consumed here, at the point Deepgram and
+                    # TTS actually start costing money, rather than per turn.
+                    try:
+                        await check_quota(VOICE_SESSION, user_id, db)
+                    except QuotaExceeded as exc:
+                        await _refuse(websocket, exc)
+                        voice_enabled = False
+                    else:
+                        voice_session = VoiceSession(websocket, user_id, session_id, db)
+                        await voice_session.start()
+                        await consume_quota(VOICE_SESSION, user_id, db)
 
                 await websocket.send_json({
                     "type": "ack",
                     "session_id": session_id,
+                    # Reports what the client actually GOT. A refused voice
+                    # session acks voice:false, so the UI never renders a
+                    # listening state for a session that isn't running.
                     "voice": voice_enabled,
                     "conversation_id": conversation_id,
                 })
@@ -203,6 +246,18 @@ async def voice_ws(
                 if not text:
                     continue
 
+                # Free tier's "Limited messages". Checked BEFORE the
+                # conversation is lazily created below, so a refused message
+                # leaves no empty thread behind in the chat list.
+                try:
+                    await check_quota(CHAT_MESSAGE, user_id, db)
+                except QuotaExceeded as exc:
+                    await _refuse(websocket, exc)
+                    # The client's turn state machine waits for "done" to
+                    # release the composer; without it the input stays locked.
+                    await websocket.send_json({"type": "done"})
+                    continue
+
                 # First message of a fresh chat-tab thread: create the
                 # conversation now (never earlier — an abandoned starter tap
                 # must leave no orphan row), seed the opener, tell the client.
@@ -229,6 +284,11 @@ async def voice_ws(
                     text, session_id, user_id, db, conversation_id=conversation_id
                 ):
                     await websocket.send_json(event)
+
+                # Counted only after the turn ran. A message that failed on our
+                # side (model error, dropped connection) must not burn one of a
+                # free user's ten.
+                await consume_quota(CHAT_MESSAGE, user_id, db)
 
             else:
                 await websocket.send_json({"type": "error", "message": f"Unknown type: {msg_type}"})

@@ -4,3 +4,5 @@ export { useDictation } from './useDictation';
 export type { DictationState } from './useDictation';
 export { useConversations } from './useConversations';
 export { useProgress } from './useProgress';
+export { useEntitlement } from './useEntitlement';
+export type { EntitlementStatus } from './useEntitlement';

@@ -11,6 +11,11 @@ import {
   type GradientKey,
   type GradientStops,
 } from './gradients';
+import {
+  lightIllustration,
+  darkIllustration,
+  type IllustrationPalette,
+} from './illustration';
 
 export type ColorScheme = 'light' | 'dark';
 
@@ -19,6 +24,8 @@ export interface Theme {
   colors: Record<ColorKey, string>;
   shadows: Record<ShadowKey, ShadowPreset>;
   gradients: Record<GradientKey, GradientStops>;
+  /** Drawn artwork only — never text, controls, or surfaces. */
+  illustration: IllustrationPalette;
 }
 
 export const lightTheme: Theme = {
@@ -26,6 +33,7 @@ export const lightTheme: Theme = {
   colors: lightColors,
   shadows: lightShadows,
   gradients: lightGradients,
+  illustration: lightIllustration,
 };
 
 export const darkTheme: Theme = {
@@ -33,6 +41,7 @@ export const darkTheme: Theme = {
   colors: darkColors,
   shadows: darkShadows,
   gradients: darkGradients,
+  illustration: darkIllustration,
 };
 
 export const themes: Record<ColorScheme, Theme> = {

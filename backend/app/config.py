@@ -32,5 +32,33 @@ class Settings(BaseSettings):
     knowledge_cache_ttl_s: int = 86_400
     knowledge_corpus_version: str = "v2"
 
+    # ── Apple In-App Purchase ────────────────────────────────────────────────
+    # Must match app.json's ios.bundleIdentifier exactly; Apple's verifier
+    # rejects a transaction whose bundleId differs.
+    apple_bundle_id: str = "com.yoshinishikawahara.gymsync"
+
+    # The app's numeric App Store ID. Unknown until the app record exists, and
+    # SignedDataVerifier REFUSES to construct a Production verifier without it
+    # — so leaving this 0 is what correctly keeps Production unreachable today.
+    apple_app_id: int = 0
+
+    # Which environments a transaction may be verified against, tried in order.
+    #
+    # This list is the security boundary. It is NOT derived from the incoming
+    # transaction: the payload carries its own `environment` field, and Apple's
+    # library skips signature verification entirely for "Xcode"/"LocalTesting",
+    # so trusting that field would let anyone POST an unsigned JWT claiming
+    # Xcode and be handed Premium for life. See app/billing/apple.py.
+    apple_environments: str = "Production,Sandbox"
+
+    # Opt-in for the local .storekit simulator flow, where transactions are
+    # signed by a local test certificate and CANNOT be cryptographically
+    # verified. Startup refuses to boot if this is on while app_env is
+    # "production" — see validate_billing_settings().
+    apple_allow_local_testing: bool = False
+
+    # Deployment marker. "development" | "production".
+    app_env: str = "development"
+
 
 settings = Settings()

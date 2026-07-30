@@ -24,6 +24,7 @@ from app.agents.tools import (
     _pick_today_workout,
     blocks_to_dicts,
     execute_tool,
+    tools_for_tier,
     utcnow,
 )
 from app.config import settings
@@ -518,6 +519,33 @@ async def _save_history(
     ).eq("id", session_id).execute()
 
 
+async def _resolve_tier(
+    user_id: str, db: AsyncClient | None, anonymous_profile: dict | None
+) -> str:
+    """
+    The caller's subscription tier, for the tool filter and the prompt.
+
+    Fails CLOSED. If the tier can't be read — no database handle, a transient
+    read failure — the answer is "free". The cost of that is a paying customer
+    briefly losing the Premium tools during an outage; the cost of failing open
+    is handing those tools to everyone whenever the database hiccups. Only one
+    of those is a security bug.
+
+    Pre-signup generation has no account to read, and its toolset is already
+    restricted to the two read-only generation tools.
+    """
+    if anonymous_profile is not None or db is None:
+        return "free"
+
+    from app.billing import store as billing_store
+
+    try:
+        return await billing_store.tier_for_user(user_id, db)
+    except Exception:
+        logger.warning("tier lookup failed for %s; treating as free", user_id, exc_info=True)
+        return "free"
+
+
 async def _agent_events(
     user_message: str,
     session_id: str | None,
@@ -536,11 +564,15 @@ async def _agent_events(
       {"type": "error", "message": "..."}
     """
     client = _get_client()
+
+    tier = await _resolve_tier(user_id, db, anonymous_profile)
+
     ctx = ToolContext(
         user_id=user_id,
         session_id=session_id,
         db=db,
         anonymous_profile=anonymous_profile,
+        tier=tier,
     )
 
     if anonymous_profile is not None:
@@ -564,8 +596,12 @@ async def _agent_events(
         if personality_preset:
             personality = {"preset_id": personality_preset, "system_prompt_override": None}
 
+    # The prompt must describe the SAME toolset the model is handed. It names
+    # search_knowledge and report_injury in its rules, so leaving it untouched
+    # while filtering the tools would have the model try to call a tool it
+    # doesn't have and stall the turn.
     system_text = build_system_prompt(
-        personality["preset_id"], personality.get("system_prompt_override")
+        personality["preset_id"], personality.get("system_prompt_override"), tier=tier
     )
     # Cached block: personality + rules + tool defs.
     # Changes only when the user switches personality — covers ~80% of tokens.
@@ -603,7 +639,7 @@ async def _agent_events(
                 model=model,
                 system=system,
                 messages=messages,
-                tools=TOOL_DEFINITIONS,
+                tools=tools_for_tier(tier),
                 # 4096: a full propose_workout_plan tool call alone exceeds 1024
                 # tokens and would truncate mid-tool_use (stop_reason max_tokens).
                 max_tokens=4096,

@@ -7,6 +7,9 @@ import { AnimatedPressable, AppText, Card } from '@/components/ui';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
+import { useEntitlement } from '@/hooks';
+import { useBilling } from '@/billing/BillingProvider';
+import { TIERS } from '@/screens/pricing';
 import type { SettingsStackParamList } from '@/navigation/SettingsNavigator';
 import {
   DestructiveRow,
@@ -26,6 +29,10 @@ export function SettingsHomeScreen() {
   const { user, profile } = useUser();
   const { user: authUser, signOut } = useAuth();
   const { preference } = useThemePref();
+  // Reads the billing seam rather than a literal. Resolves to "Free" today, and
+  // becomes correct on its own the moment a real purchase SDK is wired in.
+  const { entitlement } = useEntitlement();
+  const { manage } = useBilling();
 
   const language = (profile?.preferences?.language as string) ?? 'English';
 
@@ -71,10 +78,21 @@ export function SettingsHomeScreen() {
         <SettingsRow
           label="Plan"
           icon="card-outline"
-          value="Free"
+          value={TIERS[entitlement.tier].name}
           chevron
-          onPress={() => nav.navigate('PlanSettings')}
+          onPress={() => nav.navigate('Pricing')}
         />
+        {/* Only for someone who actually has a subscription to manage — on
+            Free this row would open Apple's sheet to an empty list. The Terms
+            promise this link exists in Settings, and App Review looks for it. */}
+        {entitlement.tier !== 'free' ? (
+          <SettingsRow
+            label="Manage subscription"
+            icon="open-outline"
+            chevron
+            onPress={() => void manage()}
+          />
+        ) : null}
         <SettingsRow
           label="Notifications"
           icon="notifications-outline"
@@ -142,6 +160,15 @@ export function SettingsHomeScreen() {
             value="Preview"
             chevron
             onPress={() => nav.navigate('OnboardingPreview')}
+          />
+          {/* Exercises the exact branch the onboarding mount will use: back
+              chevron instead of the modal's X, plus the Skip affordance. */}
+          <SettingsRow
+            label="Pricing (onboarding layout)"
+            icon="pricetag-outline"
+            value="Preview"
+            chevron
+            onPress={() => nav.navigate('Pricing', { context: 'onboarding' })}
           />
         </SettingsGroup>
       )}

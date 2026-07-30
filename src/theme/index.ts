@@ -15,6 +15,11 @@ export {
   type GradientKey,
   type GradientStops,
 } from './gradients';
+export {
+  lightIllustration,
+  darkIllustration,
+  type IllustrationPalette,
+} from './illustration';
 export { layout } from './layout';
 export { chartColors, defaultLineChartProps } from './charts';
 export {

@@ -1,4 +1,5 @@
 import { voiceConfig } from '@/voice/config';
+import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
 import { CoachPersonality } from '@/types';
 
 export interface PersonalityResponse {
@@ -22,6 +23,11 @@ async function request(
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
+    // Switching coaches is a Pro capability, so a 403 here is a paywall prompt
+    // rather than a failure. Onboarding's first write is never refused — the
+    // server gates the CHANGE, not the initial quiz result.
+    const upgrade = parseUpgrade(await res.json().then((b) => b?.detail).catch(() => null));
+    if (upgrade) throw new UpgradeRequiredError(upgrade);
     throw new Error(`Personality ${method} failed (HTTP ${res.status})`);
   }
   return (await res.json()) as PersonalityResponse;

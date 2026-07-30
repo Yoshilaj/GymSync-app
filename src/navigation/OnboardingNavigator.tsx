@@ -38,6 +38,8 @@ import { ReferralScreen } from '@/screens/onboarding/ReferralScreen';
 import { PreparingScreen } from '@/screens/onboarding/PreparingScreen';
 import { PlanPreviewScreen } from '@/screens/onboarding/PlanPreviewScreen';
 import { BuildingPlanScreen } from '@/screens/onboarding/BuildingPlanScreen';
+import { PricingOnboardingRoute } from '@/screens/pricing';
+import { LegalScreen } from '@/screens/settings/LegalScreen';
 import type { PlanProposalWire } from '@/voice/protocol';
 
 const SCREENS: Record<string, ComponentType> = {
@@ -85,7 +87,12 @@ export function OnboardingNavigator({
       resumePlan={resumePlan}
     >
       <Stack.Navigator
-        initialRouteName={resumeDraft ? BUILDING_ROUTE : ONBOARDING_STEPS[0].key}
+        // The resumed (post-signup) stack opens on the paywall, which then
+        // hands off to BuildingPlan. Coming back from SignUp is the one moment
+        // in the app where an account exists, the plan has been seen, and
+        // nothing has been saved yet — see PricingOnboardingRoute for why that
+        // is the beat the ask belongs on. Every other mount is unchanged.
+        initialRouteName={resumeDraft ? 'Pricing' : ONBOARDING_STEPS[0].key}
         screenOptions={{
           headerShown: false,
           gestureEnabled: true,
@@ -111,6 +118,20 @@ export function OnboardingNavigator({
           options={{ gestureEnabled: false }}
         />
         <Stack.Screen name="PlanPreview" component={PlanPreviewScreen} />
+        {/* Post-signup: the ask, then the save. Standalone rather than a step —
+            ONBOARDING_STEPS is the *question* registry and useStepFlow derives
+            the progress denominator from it, so a paywall in there would tell
+            people they have one more question to answer. Swipe-back is off:
+            it is the root of the resumed stack and there is nothing behind it. */}
+        <Stack.Screen
+          name="Pricing"
+          component={PricingOnboardingRoute}
+          options={{ gestureEnabled: false }}
+        />
+        {/* The paywall footer's Terms/Privacy links need somewhere to land. The
+            same screen Settings pushes — it reads everything it needs from
+            route params, so it doesn't care which stack it's in. */}
+        <Stack.Screen name="Legal" component={LegalScreen} />
         <Stack.Screen
           name={BUILDING_ROUTE}
           component={BuildingPlanScreen}

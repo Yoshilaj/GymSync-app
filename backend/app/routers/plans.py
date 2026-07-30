@@ -23,6 +23,7 @@ from app.agents.core import (
 )
 from app.auth import get_current_user_id
 from app.database import get_db
+from app.entitlements import PLAN_GENERATION, QuotaExceeded, check_quota, consume_quota
 
 router = APIRouter(tags=["plans"])
 
@@ -32,11 +33,27 @@ async def generate_plan(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
-    """One-shot, chat-free plan generation (onboarding's final step)."""
+    """One-shot, chat-free plan generation (onboarding's final step).
+
+    Metered: Free gets one plan generation, ever. Note this is only ONE of three
+    ways a plan can be generated — see adopt_proposal below and the agent's
+    propose_workout_plan tool. All three consume the same allowance, or the cap
+    is decorative.
+    """
+    try:
+        await check_quota(PLAN_GENERATION, user_id, db)
+    except QuotaExceeded as exc:
+        raise exc.as_http() from exc
+
     try:
         event = await run_plan_generation(user_id, db)
     except PlanGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # After the plan exists. A generation that failed upstream shouldn't spend
+    # the only one a free user gets.
+    await consume_quota(PLAN_GENERATION, user_id, db)
+
     return {
         "proposal_id": event["proposal_id"],
         "plan": event["plan"],
@@ -74,7 +91,14 @@ async def generate_plan_anonymous(
 ) -> dict:
     """Pre-signup generation for the onboarding reveal. Nothing persists —
     the client carries the plan across the auth boundary and POSTs
-    /plans/proposals/adopt once the account exists."""
+    /plans/proposals/adopt once the account exists.
+
+    Deliberately unauthenticated: it runs before an account exists, so there is
+    no user to meter. That is exactly why the allowance is enforced on
+    /plans/proposals/adopt instead — otherwise a signed-in free user who spent
+    their generation could call this with a hand-built profile and adopt the
+    result, and the cap would mean nothing.
+    """
     try:
         event = await run_anonymous_plan_generation(
             body.model_dump(), db, personality_preset=body.coach_preset
@@ -96,7 +120,18 @@ async def adopt_proposal(
 ) -> dict:
     """Store a plan generated pre-signup as this user's pending proposal.
     The user already saw and implicitly chose this plan — regenerating after
-    signup could silently swap it for a different one."""
+    signup could silently swap it for a different one.
+
+    Metered against the same allowance as /plans/generate: this is where an
+    anonymously-generated plan becomes a real one, and it is the authenticated
+    half of the pre-signup flow. A brand-new account has its full allowance, so
+    normal onboarding passes straight through and spends its one free plan here.
+    """
+    try:
+        await check_quota(PLAN_GENERATION, user_id, db)
+    except QuotaExceeded as exc:
+        raise exc.as_http() from exc
+
     plan = body.plan
     days = plan.get("days")
     if not isinstance(days, list) or not days:
@@ -117,6 +152,7 @@ async def adopt_proposal(
     ins = await db.table("plan_proposals").insert(
         {"user_id": user_id, "payload": payload, "status": "pending"}
     ).execute()
+    await consume_quota(PLAN_GENERATION, user_id, db)
     return {"proposal_id": ins.data[0]["id"], "plan": payload}
 
 

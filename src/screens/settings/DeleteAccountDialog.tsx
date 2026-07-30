@@ -31,6 +31,8 @@ import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button } from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { deleteAccount } from '@/api/account';
+import { useBilling } from '@/billing/BillingProvider';
+import { TIERS } from '@/screens/pricing/catalog';
 
 /**
  * What the cascade removes. One clause each — a dialog is read at a glance, so
@@ -60,6 +62,16 @@ interface Props {
 }
 
 export function DeleteAccountDialog({ visible, onClose }: Props) {
+  const { entitlement, manage } = useBilling();
+  // Apple's guidance asks for the date, not just the warning — "you'll keep
+  // being charged" lands very differently with "next on 30 Aug 2026" beside it.
+  const renewsOn = entitlement.renewsAt
+    ? new Date(entitlement.renewsAt).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : null;
   const { colors } = useTheme();
   const styles = useStyles();
   const { width } = useWindowDimensions();
@@ -179,13 +191,38 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
             ))}
           </View>
 
-          {/* Names only what the reader would get wrong. Where to cancel is a
-              place everyone already knows, and spelling it out ("…in Settings →
-              Apple ID") was the second line that made this caveat look like an
-              afterthought pasted under the list. */}
-          <AppText variant="caption" color="textTertiary" style={styles.note}>
-            This won't cancel a subscription.
-          </AppText>
+          {/* A subscriber deleting their account is the one case where the
+              quiet caption isn't enough: they are about to keep being charged
+              by Apple for something they can no longer reach, and Apple's own
+              account-deletion guidance requires we say so, name the date, and
+              hand them the way out. So it becomes an actionable block rather
+              than fine print — everyone else still gets the one-liner. */}
+          {entitlement.tier !== 'free' ? (
+            <View style={styles.billing}>
+              <AppText variant="caption" color="warningText">
+                {renewsOn
+                  ? `Deleting your account does NOT cancel your ${TIERS[entitlement.tier].name} subscription. Apple will keep charging you, next on ${renewsOn}.`
+                  : `Deleting your account does NOT cancel your ${TIERS[entitlement.tier].name} subscription. Apple will keep charging you.`}
+              </AppText>
+              <Pressable
+                onPress={() => void manage()}
+                hitSlop={8}
+                style={({ pressed }) => pressed && styles.pressedLink}
+              >
+                <AppText variant="caption" color="accentText">
+                  Manage subscription
+                </AppText>
+              </Pressable>
+            </View>
+          ) : (
+            /* Names only what the reader would get wrong. Where to cancel is a
+               place everyone already knows, and spelling it out ("…in Settings →
+               Apple ID") was the second line that made this caveat look like an
+               afterthought pasted under the list. */
+            <AppText variant="caption" color="textTertiary" style={styles.note}>
+              This won't cancel a subscription.
+            </AppText>
+          )}
 
           {error ? (
             <AppText
@@ -287,6 +324,10 @@ const useStyles = makeStyles((t) => ({
   // should wrap inside its own column, not push the row past the padding.
   itemLabel: { flex: 1 },
   note: { marginTop: spacing.lg },
+  // Its own block, not a caption: this is the one thing on the card that costs
+  // money if it goes unread.
+  billing: { marginTop: spacing.lg, gap: spacing.xs },
+  pressedLink: { opacity: 0.6 },
   error: { marginTop: spacing.sm },
   actions: { gap: spacing.sm, marginTop: spacing.xl },
 }));

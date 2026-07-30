@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -77,9 +78,11 @@ export function SyncChatScreen() {
   const { user: authUser, getToken } = useAuth();
   const clearance = useTabBarClearance();
 
+  const promptUpgrade = useUpgradePrompt();
   const chat = useTextChat({
     userId: authUser?.id ?? '',
     getToken,
+    onUpgradeRequired: promptUpgrade,
   });
 
   // ── Conversation history panel ────────────────────────────────────────────

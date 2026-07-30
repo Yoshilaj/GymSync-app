@@ -40,6 +40,7 @@ import {
 } from '@/voice';
 import { Exercise, PlannedSet } from '@/types';
 import { PlanStackParamList } from '@/navigation/PlanStack';
+import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
 type RouteP = RouteProp<PlanStackParamList, 'WorkoutSession'>;
@@ -533,10 +534,12 @@ export function WorkoutSessionScreen() {
     onResume: applyResume,
     resolveConflict,
   });
+  const promptUpgrade = useUpgradePrompt();
   const voice = useVoiceSession({
     userId: authUser?.id ?? '',
     getToken,
     onAppAction: handleAppAction,
+    onUpgradeRequired: promptUpgrade,
   });
 
   const voiceLive = voice.phase !== 'idle' && voice.phase !== 'error';

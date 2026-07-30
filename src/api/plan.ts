@@ -6,6 +6,7 @@
  * consuming the shape it always has.
  */
 import { voiceConfig } from '@/voice/config';
+import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
 import type { PlannedExercise, PlannedWorkout, WeeklyPlan } from '@/types';
 import type { PlanProposalWire } from '@/voice/protocol';
 
@@ -80,18 +81,32 @@ async function request<T>(
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   if (!res.ok) {
-    // Our handlers always send a string detail; anything else is ignored.
-    const detail = await res
-      .json()
-      .then((d) => (typeof d?.detail === 'string' ? (d.detail as string) : undefined))
-      .catch(() => undefined);
-    throw new PlanApiError(
-      res.status,
-      `Plans ${method} ${path} failed (HTTP ${res.status})`,
-      detail,
-    );
+    await raiseForStatus(res, `Plans ${method} ${path}`);
   }
   return (await res.json()) as T;
+}
+
+/**
+ * Turn a failed response into the most specific error we can.
+ *
+ * An entitlement refusal arrives as a 403 whose `detail` is an OBJECT, not the
+ * string these handlers usually send — so reading only strings (as this file
+ * used to) collapsed "upgrade to Pro" into a generic failure and left every
+ * call site unable to tell it apart from a server error. That is why plan
+ * generation could never have shown a paywall.
+ */
+async function raiseForStatus(res: Response, label: string): Promise<never> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+
+  const upgrade = parseUpgrade(detail);
+  if (upgrade) throw new UpgradeRequiredError(upgrade);
+
+  throw new PlanApiError(
+    res.status,
+    `${label} failed (HTTP ${res.status})`,
+    typeof detail === 'string' ? detail : undefined,
+  );
 }
 
 /**
@@ -214,7 +229,7 @@ export async function generatePlan(token: string): Promise<GeneratedProposal> {
       },
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`Plan generation failed (HTTP ${res.status})`);
+    if (!res.ok) await raiseForStatus(res, 'Plan generation');
     return (await res.json()) as GeneratedProposal;
   } finally {
     clearTimeout(timer);
@@ -257,7 +272,7 @@ export async function generateAnonymousPlan(
         signal: controller.signal,
       },
     );
-    if (!res.ok) throw new Error(`Plan generation failed (HTTP ${res.status})`);
+    if (!res.ok) await raiseForStatus(res, 'Plan generation');
     return (await res.json()) as { plan: PlanProposalWire; warnings: string[] };
   } finally {
     clearTimeout(timer);
@@ -278,7 +293,7 @@ export async function adoptPlanProposal(
     },
     body: JSON.stringify({ plan }),
   });
-  if (!res.ok) throw new Error(`Plan adopt failed (HTTP ${res.status})`);
+  if (!res.ok) await raiseForStatus(res, 'Plan adopt');
   return (await res.json()) as { proposal_id: string; plan: PlanProposalWire };
 }
 

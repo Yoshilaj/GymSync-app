@@ -1,0 +1,123 @@
+{
+  "identifier": "00000000",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "1000",
+    "_developerTeamID": "",
+    "_lastSynchronizedDate": 0
+  },
+  "subscriptionGroups": [
+    {
+      "id": "1",
+      "localizations": [],
+      "name": "gymsync.membership",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "299.00",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "2000",
+          "introductoryOffer": {
+            "internalID": "3000",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P7D"
+          },
+          "localizations": [
+            {
+              "description": "GymSync Premium Yearly",
+              "displayName": "Premium Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.yoshinishikawahara.gymsync.premium.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Premium Yearly",
+          "subscriptionGroupID": "1",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "29.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "2001",
+          "introductoryOffer": {
+            "internalID": "3001",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P7D"
+          },
+          "localizations": [
+            {
+              "description": "GymSync Premium Monthly",
+              "displayName": "Premium Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.yoshinishikawahara.gymsync.premium.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Premium Monthly",
+          "subscriptionGroupID": "1",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "149.00",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "2002",
+          "introductoryOffer": {
+            "internalID": "3002",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P7D"
+          },
+          "localizations": [
+            {
+              "description": "GymSync Pro Yearly",
+              "displayName": "Pro Yearly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.yoshinishikawahara.gymsync.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "Pro Yearly",
+          "subscriptionGroupID": "1",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "14.99",
+          "familyShareable": false,
+          "groupNumber": 4,
+          "internalID": "2003",
+          "introductoryOffer": {
+            "internalID": "3003",
+            "paymentMode": "free",
+            "subscriptionPeriod": "P7D"
+          },
+          "localizations": [
+            {
+              "description": "GymSync Pro Monthly",
+              "displayName": "Pro Monthly",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.yoshinishikawahara.gymsync.pro.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "Pro Monthly",
+          "subscriptionGroupID": "1",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 4,
+    "minor": 0
+  }
+}

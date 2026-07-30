@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, TimerDisplay } from '@/components/ui';
@@ -46,6 +47,7 @@ export function VoiceCoachScreen() {
   const { colors } = useTheme();
   const styles = useStyles();
   const nav = useNavigation();
+  const promptUpgrade = useUpgradePrompt();
   const { user: authUser, getToken } = useAuth();
   const { user } = useUser();
   const [transcript, setTranscript] = useState('');
@@ -87,6 +89,7 @@ export function VoiceCoachScreen() {
       onTranscript,
       onAppAction,
       onText,
+      onUpgradeRequired: promptUpgrade,
     });
 
   // "Thinking" shimmer: same waveform component, a synthetic slow-sine feed.

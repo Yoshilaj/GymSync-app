@@ -19,7 +19,9 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "GymSync uses your microphone so you can talk to your AI coach during a workout.",
         "ITSAppUsesNonExemptEncryption": false,
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": [
+          "audio"
+        ]
       }
     },
     "android": {
@@ -58,7 +60,9 @@
           "microphonePermission": "GymSync uses your microphone so you can dictate messages and talk to your AI coach.",
           "speechRecognitionPermission": "GymSync uses speech recognition to turn your voice into text."
         }
-      ]
+      ],
+      "expo-iap",
+      "./plugins/withStoreKitConfig"
     ],
     "extra": {
       "eas": {

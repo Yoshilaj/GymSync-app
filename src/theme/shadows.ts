@@ -55,6 +55,19 @@ export const lightShadows = {
     shadowOffset: { width: 0, height: 8 },
     elevation: 8,
   },
+  /**
+   * A halo that fades out instead of ending. `glow` is tuned for a pill on a
+   * plain background, where its tight falloff reads as a crisp lift; under a
+   * wide card it stacks up just below the edge and draws a visible blue line.
+   * Wider radius, lower opacity — same light, no seam.
+   */
+  glowSoft: {
+    shadowColor: palette.blue[500],
+    shadowOpacity: 0.26,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
   /** Active (listening) VoiceButton. */
   glowLive: {
     shadowColor: palette.orange[500],
@@ -73,6 +86,7 @@ export const darkShadows: Record<ShadowKey, ShadowPreset> = {
   md: { shadowColor: '#000000', shadowOpacity: 0.45, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 6 },
   lg: { shadowColor: '#000000', shadowOpacity: 0.55, shadowRadius: 28, shadowOffset: { width: 0, height: 14 }, elevation: 10 },
   glow: { shadowColor: '#2E90EA', shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  glowSoft: { shadowColor: '#2E90EA', shadowOpacity: 0.34, shadowRadius: 26, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
   glowLive: { shadowColor: '#FF7A45', shadowOpacity: 0.45, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
 };
 
