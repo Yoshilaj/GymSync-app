@@ -58,6 +58,11 @@ export const lightColors = {
   // (back pills, progress tracks, icon wells). Scheme-invariant — it overlays
   // the fixed brand blue, not a surface.
   onBrandOverlay: 'rgba(255,255,255,0.18)',
+
+  // The dim behind a modal dialog. Navy-tinted rather than black, to match the
+  // shadow language — a neutral black scrim goes grey over these blue-tinted
+  // surfaces instead of reading as shade.
+  scrimOverlay: 'rgba(11,36,71,0.45)',
 } as const;
 
 export type ColorKey = keyof typeof lightColors;
@@ -110,6 +115,10 @@ export const darkColors: Record<ColorKey, string> = {
 
   // On-brand chrome (see light note — deliberately scheme-invariant)
   onBrandOverlay: 'rgba(255,255,255,0.18)',
+
+  // Deeper on dark: the dialog behind it is already dark, so the scrim has to
+  // do more work to separate the two planes.
+  scrimOverlay: 'rgba(0,0,0,0.6)',
 };
 
 /** Legacy export = light palette (unmigrated files keep working). */

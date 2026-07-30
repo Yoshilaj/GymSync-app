@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuth } from '@/auth/AuthContext';
 import type { SettingsStackParamList } from '@/navigation/SettingsNavigator';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 import {
   DestructiveRow,
   SettingsGroup,
@@ -14,6 +16,7 @@ type Nav = NativeStackNavigationProp<SettingsStackParamList, 'AccountSettings'>;
 export function AccountSettingsScreen() {
   const nav = useNavigation<Nav>();
   const { user } = useAuth();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   return (
     <SettingsPage title="Account settings">
@@ -36,9 +39,14 @@ export function AccountSettingsScreen() {
       <SettingsGroup footnote="Deleting your account permanently erases your profile, plans, and history.">
         <DestructiveRow
           label="Delete account"
-          onPress={() => nav.navigate('DeleteAccount')}
+          onPress={() => setConfirmingDelete(true)}
         />
       </SettingsGroup>
+
+      <DeleteAccountDialog
+        visible={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+      />
     </SettingsPage>
   );
 }

@@ -10,7 +10,6 @@ import { ProfileEditScreen } from '@/screens/settings/ProfileEditScreen';
 import { AccountSettingsScreen } from '@/screens/settings/AccountSettingsScreen';
 import { ChangeEmailScreen } from '@/screens/settings/ChangeEmailScreen';
 import { ChangePasswordScreen } from '@/screens/settings/ChangePasswordScreen';
-import { DeleteAccountScreen } from '@/screens/settings/DeleteAccountScreen';
 import { PlanSettingsScreen } from '@/screens/settings/PlanSettingsScreen';
 import { NotificationsSettingsScreen } from '@/screens/settings/NotificationsSettingsScreen';
 import { WorkoutSettingsScreen } from '@/screens/settings/WorkoutSettingsScreen';
@@ -29,7 +28,8 @@ export type SettingsStackParamList = {
   AccountSettings: undefined;
   ChangeEmail: undefined;
   ChangePassword: undefined;
-  DeleteAccount: undefined;
+  // No `DeleteAccount` route: deleting is confirmed by a dialog over Account
+  // settings (DeleteAccountDialog), not by a page you navigate to.
   PlanSettings: undefined;
   Notifications: undefined;
   WorkoutSettings: undefined;
@@ -60,7 +60,6 @@ export function SettingsNavigator() {
       <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
-      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
       <Stack.Screen name="PlanSettings" component={PlanSettingsScreen} />
       <Stack.Screen name="Notifications" component={NotificationsSettingsScreen} />
       <Stack.Screen name="WorkoutSettings" component={WorkoutSettingsScreen} />
