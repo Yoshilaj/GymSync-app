@@ -7,14 +7,16 @@ LangGraph state machine (Step 11) will wrap _agent_events with state routing.
 import asyncio
 import json
 import logging
+import time
+from collections import defaultdict
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from anthropic import AsyncAnthropic
 from supabase import AsyncClient
 
 from app.agents import conversation_store
-from app.agents.personalities import build_system_prompt
+from app.agents.personalities import DEFAULT_PRESET, build_system_prompt
 from app.agents.tools import (
     TOOL_DEFINITIONS,
     ToolContext,
@@ -50,7 +52,7 @@ async def _load_personality(user_id: str, db: AsyncClient) -> dict:
     ).execute()
     if res.data:
         return res.data[0]
-    return {"preset_id": "classic", "system_prompt_override": None}
+    return {"preset_id": DEFAULT_PRESET, "system_prompt_override": None}
 
 
 async def _load_history(
@@ -103,6 +105,164 @@ async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
     if not lines:
         return ""
     return "<user_profile>\n" + "\n".join(lines) + "\n</user_profile>\n\n"
+
+
+# ── Recent training history ───────────────────────────────────────────────────
+# The coach is told to cite real numbers unprompted and to volunteer at most one
+# observation the user didn't ask for. Both need data that used to live only
+# behind /progress, so a compact digest rides in on every turn.
+
+_HISTORY_TTL_SECONDS = 60.0
+_HISTORY_SESSIONS = 4      # distinct training days rendered
+_HISTORY_EXERCISES = 5     # exercises in the bests list
+_STALL_SESSIONS = 3        # equal top weights across this many days = stalled
+# user_id -> (monotonic deadline, rendered block)
+_history_cache: dict[str, tuple[float, str]] = {}
+
+
+def _epley(weight: float, reps: int) -> float:
+    """Estimated 1RM — ranks "best set" so 100x1 beats 60x10."""
+    return weight * (1 + reps / 30)
+
+
+def _render_recent_history(rows: list[dict]) -> str:
+    """<recent_history> from newest-first completed_sets rows.
+
+    Four parts, each capped so the block stays ~20 lines: how long they've kept
+    it up, what the last few sessions were, their best set per lift, and which
+    lifts have not moved. `stalled` is the one the model can actually act on —
+    a computed signal rather than something it has to infer from a set list.
+    """
+    if not rows:
+        return ""
+
+    by_day: dict[date, list[dict]] = defaultdict(list)
+    for r in rows:
+        try:
+            by_day[datetime.fromisoformat(r["logged_at"]).date()].append(r)
+        except (TypeError, ValueError):
+            continue
+    if not by_day:
+        return ""
+
+    days = sorted(by_day, reverse=True)
+    out: list[str] = []
+
+    # Streak: consecutive training days ending today or yesterday.
+    trained = set(days)
+    today = date.today()
+    cursor = today if today in trained else today - timedelta(days=1)
+    streak = 0
+    while cursor in trained:
+        streak += 1
+        cursor -= timedelta(days=1)
+    if streak:
+        out.append(f"streak: {streak} day{'s' if streak != 1 else ''}")
+
+    # Last few sessions, one line each.
+    session_lines: list[str] = []
+    for day in days[:_HISTORY_SESSIONS]:
+        per_ex: dict[str, list[dict]] = defaultdict(list)
+        for r in by_day[day]:
+            per_ex[r["exercise_name"]].append(r)
+        parts = []
+        for name, sets in list(per_ex.items())[:4]:
+            top = max((s.get("weight") or 0) for s in sets)
+            reps = sets[0].get("reps")
+            parts.append(
+                f"{name} {len(sets)}x{reps}@{top:g}" if top else f"{name} {len(sets)}x{reps}"
+            )
+        session_lines.append(f"- {day:%m-%d} — {', '.join(parts)}")
+    if session_lines:
+        out.append("last_sessions:")
+        out.extend(session_lines)
+
+    # Best set per exercise, ordered by how recently the lift was trained.
+    order: list[str] = []
+    units: dict[str, str] = {}
+    for r in rows:
+        name = r["exercise_name"]
+        if name not in order:
+            order.append(name)
+        units.setdefault(name, r.get("weight_unit") or "")
+    best: dict[str, dict] = {}
+    for r in rows:
+        weight, reps = r.get("weight"), r.get("reps")
+        if not weight or not reps:
+            continue
+        name = r["exercise_name"]
+        if name not in best or _epley(float(weight), reps) > _epley(
+            float(best[name]["weight"]), best[name]["reps"]
+        ):
+            best[name] = r
+    best_lines = []
+    for name in order[:_HISTORY_EXERCISES]:
+        r = best.get(name)
+        if not r:
+            continue
+        unit = r.get("weight_unit") or ""
+        best_lines.append(
+            f"- {name}: {float(r['weight']):g}{unit} x{r['reps']} ({r['logged_at'][5:10]})"
+        )
+    if best_lines:
+        out.append("bests:")
+        out.extend(best_lines)
+
+    # Stalled: top weight unchanged across the last N days the lift was trained.
+    stall_lines = []
+    for name in order[:_HISTORY_EXERCISES]:
+        tops: list[float] = []
+        for day in days:
+            weights = [
+                float(s["weight"])
+                for s in by_day[day]
+                if s["exercise_name"] == name and s.get("weight")
+            ]
+            if weights:
+                tops.append(max(weights))
+            if len(tops) == _STALL_SESSIONS:
+                break
+        if len(tops) == _STALL_SESSIONS and len(set(tops)) == 1:
+            stall_lines.append(
+                f"- {name}: {tops[0]:g}{units.get(name, '')}, "
+                f"unchanged {_STALL_SESSIONS} sessions"
+            )
+    if stall_lines:
+        out.append("stalled:")
+        out.extend(stall_lines)
+
+    if not out:
+        return ""
+    return "<recent_history>\n" + "\n".join(out) + "\n</recent_history>\n\n"
+
+
+async def _load_recent_history(user_id: str, db: AsyncClient) -> str:
+    """Cached <recent_history> block. Best-effort: never blocks a turn.
+
+    Cached for a minute because voice turns hit this path too and it is the only
+    new DB read inside the speech-to-first-audio budget. A set logged mid-session
+    already appears in <session_state>, so a slightly stale digest costs the
+    model nothing it doesn't have elsewhere.
+    """
+    cached = _history_cache.get(user_id)
+    now = time.monotonic()
+    if cached and cached[0] > now:
+        return cached[1]
+    try:
+        res = (
+            await db.table("completed_sets")
+            .select("exercise_name, reps, weight, weight_unit, logged_at")
+            .eq("user_id", user_id)
+            .order("logged_at", desc=True)
+            .limit(400)
+            .execute()
+        )
+        block = _render_recent_history(res.data or [])
+    except Exception:
+        logger.warning("recent history load failed", exc_info=True)
+        return ""
+    _history_cache[user_id] = (now + _HISTORY_TTL_SECONDS, block)
+    return block
 
 
 def _fmt_set(row: dict) -> str:
@@ -387,18 +547,19 @@ async def _agent_events(
         # No user rows exist (user_id isn't even a valid uuid here) — the
         # request payload is the whole context, and the quiz preset rides in.
         personality = {
-            "preset_id": personality_preset or "classic",
+            "preset_id": personality_preset or DEFAULT_PRESET,
             "system_prompt_override": None,
         }
-        history, session_ctx, profile_ctx = [], "", ""
+        history, session_ctx, profile_ctx, history_ctx = [], "", "", ""
     else:
         # Independent reads — run concurrently; on a voice turn this is the
         # bulk of the pre-model latency.
-        personality, history, session_ctx, profile_ctx = await asyncio.gather(
+        personality, history, session_ctx, profile_ctx, history_ctx = await asyncio.gather(
             _load_personality(user_id, db),
             _load_history(session_id, conversation_id, db),
             _load_session_context(session_id, db),
             _load_profile_context(user_id, db),
+            _load_recent_history(user_id, db),
         )
         if personality_preset:
             personality = {"preset_id": personality_preset, "system_prompt_override": None}
@@ -420,12 +581,21 @@ async def _agent_events(
         if m.get("tool_notes"):
             content = f"{content}\n[actions: {'; '.join(m['tool_notes'])}]".strip()
         messages.append({"role": m["role"], "content": content})
-    full_user_message = profile_ctx + session_ctx + user_message
+    # Context blocks ride in the USER turn, below the system cache breakpoint —
+    # they change as sets are logged and would invalidate the cache every turn
+    # if they sat in the system block.
+    full_user_message = profile_ctx + history_ctx + session_ctx + user_message
     messages.append({"role": "user", "content": full_user_message})
 
     assistant_text_parts: list[str] = []
     tool_notes: list[str] = []
     model = model or MODEL_FAST  # escalate_to_reasoning bumps this to MODEL_REASONING
+    # Text before and after a tool call arrives as two separate blocks with no
+    # separator between them, so they used to fuse: "...pull up your plan."
+    # + "You're on Upper A" rendered as "your plan.You're on Upper A". Open a
+    # paragraph instead — it reads as two thoughts, and it restores the sentence
+    # boundary the voice path's splitter needs to segment there.
+    pending_break = False
 
     try:
         while True:
@@ -439,6 +609,15 @@ async def _agent_events(
                 max_tokens=4096,
             ) as stream:
                 async for chunk in stream.text_stream:
+                    if pending_break:
+                        # Hold the break until real text shows up, so a
+                        # tool-only round never leaves a dangling blank line.
+                        if not chunk.strip():
+                            continue
+                        pending_break = False
+                        chunk = chunk.lstrip()
+                        assistant_text_parts.append("\n\n")
+                        yield {"type": "text_delta", "text": "\n\n"}
                     assistant_text_parts.append(chunk)
                     yield {"type": "text_delta", "text": chunk}
                 final = await stream.get_final_message()
@@ -485,6 +664,9 @@ async def _agent_events(
                 {"role": "assistant", "content": blocks_to_dicts(final.content)},
                 {"role": "user", "content": tool_results},
             ]
+            # Anything this round already said needs separating from whatever
+            # the next round says.
+            pending_break = bool(assistant_text_parts)
 
     except Exception as exc:
         # Mid-stream failure: by the time this fires, earlier deltas may already be

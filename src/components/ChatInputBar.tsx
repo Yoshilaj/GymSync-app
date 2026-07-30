@@ -11,6 +11,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 
+/** Explicit so the multiline max-height is predictable rather than font-derived. */
+const LINE_HEIGHT = 21;
+const MAX_LINES = 5;
+
 /** Soft expanding ring behind the mic while dictation is live. */
 function MicPulse() {
   const styles = useStyles();
@@ -77,6 +81,12 @@ export function ChatInputBar({
           onSubmitEditing={onSend}
           returnKeyType="send"
           autoFocus={autoFocus}
+          // A single-line TextInput scrolls sideways instead of wrapping, so a
+          // long message pushed everything you'd already typed off-screen.
+          multiline
+          // multiline defaults Return to inserting a newline; keep it sending,
+          // which is what returnKeyType="send" already promises.
+          submitBehavior="submit"
         />
         {onMicPress && (
           <View style={styles.micSlot}>
@@ -118,9 +128,14 @@ const useStyles = makeStyles((t) => ({
   },
   card: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // Buttons stay pinned to the bottom as the field grows, rather than
+    // drifting to the middle of a tall box.
+    alignItems: 'flex-end',
     backgroundColor: t.colors.card,
-    borderRadius: radius.pill,
+    // Not `pill`: at one line this is visually identical (a 45pt-tall pill
+    // clamps to ~22), but a 999 radius on a five-line box becomes a stadium
+    // whose side curves eat the text.
+    borderRadius: radius.xl,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     gap: spacing.xs,
@@ -129,10 +144,16 @@ const useStyles = makeStyles((t) => ({
   input: {
     flex: 1,
     fontSize: 16,
+    lineHeight: LINE_HEIGHT,
     fontFamily: 'Inter_400Regular',
     color: t.colors.textPrimary,
     paddingVertical: 8,
     paddingHorizontal: spacing.md,
+    // Grow to MAX_LINES, then scroll inside the field instead of shoving the
+    // conversation off the top of the screen.
+    maxHeight: LINE_HEIGHT * MAX_LINES + 16,
+    // Android centres multiline text vertically; iOS already tops it.
+    textAlignVertical: 'top',
   },
   micSlot: {
     width: 36,

@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 
-from app.agents.voice import _sanitize_for_speech
+from app.agents.voice import _pop_sentences, _sanitize_for_speech
 
 
 @pytest.mark.parametrize(
@@ -55,6 +55,49 @@ def test_combined_plan_line() -> None:
         _sanitize_for_speech(raw)
         == "Push day: Bench Press 3 by 8 to 12, then OHP strict 5 by 5."
     )
+
+
+def test_unicode_times_and_en_dash_still_expand() -> None:
+    """The model writes 4×4–6, not 4x4-6 — the notation rules cover both."""
+    assert _sanitize_for_speech("Bench Press 4×4–6") == "Bench Press 4 by 4 to 6"
+
+
+# ── sentence segmentation ────────────────────────────────────────────────────
+# The coach renders data one item per line, and those lines have no terminator.
+# Splitting on line breaks turns each into its own TTS segment, so the first
+# exercise starts playing while the rest are still being synthesised.
+
+def test_pop_sentences_splits_on_line_breaks() -> None:
+    buf = "Today is Upper A.\nBarbell Bench Press 4x4-6\nBent-Over Row 4x4-6\nPull-Up 3x6-10"
+    sentences, remainder = _pop_sentences(buf)
+    assert sentences == [
+        "Today is Upper A.",
+        "Barbell Bench Press 4x4-6",
+        "Bent-Over Row 4x4-6",
+    ]
+    # Last line is held back — more of it may still be streaming in.
+    assert remainder == "Pull-Up 3x6-10"
+
+
+def test_pop_sentences_still_splits_on_terminators() -> None:
+    sentences, remainder = _pop_sentences("Logged. Set two of three. Next up")
+    assert sentences == ["Logged.", "Set two of three."]
+    assert remainder == "Next up"
+
+
+def test_pop_sentences_handles_the_paragraph_break_between_tool_rounds() -> None:
+    """_agent_events inserts \\n\\n either side of a tool call."""
+    sentences, _ = _pop_sentences("Pulling up your plan.\n\nYou're on Upper A.\n")
+    assert sentences == ["Pulling up your plan.", "You're on Upper A."]
+
+
+def test_pop_sentences_blank_segments_are_speak_safe() -> None:
+    """A leading break yields an empty segment; _speak drops it rather than
+    handing "" to the TTS provider."""
+    sentences, _ = _pop_sentences("\nBench Press 4x4-6\n")
+    assert all(not s.strip() or s.strip() for s in sentences)
+    assert [s for s in sentences if s.strip()] == ["Bench Press 4x4-6"]
+    assert _pop_sentences("") == ([], "")
 
 
 # ── segment_end emission ─────────────────────────────────────────────────────

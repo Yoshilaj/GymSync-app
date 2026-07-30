@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from supabase import AsyncClient
 
-from app.agents.personalities import PRESETS, get_voice_id, list_presets
+from app.agents.personalities import (
+    DEFAULT_PRESET,
+    PRESETS,
+    get_voice_id,
+    list_presets,
+)
 from app.agents.tools import utcnow
 from app.auth import get_current_user_id
 from app.database import get_db
@@ -27,10 +32,10 @@ async def get_personality(
     db: AsyncClient = Depends(get_db),
 ) -> PersonalityResponse:
     res = await db.table("personalities").select("preset_id").eq("user_id", user_id).execute()
-    preset_id = res.data[0]["preset_id"] if res.data else "supportive"
+    preset_id = res.data[0]["preset_id"] if res.data else DEFAULT_PRESET
     return PersonalityResponse(
         preset_id=preset_id,
-        name=PRESETS.get(preset_id, PRESETS["supportive"])["name"],
+        name=PRESETS.get(preset_id, PRESETS[DEFAULT_PRESET])["name"],
         voice_id=get_voice_id(preset_id),
         available_presets=list_presets(),
     )

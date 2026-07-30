@@ -24,13 +24,18 @@ from deepgram import (
 )
 
 from app.agents.core import _agent_events
+from app.agents.personalities import DEFAULT_PRESET
 from app.agents.tts import TTSError, synthesize
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Match sentence boundaries: split after . ! ? followed by whitespace.
-_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+# Match sentence boundaries: after . ! ? followed by whitespace, or at a line
+# break. The line-break arm matters because the coach renders data one item per
+# line ("Bench Press 4x4-6\nBent-Over Row 4x4-6") and those lines carry no
+# terminator — without it the whole block is one segment, so TTS reads the
+# exercises as a single run-on and the first one can't start playing early.
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 # Fallback: flush TTS buffer if it grows beyond this without a sentence end.
 _MAX_BUFFER_CHARS = 200
 
@@ -223,8 +228,9 @@ class VoiceSession:
         self._stopping = False
         self._dg_recovering = False
         self._dg_restarted = False
-        # Preset cached per session (one DB query, not one per utterance); a
-        # mid-session personality switch takes effect on the next connect.
+        # Last-seen preset. Re-read at the top of every turn, not cached for the
+        # session: switching personality in Settings has to reach the next spoken
+        # turn's voice and ack phrases, not wait for a reconnect.
         self._preset_id: str | None = None
         self._ack_warm_task: asyncio.Task | None = None
 
@@ -412,18 +418,37 @@ class VoiceSession:
             .eq("user_id", self._user_id)
             .execute()
         )
-        return res.data[0]["preset_id"] if res.data else "supportive"
+        return res.data[0]["preset_id"] if res.data else DEFAULT_PRESET
 
     async def _preset(self) -> str:
-        """Session-cached preset id (start() populates it; this is the fallback)."""
-        if self._preset_id is None:
-            self._preset_id = await self._get_preset_id()
-        return self._preset_id
+        """Live preset id, re-read once per turn.
+
+        One indexed lookup against a ~1s speech-to-first-audio budget, which is
+        the price of a personality switch landing on the very next turn. On a
+        change, re-warm the new preset's phrases in the background — that turn's
+        ack is a live TTS call, every turn after it is a cache hit.
+
+        A failed read keeps the last known preset rather than raising: losing
+        the refresh mid-workout should cost the user a stale voice, not the turn.
+        """
+        try:
+            preset_id = await self._get_preset_id()
+        except Exception:
+            logger.warning(
+                "preset refresh failed; keeping %s", self._preset_id, exc_info=True
+            )
+            return self._preset_id or DEFAULT_PRESET
+        if preset_id != self._preset_id:
+            self._preset_id = preset_id
+            task = asyncio.create_task(self._prewarm_acks())
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
+        return preset_id
 
     async def _prewarm_acks(self) -> None:
-        preset_id = self._preset_id or "supportive"
-        phrases = _ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"]) + _TIMER_PHRASES.get(
-            preset_id, _TIMER_PHRASES["classic"]
+        preset_id = self._preset_id or DEFAULT_PRESET
+        phrases = _ACK_PHRASES.get(preset_id, _ACK_PHRASES[DEFAULT_PRESET]) + _TIMER_PHRASES.get(
+            preset_id, _TIMER_PHRASES[DEFAULT_PRESET]
         )
         await asyncio.gather(*(_cached_phrase_audio(preset_id, p) for p in phrases))
 
@@ -431,7 +456,7 @@ class VoiceSession:
         """Instant spoken acknowledgment — the turn's first audio segment.
         Best-effort: any failure is swallowed and the turn proceeds silently."""
         try:
-            phrase = random.choice(_ACK_PHRASES.get(preset_id, _ACK_PHRASES["classic"]))
+            phrase = random.choice(_ACK_PHRASES.get(preset_id, _ACK_PHRASES[DEFAULT_PRESET]))
             audio = await _cached_phrase_audio(preset_id, phrase)
             if not audio:
                 return
@@ -503,7 +528,7 @@ class VoiceSession:
         announced = False
         try:
             preset_id = await self._preset()
-            phrases = _TIMER_PHRASES.get(preset_id, _TIMER_PHRASES["classic"])
+            phrases = _TIMER_PHRASES.get(preset_id, _TIMER_PHRASES[DEFAULT_PRESET])
             audio = await _cached_phrase_audio(preset_id, random.choice(phrases))
             if not audio:
                 return

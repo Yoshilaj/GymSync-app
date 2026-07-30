@@ -7,6 +7,7 @@
 import { View } from 'react-native';
 import { makeStyles, radius, spacing } from '@/theme';
 import { AppText } from '@/components/ui';
+import { toPlainText } from '@/lib/plainText';
 import { ChatMessage } from '@/types';
 
 interface Props {
@@ -32,7 +33,8 @@ export function ChatBubble({ message, streaming = false }: Props) {
   return (
     <View style={styles.assistantRow}>
       <AppText variant="body">
-        {message.text}
+        {/* The coach is told not to emit markdown; this catches the slips. */}
+        {toPlainText(message.text)}
         {streaming ? (
           <AppText variant="body" color="accentText">
             ▍

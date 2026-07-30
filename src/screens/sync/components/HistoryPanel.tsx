@@ -1,6 +1,5 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import {
-  Alert,
   FlatList,
   Platform,
   Pressable,
@@ -11,7 +10,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import {
+  Gesture,
+  GestureDetector,
+  type GestureType,
+} from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   interpolate,
@@ -22,6 +25,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText } from '@/components/ui';
+import { SwipeToDelete } from '@/components/SwipeToDelete';
 import { ConversationSummary } from '@/api/conversations';
 
 interface Props {
@@ -103,7 +107,12 @@ export function HistoryPanel({
     opacity: interpolate(translate.value, [-panelWidth, 0], [0, 0.35]),
   }));
 
+  // Held so each row's swipe-to-delete can block it: both read a leftward drag,
+  // and which one wins must not be left to gesture-arena defaults.
+  const panRef = useRef<GestureType | undefined>(undefined);
+
   const pan = Gesture.Pan()
+    .withRef(panRef)
     .enabled(open)
     .activeOffsetX([-12, 12])
     .onChange((e) => {
@@ -135,13 +144,6 @@ export function HistoryPanel({
     return out;
   }, [conversations]);
 
-  const confirmDelete = (convo: ConversationSummary) => {
-    Alert.alert('Delete conversation?', convo.title, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => onDelete(convo) },
-    ]);
-  };
-
   const renderRow = ({ item }: { item: Row }) => {
     if (item.type === 'header') {
       return (
@@ -153,26 +155,37 @@ export function HistoryPanel({
     const now = new Date();
     const active = item.convo.id === activeId;
     return (
-      <Pressable
-        onPress={() => onSelect(item.convo)}
-        onLongPress={() => confirmDelete(item.convo)}
-        accessibilityRole="button"
-        accessibilityLabel={`Open conversation: ${item.convo.title}`}
-        style={({ pressed }) => [
-          styles.row,
-          active && styles.rowActive,
-          pressed && styles.rowPressed,
-        ]}
+      <SwipeToDelete
+        onDelete={() => onDelete(item.convo)}
+        accessibilityLabel={`Delete conversation: ${item.convo.title}`}
+        cornerRadius={radius.md}
+        // No tuck: these rows are transparent over the glass panel, so a strip
+        // slid underneath would show through the title instead of hiding.
+        // Clipping to cornerRadius is enough here — there is no opaque card
+        // edge to leave notches against.
+        fullSwipeDistance={panelWidth * 0.6}
+        blocksExternalGesture={panRef}
       >
-        <View style={styles.rowText}>
-          <AppText variant="bodyMedium" numberOfLines={1}>
-            {item.convo.title}
-          </AppText>
-          <AppText variant="caption" color="textTertiary">
-            {relativeLabel(item.convo.updated_at, now)}
-          </AppText>
-        </View>
-      </Pressable>
+        <Pressable
+          onPress={() => onSelect(item.convo)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open conversation: ${item.convo.title}`}
+          style={({ pressed }) => [
+            styles.row,
+            active && styles.rowActive,
+            pressed && styles.rowPressed,
+          ]}
+        >
+          <View style={styles.rowText}>
+            <AppText variant="bodyMedium" numberOfLines={1}>
+              {item.convo.title}
+            </AppText>
+            <AppText variant="caption" color="textTertiary">
+              {relativeLabel(item.convo.updated_at, now)}
+            </AppText>
+          </View>
+        </Pressable>
+      </SwipeToDelete>
     );
   };
 
