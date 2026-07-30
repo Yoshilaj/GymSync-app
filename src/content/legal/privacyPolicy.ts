@@ -1,0 +1,196 @@
+import type { LegalBlock } from './types';
+
+export const PRIVACY_POLICY_EFFECTIVE_DATE = 'July 30, 2026';
+
+/**
+ * Kept word-for-word identical to docs/privacy-policy.md and the hosted page
+ * at gymsyncapp.me/privacy-policy — three surfaces, one source of truth. Edit
+ * all three together.
+ */
+export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
+  {
+    type: 'p',
+    text: 'Yoshiharu Nishikawahara ("we," "our," or "us") built GymSync as a freemium fitness coaching app. This Privacy Policy explains how we collect, use, and protect your information when you use GymSync.',
+  },
+  {
+    type: 'p',
+    text: 'By using GymSync, you agree to the practices described in this Privacy Policy. If you do not agree, please do not use the app.',
+  },
+  { type: 'h', text: '1. Information We Collect' },
+  { type: 'h2', text: 'Information You Provide Directly' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Account information', text: 'When you create an account, we collect your email address and password (handled by our authentication provider, Supabase — we never see your password in plain text).' },
+      { label: 'Profile information', text: 'Your display name, age, sex, and body statistics you choose to enter (used only to calculate your coaching math — calorie needs, recovery, and training load), and, if you choose to set one, a profile picture selected from your photo library or taken with your camera.' },
+      { label: 'Workout data', text: 'The workout plans, exercises, sets, reps, weights, and body-weight logs you create or record in the app.' },
+      { label: 'Coach conversations', text: 'The messages you send to your AI coach, and any voice audio captured during a live voice coaching session.' },
+      { label: 'Support requests', text: 'If you contact us for support, we collect your email address and the content of your message.' },
+    ],
+  },
+  { type: 'h2', text: 'Information Collected Automatically' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Device information', text: 'We may collect basic device and app version information for compatibility and debugging purposes.' },
+    ],
+  },
+  {
+    type: 'p',
+    text: "GymSync does not use third-party analytics or advertising SDKs, does not use cookies or cross-device ad tracking, and does not show ads. If this changes in a future version, this Policy will be updated first.",
+  },
+  { type: 'h2', text: 'Information from Third Parties' },
+  {
+    type: 'p',
+    text: "GymSync does not currently offer third-party or social sign-in, and has no public forums, community feed, or user-to-user messaging — your workout data and coach conversations are private to your account. If this changes, this Policy will be updated before the feature ships.",
+  },
+  { type: 'h', text: '2. How We Use Your Information' },
+  { type: 'p', text: 'We use the information we collect to:' },
+  {
+    type: 'list',
+    items: [
+      "Provide and maintain GymSync's core functionality — your account, your workout plans, and your training history",
+      'Power the AI coach: generating chat replies, spoken coaching, and personalized workout guidance based on your conversation and training history',
+      "Convert your speech to text during live voice coaching sessions, and your coach's text replies to spoken audio",
+      'Respond to your support requests',
+      'Fix bugs and improve the app',
+    ],
+  },
+  { type: 'p', text: 'We do NOT use your information to:' },
+  {
+    type: 'list',
+    items: [
+      'Sell your data to third parties',
+      'Build advertising profiles',
+      'Show you ads',
+      'Make any fully-automated decision that denies you access to the service or affects your legal rights without the ability to reach a human by contacting support',
+    ],
+  },
+  { type: 'h', text: '3. How We Share Your Information' },
+  { type: 'p', text: 'We do not sell, rent, or trade your personal information.' },
+  { type: 'p', text: 'We share information only in these circumstances:' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Service providers', text: 'With the third parties listed in Section 4, solely to operate the app. They may only use your data to perform services for us.' },
+      { label: 'Legal requirements', text: 'If required by law, subpoena, or other legal process, or to protect the rights, property, or safety of GymSync, our users, or the public.' },
+      { label: 'Business transfers', text: 'If GymSync is involved in a merger, acquisition, or sale of assets, your information may be transferred as part of that transaction. We will notify you of any such change and any choices you may have.' },
+    ],
+  },
+  { type: 'h', text: '4. Third-Party Services' },
+  { type: 'p', text: 'GymSync uses the following third-party services to operate:' },
+  {
+    type: 'services',
+    items: [
+      { name: 'Supabase', purpose: 'Account authentication and database storage for your profile, plans, and training history', url: 'https://supabase.com/privacy' },
+      { name: 'Anthropic (Claude)', purpose: 'Processes your coach conversations and workout data to generate AI coaching replies and plans', url: 'https://www.anthropic.com/legal/privacy' },
+      { name: 'ElevenLabs', purpose: "Converts your coach's text replies into spoken voice audio during live voice coaching", url: 'https://elevenlabs.io/privacy' },
+      { name: 'Apple (on-device/Apple Speech services)', purpose: 'Converts your speech to text during live voice coaching', url: 'https://www.apple.com/legal/privacy/' },
+      { name: 'Apple App Store', purpose: 'Processes subscription payments; Apple, not GymSync, handles your payment details', url: 'https://www.apple.com/legal/privacy/' },
+    ],
+  },
+  {
+    type: 'p',
+    text: "Voice audio captured during a coaching session is transcribed to text and is not retained as audio beyond what's needed to complete that session.",
+  },
+  { type: 'h2', text: 'AI-Generated Content' },
+  {
+    type: 'p',
+    text: 'Some content you see in GymSync — coaching replies, generated workout plans, and spoken coaching — is generated using artificial intelligence based on the data described above. AI-generated content may occasionally be inaccurate; see the "AI and Coaching Disclaimer" in our Terms of Service for details.',
+  },
+  { type: 'h', text: '5. International Data Transfers' },
+  {
+    type: 'p',
+    text: "GymSync's service providers (Supabase, Anthropic, and ElevenLabs) operate servers in the United States. If you are located outside the United States, using GymSync means your personal information — including workout and coaching data — is transferred to and processed in the United States, which may have different data protection laws than your home country. We require our service providers to protect your data under contractual safeguards.",
+  },
+  { type: 'h', text: '6. Data Retention' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Account and training data', text: 'Retained while your account is active.' },
+      { label: 'Account deletion', text: 'GymSync includes an in-app "Delete account" action (Settings → Account settings). Deleting your account immediately and permanently erases your profile, plans, training history, and coach conversations from our systems. This cannot be undone.' },
+      { label: 'Voice audio', text: "Not retained beyond the live session it was captured in." },
+      { label: 'Support correspondence', text: 'Retained as long as reasonably necessary to resolve your request and for our records, then deleted.' },
+    ],
+  },
+  { type: 'h', text: '7. Data Security' },
+  { type: 'p', text: 'We implement reasonable technical measures to protect your information, including:' },
+  {
+    type: 'list',
+    items: [
+      'Encryption in transit (TLS/HTTPS) for all network communications',
+      'Authentication and access controls provided by Supabase',
+      "Access limited to what's needed to operate the app",
+    ],
+  },
+  {
+    type: 'p',
+    text: 'No method of transmission or storage is 100% secure, and we cannot guarantee absolute security. If we become aware of a data breach affecting your personal information, we will notify you and any applicable regulator without undue delay, as required by applicable law.',
+  },
+  { type: 'h', text: '8. Your Rights' },
+  { type: 'p', text: 'Regardless of where you live, you may:' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Access', text: 'the personal data we hold about you' },
+      { label: 'Correct', text: 'inaccurate data (most of this you can edit directly in the app)' },
+      { label: 'Delete', text: 'your data, immediately and permanently, via Settings → Account settings → Delete account, or by contacting us' },
+      { label: 'Withdraw consent', text: 'for processing at any time by deleting your account' },
+      { label: 'Appeal', text: 'a decision we make about your rights request by replying to our response with "APPEAL" in the subject line' },
+    ],
+  },
+  {
+    type: 'p',
+    text: 'To exercise any of these rights, contact us at support@gymsyncapp.me. We will respond within 30 days.',
+  },
+  { type: 'h2', text: 'For Users in Japan' },
+  {
+    type: 'p',
+    text: "GymSync is operated by an individual developer based in Japan. In accordance with Japan's Act on the Protection of Personal Information (APPI):",
+  },
+  {
+    type: 'list',
+    items: [
+      { label: 'Purpose of use', text: 'Your personal information is used solely for the purposes described in Section 2 of this Policy.' },
+      { label: 'Cross-border transfer', text: 'Because we use overseas service providers (Supabase, Anthropic, and ElevenLabs, all of which process data on servers located outside Japan), your personal information is transferred to and processed in other countries, including the United States. By using GymSync, you consent to this transfer.' },
+      { label: 'Disclosure, correction, and deletion', text: 'You have the right to request disclosure of, correction to, or deletion of your personal information. Contact us at support@gymsyncapp.me to make a request.' },
+      { label: 'Complaints', text: "If you believe your rights under APPI have not been respected, you may contact Japan's Personal Information Protection Commission (個人情報保護委員会), or reach out to us directly first so we can address your concern." },
+    ],
+  },
+  { type: 'h2', text: 'For California Residents (CCPA)' },
+  {
+    type: 'p',
+    text: "As a matter of practice, regardless of whether the CCPA's thresholds apply to us:",
+  },
+  {
+    type: 'list',
+    items: [
+      { label: 'Categories collected', text: 'Identifiers (email, user ID), account credentials, and the fitness/health-adjacent information described in Section 1 (training data, coach conversations, voice audio, body statistics).' },
+      { label: 'Sources', text: 'Directly from you.' },
+      { label: 'Purpose', text: "Solely to operate the App's coaching features, as described in Section 2. We do not use this information for cross-context behavioral advertising." },
+      'We do not sell or share your personal information, and do not use targeted-advertising cookies or trackers.',
+      'You may request to know what personal information we hold about you, request its deletion, or request correction, by contacting support@gymsyncapp.me.',
+      'We will not discriminate against you (e.g., by degrading service or charging a different price) for exercising these rights.',
+    ],
+  },
+  { type: 'h', text: "9. Children's Privacy" },
+  {
+    type: 'p',
+    text: 'GymSync is not intended for children under 13. We do not knowingly collect personal information from children under 13. If we discover that we have collected data from a child under 13, we will delete it promptly. If you believe a child has provided us with personal information, please contact us at support@gymsyncapp.me.',
+  },
+  { type: 'h', text: '10. Changes to This Privacy Policy' },
+  {
+    type: 'p',
+    text: 'We may update this Privacy Policy from time to time. When we make significant changes, we will update the "Last Updated" date above and post the updated policy at gymsyncapp.me/privacy-policy. Continued use of GymSync after changes are posted constitutes acceptance of the updated Privacy Policy.',
+  },
+  { type: 'h', text: '11. Contact Us' },
+  { type: 'p', text: 'If you have questions or concerns about this Privacy Policy or our data practices, contact us at:' },
+  {
+    type: 'list',
+    items: [
+      { label: 'Email', text: 'support@gymsyncapp.me' },
+      { label: 'Developer', text: 'Yoshiharu Nishikawahara' },
+      { label: 'Website', text: 'gymsyncapp.me' },
+    ],
+  },
+];
