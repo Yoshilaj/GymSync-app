@@ -55,14 +55,31 @@ select column_name from information_schema.columns
 
 ## 3. Sign in with Apple
 
-**Supabase → Auth → Providers → Apple**: enable, Client ID =
-`com.yoshinishikawahara.gymsync`.
+**Supabase → Auth → Providers → Apple.** Exactly one field matters:
 
-That's the whole setup for the native flow — the Services ID / key pair is only
-needed for the web OAuth flow, which this app doesn't use. `app.json` already sets
-`ios.usesAppleSignIn` and the `expo-apple-authentication` plugin.
+| Field | Value | Why |
+|---|---|---|
+| Enable Sign in with Apple | on | |
+| **Client IDs** | `com.yoshinishikawahara.gymsync` | The bundle ID. Comma-separated list — a web Services ID would go here too, if one ever existed. |
+| Secret Key (for OAuth) | **leave blank** | Web-OAuth only. The native flow sends an identity token that Supabase verifies against Apple's public keys, checking `aud` against the Client IDs above. No secret is involved. |
+| Allow users without an email | **leave off** | See below. |
+| Callback URL | nothing to do | Web redirect target; unused here. |
 
-**Apple Developer**: the App ID needs the "Sign In with Apple" capability enabled.
+**Ignore the "Apple OAuth secret keys expire every 6 months" warning.** It refers to
+the Secret Key field, which is empty and unused — there is nothing to rotate.
+
+**Why "allow users without an email" stays off.** Sign in with Apple always returns
+an email claim (a `@privaterelay.appleid.com` address when the user picks Hide My
+Email), so the toggle buys nothing. It costs something, though: it permits accounts
+with a null email, and `backend/app/routers/account.py` refuses to delete an account
+that has neither an email to reauthenticate against nor a second factor. In-app
+account deletion is mandatory under App Review 5.1.1(v), so an undeletable account is
+a rejection waiting to happen. Off keeps every account deletable.
+
+**Apple Developer portal**: the App ID needs the **Sign In with Apple** capability
+enabled, or the entitlement won't provision and the EAS build fails at signing.
+`app.json` already sets `ios.usesAppleSignIn` and the `expo-apple-authentication`
+plugin, so nothing else is needed in the project.
 
 > Apple only ever returns the user's name on the **first** authorization for a
 > given Apple ID. The code captures it there and writes it to user metadata
