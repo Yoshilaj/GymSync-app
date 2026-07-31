@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -59,17 +60,30 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/** Don't re-read the account more often than this on foreground. */
+const FOREGROUND_SYNC_MS = 60_000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [twoFactorPending, setTwoFactorPending] = useState(false);
+  const lastForegroundSync = useRef(0);
 
   useEffect(() => {
     // Load any persisted session, then subscribe to changes.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
+      // The stored session can be days old and carries a snapshot of the account
+      // from whenever its token was minted. Re-read it once on launch so a change
+      // made elsewhere (or on another device) doesn't wait for a token to expire.
+      // Not awaited: the gate shouldn't sit on the network to show a screen it can
+      // already draw from the persisted session.
+      if (data.session) {
+        lastForegroundSync.current = Date.now();
+        void supabase.auth.refreshSession();
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
@@ -80,9 +94,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     // Keep tokens fresh while the app is foregrounded (Supabase's recommendation).
+    //
+    // Coming back to the foreground also re-reads the account itself. The session
+    // holds a *snapshot* of the user taken when the token was minted, so anything
+    // changed server-side since then — an email confirmed by clicking a link in
+    // Safari, say — stays invisible for up to a token lifetime. That is exactly
+    // what happened: the address updated on the server while Settings kept showing
+    // the old one, because the confirmation never came back through the app.
+    //
+    // Throttled, because this app gets foregrounded constantly mid-workout and
+    // one request per glance at the phone is not a fair trade for freshness.
     const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') supabase.auth.startAutoRefresh();
-      else supabase.auth.stopAutoRefresh();
+      if (state !== 'active') {
+        supabase.auth.stopAutoRefresh();
+        return;
+      }
+      supabase.auth.startAutoRefresh();
+
+      const now = Date.now();
+      if (now - lastForegroundSync.current < FOREGROUND_SYNC_MS) return;
+      lastForegroundSync.current = now;
+      void supabase.auth.refreshSession().then(({ error }) => {
+        // A failure here is not a signed-out user — it's usually just no network
+        // on wake. The existing session stays exactly as it was.
+        if (error && __DEV__) console.warn('[auth] foreground refresh failed:', error.message);
+      });
     });
 
     return () => {
