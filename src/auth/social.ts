@@ -71,6 +71,40 @@ async function makeNonce(): Promise<{ raw: string; hashed: string }> {
   return { raw, hashed };
 }
 
+/**
+ * Never show a user a sentence written for whoever wired the provider up.
+ *
+ * GoTrue's provider errors are configuration diagnostics — "Passed nonce and
+ * nonce in id_token should either both exist or not" is a real message it
+ * returns, and it appeared verbatim on the sign-in screen. Nothing a person
+ * holding a phone can do with that.
+ *
+ * The developer-facing text still goes to the console, because these are exactly
+ * the failures you need the specifics of.
+ */
+function friendlyProviderError(message: string, provider: SocialProvider): string {
+  if (__DEV__) console.warn(`[auth/${provider}] ${message}`);
+
+  const lower = message.toLowerCase();
+
+  // Provider misconfiguration — the user cannot fix any of these, so they all
+  // get the same honest "it's us, not you".
+  if (
+    lower.includes('nonce') ||
+    lower.includes('audience') ||
+    lower.includes('client id') ||
+    lower.includes('provider is not enabled') ||
+    lower.includes('unsupported provider') ||
+    lower.includes('invalid_client')
+  ) {
+    return `${provider === 'apple' ? 'Apple' : 'Google'} sign-in isn't set up correctly. Please use email for now.`;
+  }
+  if (lower.includes('network') || lower.includes('timeout') || lower.includes('offline')) {
+    return 'Check your connection and try again.';
+  }
+  return `Couldn't sign in with ${provider === 'apple' ? 'Apple' : 'Google'}. Please try again.`;
+}
+
 function isCancellation(e: unknown): boolean {
   const code = (e as { code?: string })?.code;
   return (
@@ -111,7 +145,7 @@ export async function signInWithApple(): Promise<SocialResult> {
       token: credential.identityToken,
       nonce: raw,
     });
-    if (error) return { error: error.message };
+    if (error) return { error: friendlyProviderError(error.message, 'apple') };
 
     if (fullName) {
       // Best effort, and deliberately not awaited into the failure path: the user
@@ -121,7 +155,9 @@ export async function signInWithApple(): Promise<SocialResult> {
     return { error: null };
   } catch (e) {
     if (isCancellation(e)) return CANCELLED;
-    return { error: e instanceof Error ? e.message : 'Apple sign-in failed.' };
+    return {
+      error: friendlyProviderError(e instanceof Error ? e.message : 'Apple sign-in failed.', 'apple'),
+    };
   }
 }
 
@@ -145,11 +181,17 @@ export async function signInWithGoogle(): Promise<SocialResult> {
     const { error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
       token: idToken,
+      // No nonce: @react-native-google-signin exposes no way to set one (there
+      // is no `nonce` anywhere in the package, v16.1.4), while Google's iOS SDK
+      // puts one in the token regardless. Supabase rejects that mismatch unless
+      // "Skip nonce checks" is on for the Google provider — see docs/AUTH_SETUP.md.
     });
-    return { error: error?.message ?? null };
+    return { error: error ? friendlyProviderError(error.message, 'google') : null };
   } catch (e) {
     if (isCancellation(e)) return CANCELLED;
-    return { error: e instanceof Error ? e.message : 'Google sign-in failed.' };
+    return {
+      error: friendlyProviderError(e instanceof Error ? e.message : 'Google sign-in failed.', 'google'),
+    };
   }
 }
 

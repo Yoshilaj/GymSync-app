@@ -104,8 +104,18 @@ token.
 
 Then:
 
-1. **Supabase → Auth → Providers → Google**: enable, and put the **Web** client ID
-   in "Client IDs". No client secret is needed for the native ID-token flow.
+1. **Supabase → Auth → Providers → Google**: enable, put the **Web** client ID in
+   "Client IDs" (no client secret needed for the native ID-token flow), and turn on
+   **"Skip nonce checks"**.
+
+   That last one is not optional here, and the failure without it is opaque:
+   sign-in dies with *"Passed nonce and nonce in id_token should either both exist
+   or not."* `@react-native-google-signin` exposes no way to set a nonce — the
+   string doesn't appear anywhere in the package (v16.1.4) — while Google's iOS SDK
+   puts one in the token regardless. Supabase sees a nonce it can't match against
+   anything and refuses. The toggle exists for exactly this class of native SDK.
+   The cost is replay protection on the ID token, mitigated by Google's tokens
+   being short-lived, audience-bound to your client ID, and carried over TLS.
 2. `.env`: set both `EXPO_PUBLIC_GOOGLE_*` values. If either is missing the Google
    button is not rendered at all — deliberately, so a build can never show a button
    that cannot work.
