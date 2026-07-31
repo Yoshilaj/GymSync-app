@@ -9,6 +9,7 @@ Request-changes needs no endpoint: it's a chat message; the agent emits a
 fresh proposal which supersedes the old pending row.
 """
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -33,6 +34,7 @@ from app.entitlements import (
 )
 
 router = APIRouter(tags=["plans"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/plans/generate")
@@ -55,7 +57,11 @@ async def generate_plan(
     try:
         event = await run_plan_generation(user_id, db)
     except PlanGenerationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("plan generation failed for %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't build your plan just now. Please try again.",
+        ) from exc
 
     # After the plan exists. A generation that failed upstream shouldn't spend
     # the only one a free user gets.
@@ -116,13 +122,22 @@ async def generate_plan_anonymous(
     governs how fast you may spend our money finding out.
     """
     enforce("generate_anonymous_ip", client_ip(request))
+    # Per-IP alone assumes one attacker holds one address. A rotating proxy pool
+    # gets a fresh allowance per hop, so cap the route as a whole too.
+    enforce("generate_anonymous_global", "all")
 
     try:
         event = await run_anonymous_plan_generation(
             body.model_dump(), db, personality_preset=body.coach_preset
         )
     except PlanGenerationError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        # The agent's own message names models, timeouts and tool internals. It's
+        # useful in the log and nobody's business on an unauthenticated route.
+        logger.warning("anonymous plan generation failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Couldn't build your plan just now. Please try again.",
+        ) from exc
     return {"plan": event["plan"], "warnings": event.get("warnings", [])}
 
 

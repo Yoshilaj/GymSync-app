@@ -27,7 +27,13 @@ PROTECTED = [
     (auth_router.change_password, ["password_change"]),
     (auth_router.confirm_reset, ["password_change"]),
     (auth_router.sync_mfa_state, ["mfa_state"]),
-    (plans_router.generate_plan_anonymous, ["generate_anonymous_ip"]),
+    # Both budgets, deliberately: per-IP is the everyday limit, the global one is
+    # the circuit breaker for a caller who has more than one IP. Losing either
+    # silently would leave the route looking protected.
+    (
+        plans_router.generate_plan_anonymous,
+        ["generate_anonymous_ip", "generate_anonymous_global"],
+    ),
     (account_router.delete_account, ["password_change"]),
 ]
 

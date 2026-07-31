@@ -1,7 +1,9 @@
 """
 Agent orchestration.
-_agent_events()  — core loop, yields plain dicts (shared by SSE and WebSocket)
-run_chat_agent() — SSE wrapper for POST /api/chat
+_agent_events() — core loop, yields plain dicts; consumed by the /ws/voice socket,
+which is the only way a client reaches the agent. The old POST /api/chat SSE twin
+was removed: nothing called it, and it bypassed the CHAT_MESSAGE quota the socket
+enforces, so it was a free-tier escape hatch.
 LangGraph state machine (Step 11) will wrap _agent_events with state routing.
 """
 import asyncio
@@ -778,17 +780,6 @@ async def _agent_events(
         logger.exception("agent turn failed")
         yield {"type": "error", "message": str(exc), "fatal": False}
         yield {"type": "done"}
-
-
-async def run_chat_agent(
-    user_message: str,
-    session_id: str | None,
-    user_id: str,
-    db: AsyncClient,
-) -> AsyncGenerator[str, None]:
-    """SSE wrapper around _agent_events for POST /api/chat."""
-    async for event in _agent_events(user_message, session_id, user_id, db):
-        yield f"data: {json.dumps(event)}\n\n"
 
 
 # ── One-shot plan generation (onboarding) ─────────────────────────────────────

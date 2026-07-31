@@ -1,8 +1,10 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.billing.apple import validate_billing_settings
 from app.config import settings
@@ -12,7 +14,6 @@ from app.routers import (
     account,
     auth,
     billing,
-    chat,
     conversations,
     personality,
     plans,
@@ -40,6 +41,8 @@ logging.getLogger("deepgram").propagate = False
 # httpx logs a line per request, and one voice turn makes several Supabase
 # calls — left at INFO it buries the lines this config exists to surface.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -82,6 +85,28 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Last line of defence for anything a handler didn't catch.
+
+    Starlette's default already withholds the traceback from the response, so this
+    isn't closing a leak — it's making the failure *findable*. Every unhandled error
+    now carries a short id that appears both in the log line and in the body, so a
+    user can quote it in a support message and it lands on the exact stack trace.
+    """
+    error_id = uuid.uuid4().hex[:12]
+    logger.exception(
+        "unhandled error %s on %s %s", error_id, request.method, request.url.path
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Something went wrong on our end.",
+            "error_id": error_id,
+        },
+    )
+
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(personality.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
@@ -89,7 +114,6 @@ app.include_router(plans.router, prefix="/api")
 app.include_router(account.router, prefix="/api")
 app.include_router(progress.router, prefix="/api")
 app.include_router(session.router, prefix="/api")
-app.include_router(chat.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(billing.router, prefix="/api")
 app.include_router(voice_ws.router)

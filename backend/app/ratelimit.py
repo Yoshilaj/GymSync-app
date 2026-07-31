@@ -78,6 +78,18 @@ BUDGETS = {
     # Unauthenticated AND it calls the model — the single most expensive thing a
     # stranger can make this server do.
     "generate_anonymous_ip": Budget(5, 3600, "You've generated several plans already. Try again later."),
+    # Circuit breaker for the same route, counted across ALL callers rather than
+    # per IP. The per-IP budget assumes an attacker has one address; a botnet or a
+    # rotating proxy pool has thousands, and each gets its own clean allowance. This
+    # is the ceiling on the day's total Anthropic bill from strangers.
+    #
+    # 400/day is roughly 80 distinct people completing onboarding — comfortably
+    # above real signup volume today, and it should be raised the moment that stops
+    # being true. Hitting it means either genuine growth or an attack; either way it
+    # logs, and the funnel degrades rather than the bill exploding.
+    "generate_anonymous_global": Budget(
+        400, 86400, "Plan generation is busy right now. Please try again shortly."
+    ),
     # 2FA codes are six digits; without a cap, brute force is a matter of minutes.
     "mfa_state": Budget(20, 300),
 }
