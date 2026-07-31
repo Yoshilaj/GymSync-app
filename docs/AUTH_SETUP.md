@@ -119,12 +119,40 @@ Build *after* filling in `iosUrlScheme`, since it's compiled into Info.plist.
 
 ---
 
-## 6. Custom SMTP (Phase 7)
+## 6. Custom SMTP — a launch blocker
 
-Supabase's built-in mailer is capped at roughly 2–3 emails/hour, which is fine for
-one developer and breaks immediately in production — signup and password reset both
-send. Needs a Resend (or Postmark) account with a verified sending domain, then
-**Supabase → Auth → SMTP Settings**.
+Supabase's built-in mailer is capped at roughly **2–3 emails per hour**, project-wide.
+That's survivable for one developer and breaks on day one in production: signup,
+password reset and email change all send. Past the cap, GoTrue returns 429 and the
+user sees a failure with no email — the worst version of this, because it looks like
+the app is broken rather than rate-limited.
+
+1. **Resend** (or Postmark) account, then add and verify your sending domain. This is
+   the step with a wait in it — DNS propagation — so start it first.
+2. Add the DKIM and SPF records Resend gives you. Skipping these is how a correctly
+   configured mailer still lands in spam.
+3. **Supabase → Auth → SMTP Settings**, enable custom SMTP:
+
+   | Field | Value |
+   |---|---|
+   | Host | `smtp.resend.com` |
+   | Port | `465` |
+   | Username | `resend` |
+   | Password | your Resend API key |
+   | Sender email | something at your verified domain, e.g. `no-reply@gymsyncapp.me` |
+   | Sender name | `GymSync` |
+
+   Don't send from a free-mail address — it fails DMARC alignment and gets filtered.
+4. **Auth → Rate Limits**: raise the email limit, which stays at the built-in
+   default even after custom SMTP is configured. That default is the actual cap.
+5. **Auth → Email Templates**: paste in the three templates from
+   `backend/supabase/email-templates/`, with the subject lines listed in that
+   directory's README.
+
+**Verify it:** create an account with a throwaway address, confirm the mail arrives
+and looks right on a phone, then send ten signups within five minutes and check that
+all ten land. Run one through [mail-tester.com](https://www.mail-tester.com) — a score
+below 8 usually means SPF or DKIM isn't aligned.
 
 ---
 
