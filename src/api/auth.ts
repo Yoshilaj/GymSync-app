@@ -24,6 +24,20 @@ export interface LoginResponse {
   session: AuthSession;
 }
 
+/**
+ * This module deliberately does NOT go through api/client.ts, and that is not an
+ * oversight.
+ *
+ * The shared client treats 401 as "the session died" — refresh, retry, and sign the
+ * user out if it happens again. On these endpoints a 401 means something completely
+ * different: `/auth/login` answers 401 for a wrong password, and
+ * `/auth/change-password` answers 401 for a wrong CURRENT password. Routing those
+ * through the shared client would refresh a perfectly healthy session, retry the
+ * same wrong password, and then sign the user out for mistyping.
+ *
+ * So auth keeps its own thin wrapper, and its own error type.
+ */
+
 /** Thrown for non-OK responses, carrying the backend's user-facing `detail`. */
 export class AuthApiError extends Error {
   constructor(message: string, readonly status: number) {

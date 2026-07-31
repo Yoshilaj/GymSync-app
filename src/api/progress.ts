@@ -3,7 +3,7 @@
  * logging, and the body-weight log. All real numbers; zeros/empty for fresh
  * accounts.
  */
-import { voiceConfig } from '@/voice/config';
+import { api } from './client';
 
 export interface ProgressSummary {
   current_streak: number;
@@ -30,18 +30,9 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : null),
-  });
-  if (!res.ok) {
-    throw new Error(`Progress ${method} ${path} failed (HTTP ${res.status})`);
-  }
-  return (await res.json()) as T;
+  return method === 'GET'
+    ? api.get<T>(`/api${path}`, token)
+    : api.post<T>(`/api${path}`, token, body);
 }
 
 export function fetchProgressSummary(token: string): Promise<ProgressSummary> {

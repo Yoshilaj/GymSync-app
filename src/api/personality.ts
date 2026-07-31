@@ -1,6 +1,6 @@
-import { voiceConfig } from '@/voice/config';
 import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
 import { CoachPersonality } from '@/types';
+import { api, ApiError } from './client';
 
 export interface PersonalityResponse {
   preset_id: CoachPersonality;
@@ -9,37 +9,26 @@ export interface PersonalityResponse {
   available_presets: { id: CoachPersonality; name: string }[];
 }
 
-async function request(
-  token: string,
-  method: 'GET' | 'PUT',
-  body?: object,
-): Promise<PersonalityResponse> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/personality`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    // Switching coaches is a Pro capability, so a 403 here is a paywall prompt
-    // rather than a failure. Onboarding's first write is never refused — the
-    // server gates the CHANGE, not the initial quiz result.
-    const upgrade = parseUpgrade(await res.json().then((b) => b?.detail).catch(() => null));
+/** Switching coaches is a Pro capability, so a 403 here is a paywall prompt rather
+ * than a failure. Onboarding's first write is never refused — the server gates the
+ * CHANGE, not the initial quiz result. */
+function rethrow(e: unknown): never {
+  if (e instanceof ApiError) {
+    const upgrade = parseUpgrade(e.detail);
     if (upgrade) throw new UpgradeRequiredError(upgrade);
-    throw new Error(`Personality ${method} failed (HTTP ${res.status})`);
   }
-  return (await res.json()) as PersonalityResponse;
+  throw e;
 }
 
 export function fetchPersonality(token: string): Promise<PersonalityResponse> {
-  return request(token, 'GET');
+  return api.get<PersonalityResponse>('/api/personality', token).catch(rethrow);
 }
 
 export function updatePersonality(
   token: string,
   presetId: CoachPersonality,
 ): Promise<PersonalityResponse> {
-  return request(token, 'PUT', { preset_id: presetId });
+  return api
+    .put<PersonalityResponse>('/api/personality', token, { preset_id: presetId })
+    .catch(rethrow);
 }

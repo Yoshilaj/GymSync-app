@@ -21,7 +21,7 @@ import {
   type BillingPeriod,
   type TierId,
 } from '@/screens/pricing/catalog';
-import { voiceConfig } from '@/voice/config';
+import { ApiError, authedFetch } from './client';
 
 export interface Entitlement {
   tier: TierId;
@@ -104,48 +104,59 @@ async function request<T>(
   path: string,
   init?: { method?: 'GET' | 'POST'; body?: unknown },
 ): Promise<T> {
-  let res: Response;
   try {
-    res = await fetch(`${voiceConfig.apiBaseUrl}/api/billing${path}`, {
+    return await authedFetch<T>(`/api/billing${path}`, token, {
       method: init?.method ?? 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
       ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : null),
     });
-  } catch {
-    // Offline. Emphatically NOT terminal: the purchase may well have gone
-    // through on Apple's side, and the reconcile pass will submit it again.
-    throw new BillingError('Could not reach GymSync. Check your connection.', 'network');
+  } catch (e) {
+    throw toBillingError(e);
+  }
+}
+
+/**
+ * Map a shared-client failure onto this module's retryable/terminal distinction.
+ *
+ * That distinction is the whole point of the file: "terminal" means the caller
+ * finishes the StoreKit transaction and stops, so getting it wrong either
+ * discards a real purchase or retries a dead one forever. The mapping is
+ * unchanged from when this module spoke to fetch directly — only the transport
+ * moved, so it now refreshes an expired token and retries once before any of
+ * this is reached.
+ */
+function toBillingError(e: unknown): BillingError {
+  if (!(e instanceof ApiError)) {
+    return new BillingError('Something went wrong. Try again.', 'unknown');
   }
 
-  if (!res.ok) {
-    const detail = await res.json().catch(() => null);
-    const message: string =
-      detail?.detail?.message ?? 'Something went wrong. Try again.';
-
-    // 409 — this Apple subscription belongs to another GymSync account.
-    // Terminal by definition: no amount of retrying makes it ours.
-    if (res.status === 409) {
-      throw new BillingError(message, 'already_linked', true);
-    }
-    // 422 — verified but unusable (unknown product, wrong app, bad signature).
-    // Also terminal; retrying re-submits the same bytes.
-    //
-    // Note what is NOT here: an environment mismatch. That is a server
-    // misconfiguration, and the server reports it as 503 precisely so it lands
-    // in the retryable branch below — treating it as terminal would finish and
-    // discard a genuine purchase over a wrong config line.
-    if (res.status === 422) {
-      throw new BillingError(message, 'invalid', true);
-    }
-    // Everything else — 5xx, timeouts, unknown — is retryable. The transaction
-    // stays unfinished and the next reconcile submits it again.
-    throw new BillingError(message, res.status >= 500 ? 'network' : 'unknown');
+  // Offline. Emphatically NOT terminal: the purchase may well have gone
+  // through on Apple's side, and the reconcile pass will submit it again.
+  if (e.status === 0) {
+    return new BillingError('Could not reach GymSync. Check your connection.', 'network');
   }
 
-  return (await res.json()) as T;
+  // This endpoint nests its user-facing text one level deeper than the rest of
+  // the API — detail is an object, not a sentence.
+  const detail = e.detail as { message?: string } | string | null | undefined;
+  const message =
+    (typeof detail === 'object' && detail?.message) || 'Something went wrong. Try again.';
+
+  // 409 — this Apple subscription belongs to another GymSync account.
+  // Terminal by definition: no amount of retrying makes it ours.
+  if (e.status === 409) return new BillingError(message, 'already_linked', true);
+
+  // 422 — verified but unusable (unknown product, wrong app, bad signature).
+  // Also terminal; retrying re-submits the same bytes.
+  //
+  // Note what is NOT here: an environment mismatch. That is a server
+  // misconfiguration, and the server reports it as 503 precisely so it lands
+  // in the retryable branch below — treating it as terminal would finish and
+  // discard a genuine purchase over a wrong config line.
+  if (e.status === 422) return new BillingError(message, 'invalid', true);
+
+  // Everything else — 5xx, an expired session, unknown — is retryable. The
+  // transaction stays unfinished and the next reconcile submits it again.
+  return new BillingError(message, e.status >= 500 ? 'network' : 'unknown');
 }
 
 /**

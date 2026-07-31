@@ -1,4 +1,4 @@
-import { voiceConfig } from '@/voice/config';
+import { api } from './client';
 import type { ConversationMessageRow } from '@/voice';
 
 export interface ConversationSummary {
@@ -13,30 +13,11 @@ export interface ConversationThread {
   messages: ConversationMessageRow[];
 }
 
-async function request<T>(
-  token: string,
-  method: 'GET' | 'DELETE',
-  path: string,
-): Promise<T> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Conversations ${method} ${path} failed (HTTP ${res.status})`);
-  }
-  return (await res.json()) as T;
-}
-
 /** Newest-first; the backend already applies the 90-day retention window. */
 export async function fetchConversations(token: string): Promise<ConversationSummary[]> {
-  const data = await request<{ conversations: ConversationSummary[] }>(
+  const data = await api.get<{ conversations: ConversationSummary[] }>(
+    '/api/conversations',
     token,
-    'GET',
-    '/conversations',
   );
   return data.conversations;
 }
@@ -45,9 +26,9 @@ export function fetchConversationThread(
   token: string,
   id: string,
 ): Promise<ConversationThread> {
-  return request<ConversationThread>(token, 'GET', `/conversations/${id}`);
+  return api.get<ConversationThread>(`/api/conversations/${id}`, token);
 }
 
 export async function deleteConversation(token: string, id: string): Promise<void> {
-  await request<{ status: string }>(token, 'DELETE', `/conversations/${id}`);
+  await api.del<{ status: string }>(`/api/conversations/${id}`, token);
 }

@@ -2,8 +2,8 @@
  * Server profile — the onboarding data layer (GET/PUT /api/profile).
  * Anthropometrics travel in canonical metric; convert via src/lib/units.ts.
  */
-import { voiceConfig } from '@/voice/config';
 import type { Units } from '@/types';
+import { api } from './client';
 
 export type Sex = 'male' | 'female';
 export type ActivityLevel =
@@ -37,32 +37,13 @@ export interface ProfileResponse {
   onboarded: boolean;
 }
 
-async function request<T>(
-  token: string,
-  method: 'GET' | 'PUT',
-  body?: unknown,
-): Promise<T> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/profile`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : null),
-  });
-  if (!res.ok) {
-    throw new Error(`Profile ${method} failed (HTTP ${res.status})`);
-  }
-  return (await res.json()) as T;
-}
-
 export async function fetchProfile(token: string): Promise<ProfileResponse> {
-  return request<ProfileResponse>(token, 'GET');
+  return api.get<ProfileResponse>('/api/profile', token);
 }
 
 export async function updateProfile(
   token: string,
   patch: Partial<ServerProfile> & { complete_onboarding?: boolean },
 ): Promise<ProfileResponse> {
-  return request<ProfileResponse>(token, 'PUT', patch);
+  return api.put<ProfileResponse>('/api/profile', token, patch);
 }

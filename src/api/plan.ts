@@ -6,6 +6,7 @@
  * consuming the shape it always has.
  */
 import { voiceConfig } from '@/voice/config';
+import { ApiError, authedFetch } from './client';
 import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
 import type { PlannedExercise, PlannedWorkout, WeeklyPlan } from '@/types';
 import type { PlanProposalWire } from '@/voice/protocol';
@@ -72,18 +73,14 @@ async function request<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
-  if (!res.ok) {
-    await raiseForStatus(res, `Plans ${method} ${path}`);
+  try {
+    return await authedFetch<T>(`/api${path}`, token, {
+      method,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  } catch (e) {
+    return rethrowPlanError(e, `Plans ${method} ${path}`);
   }
-  return (await res.json()) as T;
 }
 
 /**
@@ -95,6 +92,27 @@ async function request<T>(
  * call site unable to tell it apart from a server error. That is why plan
  * generation could never have shown a paywall.
  */
+/**
+ * The same mapping, for a failure that already came back through api/client.ts.
+ * The shared client has done the 401-refresh-and-retry by this point; what's left
+ * is turning the body into the most specific error this module knows about.
+ */
+function rethrowPlanError(e: unknown, label: string): never {
+  if (!(e instanceof ApiError)) throw e;
+  // A session that has already been signed out isn't a plan problem — let it
+  // through untouched so the caller doesn't report it as one.
+  if (e.signedOut || e.mfaRequired) throw e;
+
+  const upgrade = parseUpgrade(e.detail);
+  if (upgrade) throw new UpgradeRequiredError(upgrade);
+
+  throw new PlanApiError(
+    e.status,
+    `${label} failed (HTTP ${e.status})`,
+    typeof e.detail === 'string' ? e.detail : undefined,
+  );
+}
+
 async function raiseForStatus(res: Response, label: string): Promise<never> {
   const body = await res.json().catch(() => null);
   const detail = body?.detail;
@@ -221,16 +239,14 @@ export async function generatePlan(token: string): Promise<GeneratedProposal> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 120_000);
   try {
-    const res = await fetch(`${voiceConfig.apiBaseUrl}/api/plans/generate`, {
+    // Through the shared client so a token that expires during a two-minute
+    // generation refreshes and retries instead of throwing the work away.
+    return await authedFetch<GeneratedProposal>('/api/plans/generate', token, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
       signal: controller.signal,
     });
-    if (!res.ok) await raiseForStatus(res, 'Plan generation');
-    return (await res.json()) as GeneratedProposal;
+  } catch (e) {
+    return rethrowPlanError(e, 'Plan generation');
   } finally {
     clearTimeout(timer);
   }
@@ -285,16 +301,12 @@ export async function adoptPlanProposal(
   token: string,
   plan: PlanProposalWire,
 ): Promise<{ proposal_id: string; plan: PlanProposalWire }> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/plans/proposals/adopt`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ plan }),
-  });
-  if (!res.ok) await raiseForStatus(res, 'Plan adopt');
-  return (await res.json()) as { proposal_id: string; plan: PlanProposalWire };
+  return request<{ proposal_id: string; plan: PlanProposalWire }>(
+    token,
+    'POST',
+    '/plans/proposals/adopt',
+    { plan },
+  );
 }
 
 /** The still-pending proposal, if any (crash/reload recovery in onboarding). */

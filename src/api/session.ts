@@ -1,4 +1,9 @@
-import { voiceConfig } from '@/voice/config';
+/**
+ * Workout session lifecycle (POST/GET/PATCH/DELETE /api/session).
+ * All calls go through api/client.ts, so an expired token refreshes and retries
+ * once mid-workout rather than surfacing as a failed set.
+ */
+import { api, authedFetch } from './client';
 
 export interface SessionSetRow {
   exercise_name: string;
@@ -20,26 +25,16 @@ export interface WorkoutSessionRow {
   [key: string]: unknown;
 }
 
-function headers(token: string) {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${token}`,
-  };
-}
-
 /** POST /api/session — ends any existing active session and starts a new one. */
 export async function createSession(
   token: string,
   planId: string | null = null,
   workoutId: string | null = null,
 ): Promise<WorkoutSessionRow> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session`, {
-    method: 'POST',
-    headers: headers(token),
-    body: JSON.stringify({ plan_id: planId, workout_id: workoutId }),
+  const data = await api.post<{ session: WorkoutSessionRow }>('/api/session', token, {
+    plan_id: planId,
+    workout_id: workoutId,
   });
-  if (!res.ok) throw new Error(`Session create failed (HTTP ${res.status})`);
-  const data = (await res.json()) as { session: WorkoutSessionRow };
   return data.session;
 }
 
@@ -47,11 +42,10 @@ export async function createSession(
 export async function fetchActiveSession(
   token: string,
 ): Promise<WorkoutSessionRow | null> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session/active`, {
-    headers: headers(token),
-  });
-  if (!res.ok) throw new Error(`Active session fetch failed (HTTP ${res.status})`);
-  const data = (await res.json()) as { session: WorkoutSessionRow | null };
+  const data = await api.get<{ session: WorkoutSessionRow | null }>(
+    '/api/session/active',
+    token,
+  );
   return data.session;
 }
 
@@ -61,22 +55,13 @@ export async function patchCurrentExercise(
   sessionId: string,
   currentExercise: string,
 ): Promise<void> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session/${sessionId}`, {
+  await authedFetch<void>(`/api/session/${sessionId}`, token, {
     method: 'PATCH',
-    headers: headers(token),
     body: JSON.stringify({ current_exercise: currentExercise }),
   });
-  if (!res.ok) throw new Error(`Session update failed (HTTP ${res.status})`);
 }
 
 /** DELETE /api/session/{id} — end the session. */
-export async function endSession(
-  token: string,
-  sessionId: string,
-): Promise<void> {
-  const res = await fetch(`${voiceConfig.apiBaseUrl}/api/session/${sessionId}`, {
-    method: 'DELETE',
-    headers: headers(token),
-  });
-  if (!res.ok) throw new Error(`Session end failed (HTTP ${res.status})`);
+export async function endSession(token: string, sessionId: string): Promise<void> {
+  await api.del<void>(`/api/session/${sessionId}`, token);
 }
