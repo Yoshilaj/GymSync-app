@@ -213,7 +213,14 @@ path already stubbed in `app/cache.py`.
 
 ## Test account
 
-`estate+gymsynccurl@scissors-corp.jp` / `GymSync-Test-2026`
+`estate+gymsynccurl@scissors-corp.jp` — password is **not** recorded here.
 
-The old password normalised to "password", which the server-side rules now reject —
-see `backend/app/password.py`.
+It used to be, in plaintext, in this tracked file. That is a working credential on
+the live Supabase project, so it now lives in your password manager alongside
+everything else. Put it in `backend/.env` as `TEST_ACCOUNT_PASSWORD` if a script
+needs it; `.env` is gitignored.
+
+Note the password rules when you set a new one: it must clear
+`backend/app/password.py`, which normalises the input before checking it against a
+common-password blocklist — the original test password normalised to "password" and
+would be rejected today.
