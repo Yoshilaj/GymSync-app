@@ -79,7 +79,7 @@ async def get_active_session(
     # checkmarks and position in one round trip (session resume).
     sets = await db.table("completed_sets").select(
         "exercise_name, set_index, reps, weight, weight_unit"
-    ).eq("session_id", session["id"]).order("logged_at").execute()
+    ).eq("session_id", session["id"]).eq("user_id", user_id).order("logged_at").execute()
     session["completed_sets"] = sets.data or []
     return {"session": session}
 

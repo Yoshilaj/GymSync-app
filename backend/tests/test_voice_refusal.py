@@ -15,6 +15,7 @@ import pytest
 
 import app.routers.voice_ws as voice_ws_mod
 from app.entitlements import QuotaExceeded
+from tests.fake_supabase import FakeDB
 
 
 class FakeWS:
@@ -71,11 +72,18 @@ def _start_frame(**extra) -> dict:
 
 @pytest.fixture
 def wired(monkeypatch):
-    """Authenticate as u1, no database, VoiceSession spied on."""
+    """Authenticate as u1, VoiceSession spied on, and s1 genuinely owned by u1.
+
+    The session has to exist and belong to u1 because session_start now proves
+    ownership before it will use the id (see app/session_store.py). These tests
+    are about the refusal contract, so they take the happy ownership path.
+    """
     SpyVoiceSession.created = []
+    db = FakeDB()
+    db.tables["workout_sessions"] = [{"id": "s1", "user_id": "u1"}]
 
     async def fake_db():
-        return None
+        return db
 
     async def fake_auth(token):
         return "u1"

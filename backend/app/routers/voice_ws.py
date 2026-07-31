@@ -69,6 +69,7 @@ from app.agents.core import _agent_events
 from app.agents.voice import VoiceSession
 from app.database import get_db
 from app.jwt_verify import TokenInvalid, VerifierUnavailable, verify_access_token
+from app.session_store import owns_session
 from app.entitlements import (
     CHAT_MESSAGE,
     VOICE_SESSION,
@@ -189,6 +190,20 @@ async def voice_ws(
             if msg_type == "session_start":
                 session_id = data.get("session_id")
                 voice_enabled = data.get("voice", False)
+
+                if session_id and not await owns_session(session_id, user_id, db):
+                    # Same rule as conversation_id below: an id off the wire must
+                    # belong to this user. Everything downstream — _load_history and
+                    # every agent tool reading ctx.session_id — trusts this check and
+                    # queries the row by id alone, so it is the only thing standing
+                    # between a guessed uuid and another user's workout and chat log.
+                    # Drop to a free-form session rather than closing the socket; the
+                    # client already handles a session-less turn.
+                    session_id = None
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Session not found",
+                    })
 
                 conversation_mode = "conversation_id" in data
                 conversation_id = data.get("conversation_id")

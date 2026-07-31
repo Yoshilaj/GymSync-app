@@ -21,6 +21,7 @@ from supabase import AsyncClient
 from app import plan_store
 from app.auth import get_current_user_id
 from app.database import get_db
+from app.session_store import assert_session_owner
 
 router = APIRouter(tags=["progress"])
 
@@ -47,6 +48,12 @@ async def log_set(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
+    # The session id comes from the request body, so prove it's the caller's before
+    # writing anything. The upsert below conflicts on (session_id, exercise_name,
+    # set_index) — a key that does NOT include user_id — so an unchecked write
+    # against someone else's session would overwrite their set rather than fail.
+    await assert_session_owner(body.session_id, user_id, db)
+
     # Resolve exercise_id server-side (same rule as the voice log_set) — the
     # client sends a name from its bundled catalog, and a stale id would
     # violate the FK and silently lose the set. Bodyweight names resolve too,

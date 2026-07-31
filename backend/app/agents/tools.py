@@ -775,7 +775,7 @@ async def _load_session_position(
     row = sres.data or {}
     logged = await ctx.db.table("completed_sets").select("exercise_name").eq(
         "session_id", ctx.session_id
-    ).execute()
+    ).eq("user_id", ctx.user_id).execute()
     counts: dict[str, int] = {}
     for r in logged.data or []:
         n = r.get("exercise_name") or "?"
@@ -844,7 +844,9 @@ async def execute_tool(
         # spoken ordinal ("first set") targets one of them; no ordinal appends.
         idx_res = await ctx.db.table("completed_sets").select(
             "set_index"
-        ).eq("session_id", ctx.session_id).eq("exercise_name", exercise_name).execute()
+        ).eq("session_id", ctx.session_id).eq("user_id", ctx.user_id).eq(
+            "exercise_name", exercise_name
+        ).execute()
         existing = [
             r["set_index"] for r in (idx_res.data or [])
             if isinstance(r.get("set_index"), int)
@@ -963,7 +965,9 @@ async def execute_tool(
         ).eq("id", ctx.session_id).single().execute()
         sets_res = await ctx.db.table("completed_sets").select(
             "exercise_name, set_index, reps, weight, weight_unit"
-        ).eq("session_id", ctx.session_id).order("exercise_name").order("set_index").execute()
+        ).eq("session_id", ctx.session_id).eq("user_id", ctx.user_id).order(
+            "exercise_name"
+        ).order("set_index").execute()
 
         grouped: dict[str, list] = {}
         for r in sets_res.data or []:

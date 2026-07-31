@@ -70,6 +70,7 @@ async def summarize_session(session_id: str, user_id: str, db: AsyncClient) -> s
             db.table("completed_sets")
             .select("exercise_name, reps, weight, weight_unit")
             .eq("session_id", session_id)
+            .eq("user_id", user_id)
             .order("logged_at")
             .execute()
         )

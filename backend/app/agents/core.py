@@ -61,15 +61,24 @@ async def _load_history(
     session_id: str | None,
     conversation_id: str | None,
     db: AsyncClient,
+    user_id: str | None = None,
 ) -> list[dict]:
     if conversation_id:
         # Chat-tab thread: already bounded (count + char budget) by the store.
         return await conversation_store.load_recent(conversation_id, db)
     if not session_id:
         return []
-    res = await db.table("workout_sessions").select("chat_history").eq(
-        "id", session_id
-    ).single().execute()
+    # The socket already proved this session belongs to the caller before it
+    # reached ToolContext (app/session_store.py). Scoping the read anyway keeps
+    # this correct on its own terms, so a future caller that skips that check
+    # can't read a stranger's chat log. maybe_single, because a filtered-out row
+    # is now an ordinary miss rather than an error.
+    q = db.table("workout_sessions").select("chat_history").eq("id", session_id)
+    if user_id:
+        q = q.eq("user_id", user_id)
+    res = await q.maybe_single().execute()
+    if not res or not res.data:
+        return []
     return res.data.get("chat_history") or []
 
 
@@ -563,9 +572,12 @@ async def _save_history(
         {"role": "user", "content": user_message, "ts": utcnow()},
         assistant_entry,
     ]
-    await db.table("workout_sessions").update(
+    upd = db.table("workout_sessions").update(
         {"chat_history": updated[-20:], "updated_at": utcnow()}
-    ).eq("id", session_id).execute()
+    ).eq("id", session_id)
+    if user_id:
+        upd = upd.eq("user_id", user_id)
+    await upd.execute()
 
 
 async def _resolve_tier(
@@ -640,7 +652,7 @@ async def _agent_events(
             personality, history, session_ctx, profile_ctx, history_ctx, personal_ctx
         ) = await asyncio.gather(
             _load_personality(user_id, db),
-            _load_history(session_id, conversation_id, db),
+            _load_history(session_id, conversation_id, db, user_id),
             _load_session_context(session_id, db),
             _load_profile_context(user_id, db),
             _load_recent_history(user_id, db, tier),

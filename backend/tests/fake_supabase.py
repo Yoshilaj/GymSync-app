@@ -23,11 +23,18 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     # Surrogate key — the id is generated on insert, like gen_random_uuid() does.
     "personal_chunks": ("id",),
     "injuries": ("id",),
+    "workout_sessions": ("id",),
+    # Migration 012's unique slot key, reproduced EXACTLY — user_id is deliberately
+    # not part of it. That omission is what lets an unchecked write against another
+    # user's session_id overwrite their set instead of inserting a new row, so a
+    # fake that keyed on user_id too would hide the very thing the ownership tests
+    # are here to prove.
+    "completed_sets": ("session_id", "exercise_name", "set_index"),
 }
 
 # Tables whose primary key the DATABASE fills in, so an insert without one is normal
 # rather than a collision on None.
-_GENERATED_IDS = {"personal_chunks", "injuries"}
+_GENERATED_IDS = {"personal_chunks", "injuries", "workout_sessions"}
 
 
 class _Result:
@@ -50,9 +57,12 @@ class _Query:
         self._blind = blind
         self._db = db
         self._filters: list[tuple[str, Any]] = []
+        self._ifilters: list[tuple[str, Any]] = []
         self._limit: int | None = None
         self._pending: dict | None = None
         self._mode = "select"
+        # None | "strict" (.single(), raises on no row) | "maybe" (.maybe_single()).
+        self._single: str | None = None
 
     # ── builders ────────────────────────────────────────────────────────────
     def select(self, *_cols: str) -> "_Query":
@@ -61,6 +71,12 @@ class _Query:
 
     def eq(self, column: str, value: Any) -> "_Query":
         self._filters.append((column, value))
+        return self
+
+    def ilike(self, column: str, value: Any) -> "_Query":
+        # Catalog lookups match display names case-insensitively. No wildcard
+        # handling: every caller passes a bare name, not a pattern.
+        self._ifilters.append((column, value))
         return self
 
     def limit(self, n: int) -> "_Query":
@@ -80,9 +96,26 @@ class _Query:
         self._pending = row
         return self
 
+    def update(self, patch: dict) -> "_Query":
+        self._mode = "update"
+        self._pending = patch
+        return self
+
+    def single(self) -> "_Query":
+        self._single = "strict"
+        return self
+
+    def maybe_single(self) -> "_Query":
+        self._single = "maybe"
+        return self
+
     # ── execution ───────────────────────────────────────────────────────────
     def _matches(self, row: dict) -> bool:
-        return all(str(row.get(c)) == str(v) for c, v in self._filters)
+        return all(
+            str(row.get(c)) == str(v) for c, v in self._filters
+        ) and all(
+            str(row.get(c)).lower() == str(v).lower() for c, v in self._ifilters
+        )
 
     async def execute(self) -> _Result:
         if self._mode in ("upsert", "insert"):
@@ -103,6 +136,18 @@ class _Query:
             self._rows.append(dict(self._pending))
             return _Result([self._pending])
 
+        if self._mode == "update":
+            assert self._pending is not None
+            touched = []
+            for i, existing in enumerate(self._rows):
+                if self._matches(existing):
+                    self._rows[i] = {**existing, **self._pending}
+                    touched.append(self._rows[i])
+            # PostgREST updates nothing when the filters match nothing — it does
+            # not error. A scoped update that hits no row is how the ownership
+            # filters fail safe, so the fake must model it the same way.
+            return _Result(touched)
+
         if self._blind:
             if self._db is not None:
                 self._db.blind_selects.discard(self._table)
@@ -110,6 +155,15 @@ class _Query:
         found = [r for r in self._rows if self._matches(r)]
         if self._limit is not None:
             found = found[: self._limit]
+
+        if self._single is not None:
+            if not found:
+                if self._single == "maybe":
+                    return _Result(None)
+                raise RuntimeError(
+                    f"no rows returned for .single() on {self._table}"
+                )
+            return _Result(found[0])
         return _Result(found)
 
 
