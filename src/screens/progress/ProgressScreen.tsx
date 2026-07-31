@@ -23,7 +23,7 @@ import {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { TrendChart } from '@/components/TrendChart';
-import { AppText, Card, EmptyState, Entering } from '@/components/ui';
+import { AppText, Card, EmptyState, Entering, Skeleton } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { usePlan } from '@/context/PlanContext';
@@ -66,7 +66,14 @@ export function ProgressScreen() {
   const [exerciseId, setExerciseId] = useState<string>('ex-bench');
   const [metric, setMetric] = useState<Metric>('strength');
   const clearance = useTabBarClearance();
-  const { summary, bodyWeight, series } = useProgress(exerciseId, metric);
+  const {
+    summary,
+    bodyWeight,
+    series,
+    summaryLoading,
+    bodyWeightLoading,
+    seriesLoading,
+  } = useProgress(exerciseId, metric);
 
   // Until the user picks an exercise themselves, follow what they actually
   // trained last — a fresh squat session should open on squats, not an empty
@@ -102,6 +109,7 @@ export function ProgressScreen() {
         <ProfileHeader
           onOpenSettings={() => nav.navigate('Settings')}
           summary={summary}
+          loading={summaryLoading}
         />
 
         <Entering index={1}>
@@ -113,6 +121,7 @@ export function ProgressScreen() {
             exerciseId={exerciseId}
             metric={metric}
             series={series}
+            loading={seriesLoading}
             onMetricChange={setMetric}
             onPickExercise={() =>
               nav.navigate('ExerciseList', { mode: 'picker', returnKey: 'strength' })
@@ -121,7 +130,7 @@ export function ProgressScreen() {
         </Entering>
 
         <Entering index={3}>
-          <BodyWeightBlock points={bodyWeight} />
+          <BodyWeightBlock points={bodyWeight} loading={bodyWeightLoading} />
         </Entering>
       </ScrollView>
     </SafeAreaView>
@@ -141,9 +150,11 @@ const AVATAR_SIZE = 68;
 function ProfileHeader({
   onOpenSettings,
   summary,
+  loading,
 }: {
   onOpenSettings: () => void;
   summary: ProgressSummary | null;
+  loading: boolean;
 }) {
   const { colors, gradients } = useTheme();
   const styles = useStyles();
@@ -218,18 +229,23 @@ function ProfileHeader({
               strokeWidth={RING_STROKE}
               fill="none"
             />
-            <Circle
-              cx={RING_SIZE / 2}
-              cy={RING_SIZE / 2}
-              r={ringR}
-              stroke={gradients.brand[0]}
-              strokeWidth={RING_STROKE}
-              strokeLinecap="round"
-              fill="none"
-              strokeDasharray={ringC}
-              strokeDashoffset={ringC * (1 - weekProgress)}
-              transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
-            />
+            {/* Omit the progress arc entirely until the summary lands. At zero
+                it's not invisible: the round linecap still paints a dot at 12
+                o'clock, which is exactly the pop-in this is meant to remove. */}
+            {loading ? null : (
+              <Circle
+                cx={RING_SIZE / 2}
+                cy={RING_SIZE / 2}
+                r={ringR}
+                stroke={gradients.brand[0]}
+                strokeWidth={RING_STROKE}
+                strokeLinecap="round"
+                fill="none"
+                strokeDasharray={ringC}
+                strokeDashoffset={ringC * (1 - weekProgress)}
+                transform={`rotate(-90 ${RING_SIZE / 2} ${RING_SIZE / 2})`}
+              />
+            )}
           </Svg>
           <ProfileAvatar name={user.displayName} size={AVATAR_SIZE} uri={profile?.avatar_url} />
         </View>
@@ -252,9 +268,20 @@ function ProfileHeader({
         <View style={styles.statsRow}>
           {stats.map(([value, label]) => (
             <View key={label} style={styles.statCol}>
-              <AppText variant="statLg" color="textInverse">
-                {value}
-              </AppText>
+              {/* The value slot keeps statLg's 44pt line box either way — a
+                  shorter skeleton would shrink the gradient, drag the concave
+                  seam up, and shift the whole page when the number lands. */}
+              <View style={styles.statValueSlot}>
+                {loading ? (
+                  <Skeleton width={44} height={26} tone="onBrand" />
+                ) : (
+                  <AppText variant="statLg" color="textInverse">
+                    {value}
+                  </AppText>
+                )}
+              </View>
+              {/* The label is known copy — greying it out would cost shape and
+                  tell the user less than the truth. */}
               <AppText variant="label" color="rgba(255,255,255,0.7)">
                 {label}
               </AppText>
@@ -355,7 +382,7 @@ function MonthView({
   onPressDate: (iso: string) => void;
 }) {
   const styles = useStyles();
-  const { plan } = usePlan();
+  const { plan, status: planStatus } = usePlan();
   const d = monthAtOffset(offset);
   const year = d.getFullYear();
   const month = d.getMonth();
@@ -378,8 +405,11 @@ function MonthView({
             if (day === null) return <View key={i} style={styles.dayCell} />;
             const dayDate = new Date(year, month, day);
             const dayLabel = WEEKDAY_LONG[dayDate.getDay()];
+            // Only claim a day is untrained once the plan actually says so —
+            // while it's in flight every dot would read false and then pop in.
             const hasWorkout =
-              plan?.workouts.some((w) => w.dayLabel === dayLabel) ?? false;
+              planStatus === 'ready' &&
+              (plan?.workouts.some((w) => w.dayLabel === dayLabel) ?? false);
             const isToday = isCurrent && day === today.getDate();
 
             return (
@@ -414,12 +444,14 @@ function ExerciseTrends({
   exerciseId,
   metric,
   series,
+  loading,
   onMetricChange,
   onPickExercise,
 }: {
   exerciseId: string;
   metric: Metric;
   series: SeriesPoint[];
+  loading: boolean;
   onMetricChange: (m: Metric) => void;
   onPickExercise: () => void;
 }) {
@@ -500,7 +532,11 @@ function ExerciseTrends({
         <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
       </Pressable>
 
-      {hasEnough ? (
+      {/* Loading first — otherwise an unloaded series falls through to
+          "No history yet", which reads as "your workouts weren't saved". */}
+      {loading ? (
+        <ChartSkeleton height={160} />
+      ) : hasEnough ? (
         <TrendChart
           points={points}
           tone={metric === 'strength' ? 'primary' : 'secondary'}
@@ -537,7 +573,36 @@ function ExerciseTrends({
   );
 }
 
-function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
+// A chart's footprint, not a chart's likeness. One filled rectangle at 160pt is
+// a lot of flat grey; bars anchored to the baseline read as "a chart is coming"
+// while occupying exactly the space the real chart will take, so nothing shifts.
+const SKELETON_BAR_RATIOS = [0.35, 0.62, 0.45, 0.78, 0.55, 0.9, 0.68];
+
+function ChartSkeleton({ height }: { height: number }) {
+  const styles = useStyles();
+  return (
+    <View style={[styles.chartSkeleton, { height }]}>
+      <View style={styles.chartSkeletonBars}>
+        {SKELETON_BAR_RATIOS.map((r, i) => (
+          <Skeleton key={i} height={Math.round((height - 24) * r)} style={{ flex: 1 }} />
+        ))}
+      </View>
+      <View style={styles.chartSkeletonAxis}>
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} width={28} height={10} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function BodyWeightBlock({
+  points,
+  loading,
+}: {
+  points: BodyWeightPoint[];
+  loading: boolean;
+}) {
   const { colors } = useTheme();
   const styles = useStyles();
   const { user } = useUser();
@@ -560,9 +625,12 @@ function BodyWeightBlock({ points }: { points: BodyWeightPoint[] }) {
   return (
     <ChartCard
       title="Body weight"
-      subtitle={hasEnough ? undefined : 'Track your weight over time'}
+      subtitle={loading || hasEnough ? undefined : 'Track your weight over time'}
     >
-      {hasEnough ? (
+      {/* Loading first: "no entries yet" must only be said once we know it. */}
+      {loading ? (
+        <ChartSkeleton height={140} />
+      ) : hasEnough ? (
         <>
           <View style={styles.trendControls}>
             <View />
@@ -644,6 +712,20 @@ const useStyles = makeStyles((t) => ({
     marginTop: spacing.xl,
   },
   statCol: { alignItems: 'center', gap: spacing.xs },
+  // Matches textVariants.statLg's lineHeight so the skeleton and the real
+  // number occupy identical space.
+  statValueSlot: { height: 44, justifyContent: 'center' },
+  chartSkeleton: { justifyContent: 'flex-end', gap: spacing.sm },
+  chartSkeletonBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  chartSkeletonAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   curve: {
     position: 'absolute',
     left: 0,

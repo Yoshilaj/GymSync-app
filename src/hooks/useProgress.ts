@@ -30,6 +30,21 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
   const [bodyWeight, setBodyWeight] = useState<BodyWeightPoint[]>([]);
   const [series, setSeries] = useState<SeriesPoint[]>([]);
 
+  /**
+   * Loading is tracked per fetch, not once for the hook: a single flag would
+   * hold the whole screen hostage to the slowest of the three requests.
+   *
+   * Each latch records "this has resolved at least once", so the focus-driven
+   * refetch above never re-shows a skeleton over data we already have — the
+   * screen refreshes silently and only a genuine cold start looks like loading.
+   */
+  const [summaryLoaded, setSummaryLoaded] = useState(false);
+  const [bodyWeightLoaded, setBodyWeightLoaded] = useState(false);
+  // Keyed by exercise, so picking a different lift DOES show a skeleton again —
+  // that's a real load. Deliberately NOT keyed by metric: the Strength/Volume
+  // toggle should feel like a filter flipping, not a page loading.
+  const [seriesLoadedFor, setSeriesLoadedFor] = useState<string | null>(null);
+
   useEffect(() => {
     if (!session || !focused) return;
     let cancelled = false;
@@ -40,6 +55,11 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
         if (!cancelled) setSummary(s);
       } catch {
         /* offline — keep last known values */
+      } finally {
+        // Latch in `finally`, not on success: an offline failure has to end the
+        // skeleton too, or the screen shimmers forever instead of falling
+        // through to its empty state.
+        if (!cancelled) setSummaryLoaded(true);
       }
     })();
     return () => {
@@ -57,6 +77,8 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
         if (!cancelled) setBodyWeight(bw);
       } catch {
         /* offline — keep last known values */
+      } finally {
+        if (!cancelled) setBodyWeightLoaded(true);
       }
     })();
     return () => {
@@ -66,6 +88,11 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
 
   useEffect(() => {
     if (!session || !focused) return;
+    // Wait for the summary before fetching any series. The screen opens on a
+    // default exercise and then re-points itself at whatever was trained most
+    // recently — firing now would load the default, render it, and immediately
+    // load again, so the user watches two skeletons instead of one.
+    if (!summaryLoaded) return;
     let cancelled = false;
     (async () => {
       try {
@@ -83,12 +110,21 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
         if (!cancelled) setSeries(points);
       } catch {
         /* offline — keep last known values */
+      } finally {
+        if (!cancelled) setSeriesLoadedFor(exerciseId);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [session, focused, exerciseId, metric, getToken]);
+  }, [session, focused, summaryLoaded, exerciseId, metric, getToken]);
 
-  return { summary, bodyWeight, series };
+  return {
+    summary,
+    bodyWeight,
+    series,
+    summaryLoading: !summaryLoaded,
+    bodyWeightLoading: !bodyWeightLoaded,
+    seriesLoading: seriesLoadedFor !== exerciseId,
+  };
 }
