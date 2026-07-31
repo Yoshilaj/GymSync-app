@@ -66,7 +66,13 @@ export function LiveWorkoutStartScreen() {
     }).start(({ finished }) => {
       if (finished && !navigated) {
         navigated = true;
-        nav.replace('WorkoutSession', { workoutId: workout.id });
+        // Forward the REQUESTED id, not the resolved one. If the plan is still
+        // in flight, `workout` has fallen back to the free-form shell, and
+        // baking that 'freeform' id into the route would strand the session
+        // there permanently — the real id is gone by the time the plan lands.
+        // Passing it through (undefined included) lets WorkoutSession resolve
+        // once it actually has a plan.
+        nav.replace('WorkoutSession', { workoutId: route.params?.workoutId });
       }
     });
 

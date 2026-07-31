@@ -22,6 +22,7 @@ import {
   AppText,
   Card,
   NumberWheel,
+  Skeleton,
   WheelRow,
   WheelUnit,
   WHEEL_HEIGHT,
@@ -67,6 +68,9 @@ export function BodyWeightCard({ date }: { date: Date }) {
   const [saveError, setSaveError] = useState(false);
   // day (YYYY-MM-DD) → logged kg, within the fetched window.
   const [entries, setEntries] = useState<Record<string, number>>({});
+  // Until this resolves an empty log is indistinguishable from an unloaded
+  // one, and the row would claim "—" (not logged) for a day that has a weight.
+  const [entriesLoaded, setEntriesLoaded] = useState(false);
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const expandH = useSharedValue(0);
@@ -91,6 +95,10 @@ export function BodyWeightCard({ date }: { date: Date }) {
         }
       } catch {
         /* offline — the wheel still works; saves retry on settle */
+      } finally {
+        // Latch on failure too, or an offline card shimmers forever instead of
+        // showing its "—" and letting the user log a weight.
+        if (!cancelled) setEntriesLoaded(true);
       }
     })();
     return () => {
@@ -189,6 +197,9 @@ export function BodyWeightCard({ date }: { date: Date }) {
           </AppText>
           <AppText variant="h3">Body weight</AppText>
         </View>
+        {!entriesLoaded && display == null ? (
+          <Skeleton width={54} height={20} />
+        ) : (
         <AppText variant="statSm">
           {display ?? (
             <AppText variant="statSm" color="textTertiary">
@@ -202,6 +213,7 @@ export function BodyWeightCard({ date }: { date: Date }) {
             </AppText>
           ) : null}
         </AppText>
+        )}
         <Animated.View style={chevronStyle}>
           <Ionicons name="chevron-down" size={16} color={colors.textTertiary} />
         </Animated.View>

@@ -3,7 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, spacing, useTheme, useThemePref } from '@/theme';
-import { AnimatedPressable, AppText, Card } from '@/components/ui';
+import { AnimatedPressable, AppText, Card, Skeleton } from '@/components/ui';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
@@ -31,7 +31,7 @@ export function SettingsHomeScreen() {
   const { preference } = useThemePref();
   // Reads the billing seam rather than a literal. Resolves to "Free" today, and
   // becomes correct on its own the moment a real purchase SDK is wired in.
-  const { entitlement } = useEntitlement();
+  const { entitlement, status: entitlementStatus } = useEntitlement();
   const { manage } = useBilling();
 
   const language = (profile?.preferences?.language as string) ?? 'English';
@@ -75,10 +75,16 @@ export function SettingsHomeScreen() {
           chevron
           onPress={() => nav.navigate('AccountSettings')}
         />
+        {/* The default entitlement is Free, so until the real one lands this
+            row states "Free" as fact — to subscribers included. Skeleton the
+            value, not the row: a whole row appearing would shift the list. */}
         <SettingsRow
           label="Plan"
           icon="card-outline"
-          value={TIERS[entitlement.tier].name}
+          value={entitlementStatus === 'loading' ? undefined : TIERS[entitlement.tier].name}
+          right={
+            entitlementStatus === 'loading' ? <Skeleton width={52} height={14} /> : undefined
+          }
           chevron
           onPress={() => nav.navigate('Pricing')}
         />

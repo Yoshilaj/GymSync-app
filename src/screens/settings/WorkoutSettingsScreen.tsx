@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
-import { Alert } from 'react-native';
-import { NumberWheel, WheelRow as WheelBand, WheelUnit } from '@/components/ui';
+import { Alert, View } from 'react-native';
+import { spacing } from '@/theme';
+import {
+  NumberWheel,
+  Skeleton,
+  WheelRow as WheelBand,
+  WheelUnit,
+} from '@/components/ui';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { updatePersonality } from '@/api/personality';
@@ -32,7 +38,32 @@ const PERSONALITY: { id: CoachPersonality; label: string; sublabel: string }[] =
   { id: 'energetic', label: 'Energetic', sublabel: 'High energy, keeps the pace up' },
 ];
 
+/**
+ * Gate, for the same reason ProfileEditScreen has one — and here it's not just
+ * cosmetic. The wheels below seed from `profile` exactly once via useState. If
+ * the profile lands after mount the wheel stays on its hardcoded default (4
+ * days, 60 minutes), and the first touch debounce-commits that default over
+ * whatever the user actually had. Don't mount the form until there's a profile
+ * to seed it from.
+ */
 export function WorkoutSettingsScreen() {
+  const { profileStatus, profile } = useUser();
+  if (profileStatus !== 'ready' || !profile) {
+    return (
+      <SettingsPage title="Workout">
+        <View style={{ gap: spacing.md, paddingTop: spacing.lg }}>
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+          <Skeleton height={64} />
+          <Skeleton height={48} />
+        </View>
+      </SettingsPage>
+    );
+  }
+  return <WorkoutSettingsForm />;
+}
+
+function WorkoutSettingsForm() {
   const { user, profile, setPersonality, saveProfile } = useUser();
   const { getToken } = useAuth();
 

@@ -14,7 +14,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Button, Card, Chip } from '@/components/ui';
+import { AppText, Button, Card, Chip, Skeleton } from '@/components/ui';
 import { SetRow } from '@/components/SetRow';
 import { VoiceButton } from '@/components/VoiceButton';
 import { VoiceWaveform } from '@/components/VoiceWaveform';
@@ -78,7 +78,57 @@ function matchesName(candidate: string, target: string): boolean {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+/**
+ * Gate: the session below seeds its exercise list from the plan exactly ONCE,
+ * at mount (see the lazy initializer). If it mounts before the plan arrives it
+ * seeds from the empty free-form shell and never recovers — the user trains a
+ * real workout in an "Open workout" with no exercises for the whole session.
+ *
+ * So the gate has to be a wrapper, not an early return: the session's hooks
+ * (start(), the voice session, the auto-start effect) must not run against a
+ * plan that isn't there yet.
+ *
+ * Free-form is still a legitimate destination — arriving with no workoutId, or
+ * with no plan at all. Only wait when a specific workout was asked for and the
+ * plan simply hasn't landed to resolve it.
+ */
 export function WorkoutSessionScreen() {
+  const { status: planStatus } = usePlan();
+
+  // Only 'loading' waits. 'empty' and 'error' are answers — they resolve to a
+  // free-form session, which is a real destination, not a fallback.
+  if (planStatus === 'loading') return <WorkoutSessionSkeleton />;
+
+  return <WorkoutSessionActive />;
+}
+
+/** The session's shape while the plan resolves: header chrome, hero, set rows. */
+function WorkoutSessionSkeleton() {
+  const styles = useStyles();
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
+      <View style={styles.header}>
+        <View style={styles.headerTitleWrap} pointerEvents="none">
+          <Skeleton width={140} height={19} />
+        </View>
+        <View style={styles.closeBtn} />
+        <View style={styles.headerSpacer} />
+        <Skeleton width={64} height={28} round />
+      </View>
+      <View style={styles.scrollContent}>
+        <Skeleton height={180} style={{ borderRadius: radius.lg }} />
+        <View style={styles.sessionSkeletonRows}>
+          <Skeleton width="46%" height={18} />
+          <Skeleton height={56} />
+          <Skeleton height={56} />
+          <Skeleton height={56} />
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+function WorkoutSessionActive() {
   const { colors } = useTheme();
   const styles = useStyles();
   const nav = useNavigation<Nav>();
@@ -735,7 +785,10 @@ export function WorkoutSessionScreen() {
   // the workout goes through the dock's End button / the last exercise.
   const leaveWorkout = () => nav.goBack();
 
-  if (!current) return null;
+  // A blank screen is never the right answer — show the session's shape while
+  // there's no current exercise to render (the voice coach can still be
+  // starting one up).
+  if (!current) return <WorkoutSessionSkeleton />;
   const meta = current.meta;
   const voiceError = voice.phase === 'error';
 
@@ -1166,6 +1219,7 @@ const useStyles = makeStyles((t) => ({
     paddingBottom: 140,
     paddingTop: spacing.xs,
   },
+  sessionSkeletonRows: { gap: spacing.sm, marginTop: spacing.xl },
   heroCard: { overflow: 'hidden' },
   heroImage: { borderWidth: 0, borderRadius: 0 },
   heroScrim: {
