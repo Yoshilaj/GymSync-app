@@ -19,7 +19,7 @@
  * broken.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { voiceSocketUrl } from './config';
+import { voiceSocketProtocols, voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import { AppActionMessage, PlanProposalWire, ServerMessage } from './protocol';
 import { parseUpgrade, type UpgradeRequired } from '@/billing/upgrade';
@@ -331,7 +331,7 @@ export function useTextChat({
       rejectReady = rej;
     });
 
-    const socket = new VoiceSocket(voiceSocketUrl(userId, token), {
+    const socket = new VoiceSocket(voiceSocketUrl(userId), {
       onOpen: () =>
         socket.send({
           type: 'session_start',
@@ -367,7 +367,7 @@ export function useTextChat({
         readyRef.current = null;
         if (mountedRef.current) setConnectionState('idle');
       },
-    });
+    }, voiceSocketProtocols(token));
     socketRef.current = socket;
     socket.connect();
     await readyRef.current;

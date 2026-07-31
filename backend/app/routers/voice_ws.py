@@ -56,7 +56,9 @@ Server → Client:
                                               client opens the paywall
   <binary>                                  ← MP3 audio chunks (voice mode)
 
-Auth: ?token=<supabase_jwt> query param.
+Auth: `Sec-WebSocket-Protocol: bearer, <supabase_jwt>` on the handshake, verified
+locally (app/jwt_verify.py). The old `?token=` query param still works but is
+deprecated — query strings land in proxy access logs verbatim.
 """
 import json
 
@@ -66,6 +68,7 @@ from app.agents import conversation_store
 from app.agents.core import _agent_events
 from app.agents.voice import VoiceSession
 from app.database import get_db
+from app.jwt_verify import TokenInvalid, VerifierUnavailable, verify_access_token
 from app.entitlements import (
     CHAT_MESSAGE,
     VOICE_SESSION,
@@ -91,28 +94,64 @@ async def _refuse(websocket: WebSocket, exc: QuotaExceeded) -> None:
     await websocket.send_json({"type": "upgrade_required", **exc.detail()})
 
 
-async def _authenticate(token: str, db) -> str | None:
+async def _authenticate(token: str) -> str | None:
+    """Local signature check — same verifier the HTTP routes use (app/jwt_verify.py).
+
+    Returns None for both "bad token" and "verifier down". A WebSocket has no status
+    code to differentiate them with, and the client already treats 4001 as terminal,
+    so collapsing them here is correct; the HTTP surface is where the 401/503
+    distinction actually matters.
+    """
     try:
-        res = await db.auth.get_user(token)
-        return res.user.id if res.user else None
-    except Exception:
+        claims = await verify_access_token(token)
+        return claims.sub
+    except (TokenInvalid, VerifierUnavailable):
         return None
+
+
+def _token_from_handshake(websocket: WebSocket) -> tuple[str | None, str | None]:
+    """Pull the bearer token out of `Sec-WebSocket-Protocol: bearer, <jwt>`.
+
+    Returns (token, subprotocol_to_echo). RFC 6455 requires the server to echo one of
+    the offered subprotocols, or the client may abort the connection — so when we
+    accept the token this way we must accept() with "bearer".
+    """
+    offered = websocket.headers.get("sec-websocket-protocol")
+    if not offered:
+        return None, None
+    parts = [p.strip() for p in offered.split(",") if p.strip()]
+    if len(parts) >= 2 and parts[0] == "bearer":
+        return parts[1], "bearer"
+    return None, None
 
 
 @router.websocket("/ws/voice/{user_id}")
 async def voice_ws(
     websocket: WebSocket,
     user_id: str,
-    token: str = Query(..., description="Supabase JWT"),
+    # DEPRECATED fallback. The token belongs in the handshake, not the URL — query
+    # strings are logged verbatim by proxies. Kept optional so the mock-voice tooling
+    # and any client build predating the switch still connect.
+    token: str | None = Query(default=None, description="DEPRECATED: use Sec-WebSocket-Protocol"),
 ) -> None:
     db = await get_db()
 
-    authenticated_id = await _authenticate(token, db)
+    header_token, subprotocol = _token_from_handshake(websocket)
+    presented = header_token or token
+
+    # Accept FIRST, then close with 4001 on a bad token. Closing before accept
+    # rejects the HTTP handshake outright, and the client then sees code 1006
+    # ("abnormal closure") — indistinguishable from a dropped network. It would
+    # retry a token that will never work and finally report "Connection closed".
+    # useVoiceSession.ts treats 4001 as terminal precisely so it can say
+    # "Authentication rejected" instead, and it only ever receives that code if
+    # the handshake completed. Nothing is exchanged before the check below.
+    await websocket.accept(subprotocol=subprotocol)
+
+    authenticated_id = await _authenticate(presented) if presented else None
     if authenticated_id != user_id:
         await websocket.close(code=4001)
         return
-
-    await websocket.accept()
 
     session_id: str | None = None
     voice_session: VoiceSession | None = None

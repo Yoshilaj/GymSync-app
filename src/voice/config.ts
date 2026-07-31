@@ -12,9 +12,21 @@ export const voiceConfig = {
   wsBaseUrl: API_URL.replace(/^http/, 'ws'),
 };
 
-/** Build the authenticated voice WebSocket URL (see backend/app/routers/voice_ws.py). */
-export function voiceSocketUrl(userId: string, token: string): string {
-  const uid = encodeURIComponent(userId);
-  const t = encodeURIComponent(token);
-  return `${voiceConfig.wsBaseUrl}/ws/voice/${uid}?token=${t}`;
+/** Build the voice WebSocket URL (see backend/app/routers/voice_ws.py).
+ *
+ * The token is deliberately NOT in the URL. Query strings get written to proxy and
+ * access logs verbatim, which would scatter live bearer tokens across every hop
+ * between the device and the server. It rides in the handshake instead — see
+ * voiceSocketProtocols. */
+export function voiceSocketUrl(userId: string): string {
+  return `${voiceConfig.wsBaseUrl}/ws/voice/${encodeURIComponent(userId)}`;
+}
+
+/** Carry the access token in `Sec-WebSocket-Protocol`, the standard trick for
+ * authenticating a WebSocket that can't set an Authorization header (the browser and
+ * RN WebSocket APIs expose no header option). A JWT is base64url + '.', all of which
+ * are legal subprotocol token characters, so it survives the handshake unescaped.
+ * The server echoes back "bearer" to complete negotiation. */
+export function voiceSocketProtocols(token: string): string[] {
+  return ['bearer', token];
 }

@@ -20,10 +20,12 @@ export class VoiceSocket {
   constructor(
     private readonly url: string,
     private readonly handlers: VoiceSocketHandlers,
+    /** Handshake subprotocols. Used to carry the bearer token — see config.ts. */
+    private readonly protocols?: string[],
   ) {}
 
   connect(): void {
-    const ws = new WebSocket(this.url);
+    const ws = new WebSocket(this.url, this.protocols);
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => this.handlers.onOpen?.();

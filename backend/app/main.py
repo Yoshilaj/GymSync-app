@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.billing.apple import validate_billing_settings
 from app.database import close_db, init_db
+from app.jwt_verify import warm_jwks
 from app.routers import (
     account,
     auth,
@@ -31,6 +32,9 @@ async def lifespan(app: FastAPI):
     validate_billing_settings()
     await init_db()
     await init_auth_client()
+    # Pull the JWT signing keys now so the first authenticated request isn't the one
+    # that pays for the fetch. Non-fatal: it retries on demand.
+    await warm_jwks()
     yield
     await close_auth_client()
     await close_db()

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { voiceSocketUrl } from './config';
+import { voiceSocketProtocols, voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
 import {
   voiceMic,
@@ -420,7 +420,7 @@ export function useVoiceSession({
         // A reconnect may still hold the dead socket — drop it first.
         socketRef.current?.close();
 
-        const socket = new VoiceSocket(voiceSocketUrl(userId, token), {
+        const socket = new VoiceSocket(voiceSocketUrl(userId), {
           onOpen: () =>
             socket.send({
               type: 'session_start',
@@ -462,7 +462,7 @@ export function useVoiceSession({
             }
             fail(`Connection closed (${code})`);
           },
-        });
+        }, voiceSocketProtocols(token));
         socketRef.current = socket;
         socket.connect();
       } catch (e) {

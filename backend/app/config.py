@@ -9,7 +9,13 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
     supabase_anon_key: str
-    supabase_jwt_secret: str
+
+    # Legacy symmetric signing secret. This project signs with ES256 asymmetric keys
+    # published at /auth/v1/.well-known/jwks.json, so this is a ROLLBACK PATH ONLY —
+    # app/jwt_verify.py uses it if a token ever arrives with an HS* algorithm. Empty
+    # is the correct value on a project using asymmetric keys; it used to be required
+    # at boot and read by nothing at all.
+    supabase_jwt_secret: str = ""
 
     anthropic_api_key: str
 
