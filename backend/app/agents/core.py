@@ -97,7 +97,15 @@ async def _load_profile_context(user_id: str, db: AsyncClient) -> str:
         value = p.get(key)
         if value not in (None, [], ""):
             lines.append(f"{key}: {json.dumps(value) if isinstance(value, list) else value}")
-    injuries_note = (p.get("preferences") or {}).get("injuries_note")
+    prefs = p.get("preferences") or {}
+    # Where they train ('gym' | 'home' | 'bodyweight'). Onboarding collects it
+    # but it lives only in the JSONB blob, so it has to be lifted out by hand —
+    # without it the model sees an equipment list with no context for why it is
+    # short, and programs a gym session for someone stood in their bedroom.
+    training_place = prefs.get("training_place")
+    if training_place:
+        lines.append(f"training_place: {training_place}")
+    injuries_note = prefs.get("injuries_note")
     if injuries_note:
         lines.append(f"injuries_note: {injuries_note}")
     if inj.data:
@@ -839,6 +847,7 @@ async def run_plan_generation(user_id: str, db: AsyncClient) -> dict:
 _ANON_PROFILE_KEYS = (
     "experience", "goals", "training_days", "session_minutes", "equipment",
     "sex", "birth_year", "height_cm", "weight_kg", "activity_level", "units",
+    "training_place",
 )
 
 _VALID_PRESETS = {"classic", "supportive", "energetic"}

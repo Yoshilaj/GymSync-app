@@ -47,13 +47,11 @@ async def log_set(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
-    # Resolve exercise_id server-side (same ilike rule as the voice log_set) —
-    # the client's ids come from its bundled catalog, which has drifted from
-    # the DB catalog; a stale id would violate the FK and silently lose the set.
-    ex_res = await db.table("exercises").select("id").ilike(
-        "name", body.exercise_name
-    ).eq("is_active", True).limit(1).execute()
-    exercise_id = ex_res.data[0]["id"] if ex_res.data else None
+    # Resolve exercise_id server-side (same rule as the voice log_set) — the
+    # client sends a name from its bundled catalog, and a stale id would
+    # violate the FK and silently lose the set. Bodyweight names resolve too,
+    # so "Bodyweight Squat" still charts against ex-squat.
+    exercise_id = await plan_store.exercise_id_for_name(body.exercise_name, db)
 
     row: dict = {
         "user_id": user_id,

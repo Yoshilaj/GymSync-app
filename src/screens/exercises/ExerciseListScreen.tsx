@@ -76,6 +76,9 @@ export function ExerciseListScreen() {
       const matchesQ =
         !q ||
         e.name.toLowerCase().includes(q) ||
+        // A plan can name this row by its unloaded identity, so searching for
+        // "bodyweight squat" has to find the Back Squat entry it links to.
+        !!e.bodyweightName?.toLowerCase().includes(q) ||
         e.muscleGroup.toLowerCase().includes(q) ||
         e.equipment.toLowerCase().includes(q);
       const matchesF = filter === ALL || getCategory(e.muscleGroup) === filter;

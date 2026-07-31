@@ -37,6 +37,15 @@ export interface Exercise {
   description: string;
   cues: string[];
   thumbnailColor: string;
+  /**
+   * What this movement is called when it's programmed with no external load —
+   * a Back Squat with no bar is just a squat. Undefined when the lift is
+   * meaningless unloaded (Leg Press, Cable Fly). The backend swaps the name in
+   * for users without the equipment; the id never changes, so the illustration,
+   * cues and detail page all still resolve. Mirrors `exercises.bodyweight_name`
+   * (016_catalog_sync.sql) — keep the two in sync.
+   */
+  bodyweightName?: string;
 }
 
 export interface PlannedSet {

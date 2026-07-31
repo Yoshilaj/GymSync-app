@@ -452,6 +452,7 @@ export const mockExercises: Exercise[] = [
   {
     id: 'ex-squat',
     name: 'Back Squat',
+    bodyweightName: 'Bodyweight Squat',
     muscleGroup: 'Quads',
     equipment: 'Barbell',
     thumbnailColor: '#2E5C8A',
@@ -508,6 +509,7 @@ export const mockExercises: Exercise[] = [
   {
     id: 'ex-lunge',
     name: 'Walking Lunge',
+    bodyweightName: 'Walking Lunge',
     muscleGroup: 'Quads',
     equipment: 'Dumbbell',
     thumbnailColor: '#355B7D',
@@ -568,6 +570,7 @@ export const mockExercises: Exercise[] = [
   {
     id: 'ex-hip-thrust',
     name: 'Barbell Hip Thrust',
+    bodyweightName: 'Bodyweight Hip Thrust',
     muscleGroup: 'Glutes',
     equipment: 'Barbell',
     thumbnailColor: '#335E42',
@@ -582,6 +585,7 @@ export const mockExercises: Exercise[] = [
   {
     id: 'ex-bulgarian',
     name: 'Bulgarian Split Squat',
+    bodyweightName: 'Bulgarian Split Squat',
     muscleGroup: 'Glutes',
     equipment: 'Dumbbell',
     thumbnailColor: '#3E6A4D',
@@ -867,12 +871,15 @@ export function getExerciseById(id: string): Exercise | undefined {
 export function getExerciseByName(name: string): Exercise | undefined {
   const needle = name.trim().toLowerCase();
   if (!needle) return undefined;
+  const names = (e: Exercise) =>
+    [e.name, e.bodyweightName].filter(Boolean) as string[];
   return (
-    mockExercises.find((e) => e.name.toLowerCase() === needle) ??
-    mockExercises.find(
-      (e) =>
-        e.name.toLowerCase().includes(needle) ||
-        needle.includes(e.name.toLowerCase()),
+    mockExercises.find((e) => names(e).some((n) => n.toLowerCase() === needle)) ??
+    mockExercises.find((e) =>
+      names(e).some(
+        (n) =>
+          n.toLowerCase().includes(needle) || needle.includes(n.toLowerCase()),
+      ),
     )
   );
 }
@@ -881,6 +888,12 @@ export function getExerciseByName(name: string): Exercise | undefined {
  * Resolve a planned exercise to something renderable: catalog by id, catalog
  * by name, else a synthesized generic entry — a server plan may contain
  * exercises the local library doesn't know, and they must never vanish.
+ *
+ * When the plan stored the row's bodyweight name, that name wins and the
+ * equipment reads Bodyweight — a home user was prescribed "Bodyweight Squat",
+ * and showing them "Back Squat / Barbell" would be wrong twice over. The id is
+ * untouched, so the illustration, muscle group, cues and detail page are the
+ * ordinary ones.
  */
 export function resolvePlannedExercise(
   exerciseId: string,
@@ -888,7 +901,13 @@ export function resolvePlannedExercise(
 ): Exercise {
   const found =
     getExerciseById(exerciseId) ?? (name ? getExerciseByName(name) : undefined);
-  if (found) return found;
+  if (found) {
+    const bw = found.bodyweightName;
+    if (bw && name && name.trim().toLowerCase() === bw.toLowerCase()) {
+      return { ...found, name: bw, equipment: 'Bodyweight' };
+    }
+    return found;
+  }
   return {
     id: exerciseId,
     name: name ?? 'Exercise',

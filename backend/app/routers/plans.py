@@ -80,6 +80,9 @@ class AnonymousProfile(BaseModel):
     training_days: int | None = Field(default=None, ge=1, le=7)
     session_minutes: int | None = Field(default=None, ge=10, le=240)
     equipment: list[str] = []
+    # 'gym' | 'home' | 'bodyweight' — the equipment list alone doesn't say
+    # whether a short list means "at home" or "hasn't finished onboarding".
+    training_place: str | None = None
     sex: str | None = None
     birth_year: int | None = Field(default=None, ge=1900, le=2100)
     activity_level: str | None = None

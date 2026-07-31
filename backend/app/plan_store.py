@@ -227,16 +227,42 @@ async def _owned_active_workout(
     return plan_id, None
 
 
+async def exercise_id_for_name(exercise_name: str, db: AsyncClient) -> str | None:
+    """Case-insensitive catalog lookup by display name.
+
+    Checks `bodyweight_name` as well as `name`, because a home user's plan
+    legitimately says "Bodyweight Squat" where the catalog row is called "Back
+    Squat" (see 016_catalog_sync.sql). Without the second probe every set
+    logged under a bodyweight name would store exercise_id = NULL and drop out
+    of the progress charts.
+    """
+    if not exercise_name:
+        return None
+    for column in ("name", "bodyweight_name"):
+        hit = (
+            await db.table("exercises")
+            .select("id")
+            .ilike(column, exercise_name)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+        if hit.data:
+            return hit.data[0]["id"]
+    return None
+
+
 async def _resolve_catalog_id(
     exercise_id: str | None, exercise_name: str, db: AsyncClient
 ) -> str | None:
     """An id that really exists in `exercises`, or None for an ad-hoc row.
 
-    The client picks from a static catalog file that has drifted from the seed
-    (10 of its ids have no row), and plan_exercises.exercise_id is a real FK —
-    so an unchecked insert would fail for roughly one pick in five. Falling
-    back to a named ad-hoc row is invisible to the user: exercise_name is
-    always stored, and resolvePlannedExercise recovers the rest by name.
+    Historically the client catalog had drifted from the seed and roughly one
+    pick in five had no row at all; 016_catalog_sync.sql reconciled the two, so
+    this is now a guard rather than a routine path. It still matters: the agent
+    can mint user-owned exercises, and plan_exercises.exercise_id is a real FK.
+    Falling back to a named ad-hoc row is invisible to the user — exercise_name
+    is always stored, and resolvePlannedExercise recovers the rest by name.
     """
     if exercise_id:
         hit = (
@@ -249,19 +275,7 @@ async def _resolve_catalog_id(
         )
         if hit.data:
             return exercise_id
-    if exercise_name:
-        # Same case-insensitive name lookup the agent tools use.
-        hit = (
-            await db.table("exercises")
-            .select("id")
-            .ilike("name", exercise_name)
-            .eq("is_active", True)
-            .limit(1)
-            .execute()
-        )
-        if hit.data:
-            return hit.data[0]["id"]
-    return None
+    return await exercise_id_for_name(exercise_name, db)
 
 
 async def add_plan_exercise(

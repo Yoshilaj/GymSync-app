@@ -260,6 +260,7 @@ export interface AnonymousProfilePayload {
   training_days: number | null;
   session_minutes: number | null;
   equipment: string[];
+  training_place: string | null;
   sex: string | null;
   birth_year: number | null;
   activity_level: string | null;

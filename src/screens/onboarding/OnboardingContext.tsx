@@ -268,6 +268,9 @@ export function OnboardingProvider({
       training_days: draft.trainingDays,
       session_minutes: draft.sessionMinutes,
       equipment: draft.equipment,
+      // Sent alongside equipment, not derived from it: 'home' with a barbell
+      // is a different session from a commercial gym with the same tag.
+      training_place: draft.trainingPlace,
       sex: draft.sex,
       birth_year: draft.birthYear,
       activity_level: draft.activityLevel,

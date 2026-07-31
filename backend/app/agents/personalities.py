@@ -219,9 +219,14 @@ PLAN GENERATION:
   ranges), call list_exercises for the catalog, then call propose_workout_plan with
   the COMPLETE plan using exact exercise_id values from the catalog.
 - The plan must fit the user's profile (in <user_profile>): exactly training_days days,
-  sessions near session_minutes, only equipment the user has, and never program movements
-  listed in active injuries' avoid_movements.
-- Prefer catalog exercises and pass exercise_id when you know it (e.g. ex-bench).
+  sessions near session_minutes, and never program movements listed in active injuries'
+  avoid_movements.
+- EVERY exercise must come from the list_exercises result, copied exactly: its
+  exercise_id AND its name as returned. Never invent an exercise, never rename one, and
+  never reach for something you remember from elsewhere — if it is not in that list, the
+  app has no illustration or instructions for it and the proposal will be rejected.
+  list_exercises is already filtered to what this user's equipment allows, so everything
+  it returns is fair game and nothing it omits is.
 - propose_workout_plan only PROPOSES — the user taps Accept in the app. Never say the
   plan is saved. If they request changes, call propose_workout_plan again with the full
   revised plan.

@@ -285,8 +285,10 @@ TOOL_DEFINITIONS = [
             "Propose a complete new weekly workout plan for the user's review. This shows an "
             "interactive card in the chat — it does NOT save the plan; the user must tap "
             "Accept. Ground programming decisions with search_knowledge first, and respect "
-            "the user's profile (training_days, session_minutes, equipment, active injuries). "
-            "To revise after feedback, call this again with the FULL updated plan."
+            "the user's profile (training_days, session_minutes, active injuries). Every "
+            "exercise must be one list_exercises returned, with its exercise_id and name "
+            "copied exactly — anything else is rejected. To revise after feedback, call "
+            "this again with the FULL updated plan."
         ),
         "input_schema": {
             "type": "object",
@@ -320,13 +322,23 @@ TOOL_DEFINITIONS = [
                                 "minItems": 1,
                                 "items": {
                                     "type": "object",
-                                    "required": ["exercise_name", "sets", "reps_low"],
+                                    "required": ["exercise_id", "exercise_name", "sets", "reps_low"],
                                     "properties": {
                                         "exercise_id": {
                                             "type": "string",
-                                            "description": "Catalog id if known, e.g. ex-bench.",
+                                            "description": (
+                                                "Catalog id from list_exercises, e.g. ex-bench. "
+                                                "Required — a plan cannot contain an exercise "
+                                                "that is not in the catalog."
+                                            ),
                                         },
-                                        "exercise_name": {"type": "string"},
+                                        "exercise_name": {
+                                            "type": "string",
+                                            "description": (
+                                                "The name exactly as list_exercises returned it "
+                                                "for that id. Do not rename or re-word it."
+                                            ),
+                                        },
                                         "sets": {"type": "integer", "minimum": 1, "maximum": 10},
                                         "reps_low": {"type": "integer", "minimum": 1},
                                         "reps_high": {"type": "integer"},
@@ -356,9 +368,12 @@ TOOL_DEFINITIONS = [
     {
         "name": "list_exercises",
         "description": (
-            "List the exercise catalog (ids, names, muscle groups, equipment). Call this "
-            "BEFORE propose_workout_plan and use the exact exercise_id values so every "
-            "exercise links to its full detail page in the app."
+            "List the exercise catalog (ids, names, muscle groups, equipment), already "
+            "filtered to what this user's equipment allows — a lift they can't load is "
+            "returned under its bodyweight name. Call this BEFORE propose_workout_plan. "
+            "It is the ONLY valid source of exercises: copy the exercise_id and name "
+            "exactly. Anything outside this list has no illustration or instructions in "
+            "the app and will be rejected."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
@@ -819,11 +834,11 @@ async def execute_tool(
             return {"error": "No active session"}, []
 
         exercise_name = args["exercise_name"]
-        # Resolve to a catalog/user exercise id (case-insensitive); keep the name regardless.
-        ex_res = await ctx.db.table("exercises").select("id").ilike(
-            "name", exercise_name
-        ).eq("is_active", True).limit(1).execute()
-        exercise_id = ex_res.data[0]["id"] if ex_res.data else None
+        # Resolve to a catalog/user exercise id (case-insensitive, bodyweight
+        # names included); keep the name regardless.
+        from app.plan_store import exercise_id_for_name
+
+        exercise_id = await exercise_id_for_name(exercise_name, ctx.db)
 
         # Slots already written for this exercise in this session — the user's
         # spoken ordinal ("first set") targets one of them; no ordinal appends.
@@ -1075,30 +1090,27 @@ async def execute_tool(
 
     if name == "swap_exercise":
         from_name = args["from_exercise"]
-        from_res = await ctx.db.table("exercises").select(
-            "id, name, muscle_group, equipment, movement"
-        ).ilike("name", from_name).eq("is_active", True).limit(1).execute()
-        if not from_res.data:
+        from_ex = await _exercise_by_name(ctx.db, from_name)
+        if not from_ex:
             return {"error": f"'{from_name}' not found in the catalog."}, []
-        from_ex = from_res.data[0]
 
         if args.get("to_exercise"):
-            to_res = await ctx.db.table("exercises").select(
-                "id, name, muscle_group, equipment, movement"
-            ).ilike("name", args["to_exercise"]).eq("is_active", True).limit(1).execute()
-            if not to_res.data:
+            to_ex = await _exercise_by_name(ctx.db, args["to_exercise"])
+            if not to_ex:
                 return {
                     "error": f"'{args['to_exercise']}' is not in the catalog. Use add_exercise first."
                 }, []
-            to_ex = to_res.data[0]
         else:
-            # Auto-pick: same muscle group, prefer the same movement pattern.
+            # Auto-pick: same muscle group, prefer the same movement pattern,
+            # and never suggest gear the user hasn't got — swapping a home
+            # user onto a machine is how they end up stuck mid-session.
             cand = await ctx.db.table("exercises").select(
-                "id, name, muscle_group, equipment, movement"
+                "id, name, muscle_group, equipment, movement, bodyweight_name"
             ).eq("muscle_group", from_ex["muscle_group"]).eq(
                 "is_active", True
             ).neq("id", from_ex["id"]).execute()
-            candidates = cand.data or []
+            equipment = await _user_equipment(ctx)
+            candidates = [c for c in (cand.data or []) if _usable_equipment(c, equipment)]
             same_move = [c for c in candidates if c.get("movement") == from_ex.get("movement")]
             pool = same_move or candidates
             if not pool:
@@ -1188,10 +1200,31 @@ async def execute_tool(
         }, ctx.app_actions
 
     if name == "list_exercises":
-        res = await ctx.db.table("exercises").select(
-            "id, name, muscle_group, equipment"
-        ).eq("is_active", True).order("muscle_group").execute()
-        return {"exercises": res.data or []}, []
+        res = await _scope_to_user(
+            ctx.db.table("exercises")
+            .select("id, name, muscle_group, equipment, bodyweight_name")
+            .eq("is_active", True)
+            .order("muscle_group"),
+            ctx.user_id,
+        ).execute()
+        # Show only what this user can actually perform, already named the way
+        # it should be programmed — a loaded lift they can't load comes back as
+        # its bodyweight identity. The model then has no way to pick something
+        # the user hasn't got, and no reason to invent a name for the unloaded
+        # version itself.
+        equipment = await _user_equipment(ctx)
+        exercises = []
+        for row in res.data or []:
+            if not _usable_equipment(row, equipment):
+                continue
+            display, gear = _as_prescribed(row, equipment)
+            exercises.append({
+                "id": row["id"],
+                "name": display,
+                "muscle_group": row["muscle_group"],
+                "equipment": gear,
+            })
+        return {"exercises": exercises}, []
 
     if name == "search_knowledge":
         # Knowledge RAG. Read-only, no UI action. Fault-tolerant inside pipeline.search;
@@ -1238,15 +1271,82 @@ def _normalize_day_labels(days: list[dict], warnings: list[str]) -> None:
             canon = spread[idx % len(spread)]
             if raw:
                 warnings.append(
-                    f"Day label '{day.get('day_label')}' isn't a weekday — scheduled on {canon}."
+                    f"'{day.get('day_label')}' isn't a weekday, so it's been "
+                    f"scheduled on {canon}."
                 )
         day["day_label"] = canon
 
-async def _load_catalog(db: AsyncClient) -> list[dict]:
-    res = await db.table("exercises").select(
-        "id, name, movement, equipment"
-    ).eq("is_active", True).execute()
+def _scope_to_user(query, user_id: str):
+    """Shared rows (created_by IS NULL) plus this user's own custom exercises.
+
+    Without this every user's `add_exercise` rows are visible to every other
+    user's plan generation — the service-role key bypasses RLS, so the table
+    is wide open unless the query says otherwise.
+    """
+    if user_id:
+        return query.or_(f"created_by.is.null,created_by.eq.{user_id}")
+    return query.is_("created_by", "null")
+
+
+async def _load_catalog(db: AsyncClient, user_id: str = "") -> list[dict]:
+    res = await _scope_to_user(
+        db.table("exercises")
+        .select("id, name, movement, equipment, bodyweight_name")
+        .eq("is_active", True),
+        user_id,
+    ).execute()
     return res.data or []
+
+
+async def _exercise_by_name(db: AsyncClient, name: str) -> dict | None:
+    """Full catalog row by display name, matching bodyweight_name too."""
+    if not name:
+        return None
+    for column in ("name", "bodyweight_name"):
+        res = await db.table("exercises").select(
+            "id, name, muscle_group, equipment, movement, bodyweight_name"
+        ).ilike(column, name).eq("is_active", True).limit(1).execute()
+        if res.data:
+            return res.data[0]
+    return None
+
+
+async def _user_equipment(ctx: ToolContext) -> set[str]:
+    """What the caller can train with. Empty means unknown — treat as 'no
+    filter' rather than 'nothing', so a half-filled profile still gets a plan."""
+    if ctx.anonymous_profile is not None:
+        return set(ctx.anonymous_profile.get("equipment") or [])
+    if not ctx.user_id:
+        return set()
+    res = await ctx.db.table("profiles").select("equipment").eq(
+        "user_id", ctx.user_id
+    ).execute()
+    return set((res.data or [{}])[0].get("equipment") or [])
+
+
+def _usable_equipment(row: dict, user_equipment: set[str]) -> bool:
+    """Can this user actually perform the movement? Either they own the
+    equipment, it needs none, or it is worth doing unloaded (bodyweight_name).
+    An empty equipment set means 'unknown' — don't filter anything out."""
+    if not user_equipment:
+        return True
+    return (
+        row.get("equipment") in (user_equipment | {"Bodyweight", None})
+        or bool(row.get("bodyweight_name"))
+    )
+
+
+def _as_prescribed(row: dict, user_equipment: set[str]) -> tuple[str, str]:
+    """The (name, equipment) this row should be programmed under. A loaded lift
+    the user can't load becomes its bodyweight identity — a Back Squat with no
+    bar is just a squat. Same id either way, so the illustration, cues and
+    detail page keep resolving."""
+    bw = row.get("bodyweight_name")
+    if bw and user_equipment and row.get("equipment") not in (
+        user_equipment | {"Bodyweight", None}
+    ):
+        return bw, "Bodyweight"
+    return row["name"], row.get("equipment")
 
 
 def _name_tokens(name: str) -> frozenset[str]:
@@ -1260,8 +1360,10 @@ def _match_exercise(catalog: list[dict], exercise_id: str | None, name: str) -> 
     """Resolve a proposed exercise against the catalog: trust-but-verify the
     model-supplied id, then token-set matching so word order ("Cable Seated
     Row" vs "Seated Cable Row") and qualifiers ("Barbell Back Squat" vs "Back
-    Squat") still resolve. Ambiguous names stay unmatched (saved as free text)
-    rather than guessing a different exercise."""
+    Squat") still resolve. A row's bodyweight_name is matched as an alias, so
+    the "Bodyweight Squat" we handed the model resolves back to ex-squat.
+    Ambiguous names stay unmatched (the caller rejects them) rather than
+    guessing a different exercise."""
     if exercise_id:
         for row in catalog:
             if row["id"] == exercise_id:
@@ -1276,17 +1378,18 @@ def _match_exercise(catalog: list[dict], exercise_id: str | None, name: str) -> 
 
     best: tuple[float, dict] | None = None
     for row in catalog:
-        tokens = _name_tokens(row["name"])
-        if tokens == needle:
-            return row
-        # Subset either way = one side just adds qualifiers → strong match.
-        subset = tokens <= needle or needle <= tokens
-        jaccard = len(tokens & needle) / len(tokens | needle)
-        score = 1.0 if subset else jaccard
-        if not subset and head and not (head & tokens):
-            continue
-        if score >= 0.5 and (best is None or score > best[0]):
-            best = (score, row)
+        for candidate in filter(None, (row["name"], row.get("bodyweight_name"))):
+            tokens = _name_tokens(candidate)
+            if tokens == needle:
+                return row
+            # Subset either way = one side just adds qualifiers → strong match.
+            subset = tokens <= needle or needle <= tokens
+            jaccard = len(tokens & needle) / len(tokens | needle)
+            score = 1.0 if subset else jaccard
+            if not subset and head and not (head & tokens):
+                continue
+            if score >= 0.5 and (best is None or score > best[0]):
+                best = (score, row)
     return best[1] if best else None
 
 
@@ -1315,52 +1418,71 @@ async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, lis
             m for row in (injuries_res.data or []) for m in (row.get("avoid_movements") or [])
         }
 
+    # Second person throughout: these are shown on the plan card, not just
+    # returned to the model.
     warnings: list[str] = []
     _normalize_day_labels(days, warnings)
     training_days = profile.get("training_days")
     if training_days and len(days) != training_days:
         warnings.append(
-            f"Plan has {len(days)} days but the user asked for {training_days}/week."
+            f"This plan has {len(days)} days, but you asked for {training_days} a week."
         )
 
     user_equipment = set(profile.get("equipment") or [])
     session_minutes = profile.get("session_minutes")
 
-    catalog = await _load_catalog(ctx.db)
+    catalog = await _load_catalog(ctx.db, ctx.user_id)
+    # Uncatalogued names used to be accepted as free-text rows with a NULL
+    # exercise_id. That is what let a plan reference something the app has no
+    # illustration, how-to or detail page for. Collect them and make the model
+    # fix its own plan instead.
+    unusable: list[str] = []
     normalized_days = []
     for day in days:
         norm_exercises = []
         for ex in day.get("exercises") or []:
-            resolved = _match_exercise(
-                catalog, ex.get("exercise_id"), ex.get("exercise_name") or ""
-            )
-            if resolved:
-                ex = {**ex, "exercise_id": resolved["id"], "exercise_name": resolved["name"]}
-                if user_equipment and resolved.get("equipment") not in (
-                    user_equipment | {"Bodyweight", None}
-                ):
-                    warnings.append(
-                        f"{resolved['name']} needs {resolved.get('equipment')} — "
-                        "not in the user's equipment."
-                    )
-                if resolved.get("movement") in avoid_movements:
-                    warnings.append(
-                        f"{resolved['name']} is a {resolved.get('movement')} movement, "
-                        "which an active injury says to avoid."
-                    )
-            else:
-                ex = {**ex, "exercise_id": None}
+            proposed = ex.get("exercise_name") or ""
+            resolved = _match_exercise(catalog, ex.get("exercise_id"), proposed)
+            if resolved is None:
+                unusable.append(f"'{proposed}' is not in the catalog")
+                continue
+            if not _usable_equipment(resolved, user_equipment):
+                unusable.append(
+                    f"'{resolved['name']}' needs {resolved.get('equipment')}, "
+                    "which the user does not have"
+                )
+                continue
+
+            # Swapping to the bodyweight identity is intended behaviour, not a
+            # warning — `warnings` is rendered to the user, and the card already
+            # says "Bodyweight Squat".
+            name, _equipment = _as_prescribed(resolved, user_equipment)
+            ex = {**ex, "exercise_id": resolved["id"], "exercise_name": name}
+            if resolved.get("movement") in avoid_movements:
                 warnings.append(
-                    f"'{ex.get('exercise_name')}' isn't in the catalog — it will be "
-                    "saved by name only."
+                    f"{name} is a {resolved.get('movement')} movement, which one "
+                    "of your active injuries says to avoid."
                 )
             norm_exercises.append(ex)
         if session_minutes and day.get("est_minutes") and day["est_minutes"] > session_minutes * 1.5:
             warnings.append(
-                f"{day.get('title')} is ~{day['est_minutes']}min vs the user's "
-                f"{session_minutes}min sessions."
+                f"{day.get('title')} runs about {day['est_minutes']} minutes, "
+                f"against the {session_minutes} you set."
             )
         normalized_days.append({**day, "exercises": norm_exercises})
+
+    if unusable:
+        # Hard reject. The model still has list_exercises in this same tool
+        # loop, so it can correct itself and call again — which is far better
+        # than shipping a plan the app renders as grey placeholders.
+        return {
+            "error": (
+                "Plan rejected. Every exercise must come from list_exercises, "
+                "using its exact exercise_id and name. Problems: "
+                + "; ".join(dict.fromkeys(unusable))
+                + ". Call list_exercises again and re-propose the full plan."
+            )
+        }, []
 
     payload = {
         "name": args.get("name") or "My plan",
