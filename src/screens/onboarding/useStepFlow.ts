@@ -9,7 +9,7 @@ import { useCallback, useMemo } from 'react';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useOnboarding } from './OnboardingContext';
-import { BUILDING_ROUTE, ONBOARDING_STEPS } from './steps';
+import { ONBOARDING_STEPS } from './steps';
 
 type Nav = NativeStackNavigationProp<Record<string, object | undefined>>;
 
@@ -57,7 +57,20 @@ export function useStepFlow() {
         return;
       }
       const saved = await saveProfileDraft();
-      if (saved) nav.navigate(BUILDING_ROUTE);
+      // Through the paywall, not around it. This branch is the post-auth mount:
+      // answering the questions while already signed in. It used to go straight
+      // to BuildingPlan, so anyone arriving this way reached the app having
+      // never been asked to pay.
+      //
+      // That was survivable while the only route in was a legacy account with
+      // no onboarded_at. It stopped being survivable when Apple/Google sign-in
+      // went live: creating an account from the SIGN-IN screen leaves no
+      // onboarding draft on disk, so RootGate mounts this bare stack — a brand
+      // new user on a path that never showed a price.
+      //
+      // PricingOnboardingRoute replaces itself with BuildingPlan on both
+      // purchase and skip, so the tail of the flow is identical either way.
+      if (saved) nav.navigate('Pricing');
     },
     [visible, index, nav, preAuth, preview, stashDraft, saveProfileDraft],
   );

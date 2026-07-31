@@ -87,11 +87,15 @@ export function OnboardingNavigator({
       resumePlan={resumePlan}
     >
       <Stack.Navigator
-        // The resumed (post-signup) stack opens on the paywall, which then
-        // hands off to BuildingPlan. Coming back from SignUp is the one moment
-        // in the app where an account exists, the plan has been seen, and
-        // nothing has been saved yet — see PricingOnboardingRoute for why that
-        // is the beat the ask belongs on. Every other mount is unchanged.
+        // The resumed (post-signup) stack opens straight on the paywall, which
+        // then hands off to BuildingPlan. Coming back from SignUp is the one
+        // moment in the app where an account exists, the plan has been seen,
+        // and nothing has been saved yet — see PricingOnboardingRoute for why
+        // that is the beat the ask belongs on.
+        //
+        // The bare mount reaches the same paywall, just later: it starts on the
+        // questions and useStepFlow routes the last one through 'Pricing'. Both
+        // paths ask exactly once, immediately before BuildingPlan.
         initialRouteName={resumeDraft ? 'Pricing' : ONBOARDING_STEPS[0].key}
         screenOptions={{
           headerShown: false,

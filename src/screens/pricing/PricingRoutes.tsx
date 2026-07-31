@@ -44,7 +44,14 @@ export function PricingSettingsRoute() {
  * The onboarding mount: the first screen of the post-signup stack.
  *
  * Order is PlanPreview → SignUp → **here** → BuildingPlan → the app. Two beats
- * decide that position:
+ * decide that position.
+ *
+ * (There is a second way in: an account created from the sign-in screen — which
+ * social sign-in makes possible — has no stashed draft, so it answers the
+ * questions post-auth and useStepFlow sends the last one here. Different route,
+ * same position in the flow: after the account exists, before the plan is
+ * saved. Everything below still holds.)
+ *
  *
  * - *After* SignUp, not before it. A purchase made while no account exists
  *   binds to an anonymous store identity that then has to be aliased onto the
