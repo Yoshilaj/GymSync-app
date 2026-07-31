@@ -16,6 +16,8 @@ import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import {
   AppText,
@@ -42,6 +44,9 @@ import { useOnboarding } from './OnboardingContext';
 import { matchCoach } from './coachMatch';
 import { GOALS } from './options';
 import { isUpgradeError } from '@/billing/upgrade';
+
+/** Loose, like PricingRoutes' — the onboarding stack has no exported param list. */
+type OnboardingNav = NativeStackNavigationProp<Record<string, object | undefined>>;
 
 /** Dev replay only — lets the reveal be reviewed without burning a generation.
  *  (Exported for PreparingScreen's preview path.) */
@@ -121,6 +126,11 @@ export function GhostCard() {
 export function BuildingPlanScreen() {
   const styles = useStyles();
   const { colors } = useTheme();
+  // Only used to reach this stack's own Pricing route on a quota refusal. The
+  // app-wide useUpgradePrompt is no help here — it dispatches through
+  // Progress → Settings → Pricing, and none of those exist while the onboarding
+  // stack is mounted.
+  const nav = useNavigation<OnboardingNav>();
   const { getToken } = useAuth();
   const { refresh } = usePlan();
   const {
@@ -331,10 +341,13 @@ export function BuildingPlanScreen() {
       {phase === 'error' && (
         <Entering>
           <View style={styles.errorBox}>
-            {/* Warning, not danger — the user did nothing wrong. */}
+            {/* Warning, not danger — the user did nothing wrong. And not a
+                cloud-offline glyph when the allowance is simply spent: the
+                request reached us and was understood, so an icon that says
+                "no connection" sends them to check their wifi. */}
             <View style={styles.errorWell}>
               <Ionicons
-                name="cloud-offline-outline"
+                name={blockedMsg ? 'sparkles-outline' : 'cloud-offline-outline'}
                 size={28}
                 color={colors.warningText}
               />
@@ -356,7 +369,24 @@ export function BuildingPlanScreen() {
                 {submitError}
               </AppText>
             ) : null}
-            <Button title="Try again" variant="primary" onPress={() => void generate(false)} />
+            {/* A refusal and a failure need different buttons. "Try again" on a
+                spent allowance retries something that is guaranteed to be
+                refused again — the screen had the upgrade payload in hand and
+                still offered the one action that couldn't work.
+                `replace` rather than `navigate`: Pricing exits by replacing
+                itself with BuildingPlan, so pushing would leave two
+                BuildingPlans stacked. Replacing swaps this screen out and the
+                one that comes back is a fresh mount, which re-runs generation
+                on its own — succeeding now if they bought. */}
+            {blockedMsg ? (
+              <Button
+                title="See plans"
+                variant="primary"
+                onPress={() => nav.replace('Pricing')}
+              />
+            ) : (
+              <Button title="Try again" variant="primary" onPress={() => void generate(false)} />
+            )}
             <Button
               title="Skip for now"
               variant="ghost"
