@@ -186,9 +186,16 @@ class UtteranceAggregator:
             self._parts.append(text)
 
     def flush(self) -> str | None:
-        self.generation += 1
+        # Only a flush that actually RELEASES an utterance counts as a
+        # generation. Bumping on an empty buffer disarms the force-flush that
+        # was armed for this utterance (it checks the generation before firing),
+        # so a fragment arriving a moment later — after the client's gate has
+        # closed, with no audio left to advance Deepgram's endpointing — would
+        # sit here with nothing able to release it. That is a silent hang: the
+        # client waits in `listening` for a transcript that never comes.
         if not self._parts:
             return None
+        self.generation += 1
         text = " ".join(self._parts)
         self._parts.clear()
         return text
@@ -228,6 +235,7 @@ class VoiceSession:
         self._stopping = False
         self._dg_recovering = False
         self._dg_restarted = False
+        self._dg_died_during_recovery = False
         # Last-seen preset. Re-read at the top of every turn, not cached for the
         # session: switching personality in Settings has to reach the next spoken
         # turn's voice and ack phrases, not wait for a reconnect.
@@ -329,25 +337,35 @@ class VoiceSession:
         # Capture outer self via closure — self_dg is the Deepgram client arg.
         outer = self
 
+        # The SDK gathers its callbacks with return_exceptions=True and discards
+        # whatever comes back, so anything raised in here vanishes without a
+        # traceback — and takes the utterance with it. Catch and log instead:
+        # a malformed result should cost one turn, not the session's voice.
         async def _on_transcript(self_dg, result, **kwargs):
             # interim_results=True: everything lands here, but only is_final
             # fragments accumulate. An utterance boundary — speech_final from
             # endpointing, or from_finalize answering our Finalize — releases
             # the joined transcript.
-            if not getattr(result, "is_final", False):
-                return
-            outer._agg.add_final(result.channel.alternatives[0].transcript)
-            if result.speech_final or getattr(result, "from_finalize", False):
-                text = outer._agg.flush()
-                if text:
-                    await outer._transcript_q.put(("utterance", text))
+            try:
+                if not getattr(result, "is_final", False):
+                    return
+                outer._agg.add_final(result.channel.alternatives[0].transcript)
+                if result.speech_final or getattr(result, "from_finalize", False):
+                    text = outer._agg.flush()
+                    if text:
+                        await outer._transcript_q.put(("utterance", text))
+            except Exception:
+                logger.exception("Deepgram transcript handler failed")
 
         async def _on_utterance_end(self_dg, utterance_end, **kwargs):
             # Safety net for utterances Deepgram never marks speech_final
             # (noisy gyms): fires after utterance_end_ms of audio-time silence.
-            text = outer._agg.flush()
-            if text:
-                await outer._transcript_q.put(("utterance", text))
+            try:
+                text = outer._agg.flush()
+                if text:
+                    await outer._transcript_q.put(("utterance", text))
+            except Exception:
+                logger.exception("Deepgram utterance-end handler failed")
 
         async def _on_error(self_dg, error, **kwargs):
             logger.warning("Deepgram error: %s", error)
@@ -380,7 +398,15 @@ class VoiceSession:
 
     async def _on_dg_dead(self) -> None:
         """Deepgram closed/errored underneath us: one transparent restart, then fatal."""
-        if self._stopping or self._dg_recovering:
+        if self._stopping:
+            return
+        if self._dg_recovering:
+            # A death raised WHILE we are replacing the connection — the
+            # replacement itself failing is the common case. Dropping it here
+            # left the session feeding audio into a dead socket forever with
+            # nothing logged; remember it and settle up once recovery unwinds.
+            self._dg_died_during_recovery = True
+            logger.warning("Deepgram died during recovery — deferring")
             return
         self._dg_recovering = True
         try:
@@ -397,6 +423,12 @@ class VoiceSession:
                 await self._fail_fatal("Speech recognition dropped.")
         finally:
             self._dg_recovering = False
+
+        # Re-entry is safe now: _dg_restarted is set, so this resolves to the
+        # fatal branch rather than looping.
+        if self._dg_died_during_recovery:
+            self._dg_died_during_recovery = False
+            await self._on_dg_dead()
 
     async def _fail_fatal(self, message: str) -> None:
         """Tell the client the session is dead and close; it reconnects fresh."""
