@@ -23,6 +23,22 @@ export const lightGradients = {
   navyDeep: ['#22405F', '#0B2447'],
   /** Bottom scrim for legible text over imagery (post tiles). */
   scrim: ['rgba(11,36,71,0)', 'rgba(11,36,71,0.62)'],
+  /**
+   * Skeleton shimmer — a highlight that travels across a `sunken` block. Rides
+   * OVER the fill, so the ends must be fully transparent or the sweep reads as
+   * a hard-edged band sliding past.
+   */
+  skeletonSweep: [
+    'rgba(255,255,255,0)',
+    'rgba(255,255,255,0.62)',
+    'rgba(255,255,255,0)',
+  ],
+  /** Skeleton shimmer for blocks sitting on the brand gradient (`tone="onBrand"`). */
+  skeletonSweepOnBrand: [
+    'rgba(255,255,255,0)',
+    'rgba(255,255,255,0.28)',
+    'rgba(255,255,255,0)',
+  ],
 } as const satisfies Record<string, GradientStops>;
 
 export type GradientKey = keyof typeof lightGradients;
@@ -35,6 +51,17 @@ export const darkGradients = {
   rest: ['#14528F', '#0E2A47', '#070D18'],
   navyDeep: ['#1A2C42', '#070D18'],
   scrim: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.66)'],
+  // Much fainter than light: a bright sweep on a dark block reads as a glare.
+  skeletonSweep: [
+    'rgba(255,255,255,0)',
+    'rgba(255,255,255,0.07)',
+    'rgba(255,255,255,0)',
+  ],
+  skeletonSweepOnBrand: [
+    'rgba(255,255,255,0)',
+    'rgba(255,255,255,0.20)',
+    'rgba(255,255,255,0)',
+  ],
 } as const satisfies Record<GradientKey, GradientStops>;
 
 /** Legacy export = light set. */
