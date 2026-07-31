@@ -62,6 +62,17 @@ async function readError(
 }
 
 /**
+ * Artificial latency on every authed request, so loading skeletons are actually
+ * observable against a fast local backend. Every screen's loading state is
+ * invisible otherwise: the fetch resolves before a frame is drawn.
+ *
+ * 0 = off, which is the committed state. Set it while working on a loading state,
+ * put it back afterwards. Doubly guarded by `__DEV__` so it can never reach a
+ * release build even if it's left switched on.
+ */
+const DEBUG_LATENCY_MS = 0;
+
+/**
  * `token` is the caller's current access token. On a 401 we refresh and retry with
  * a new one, so callers don't need to thread refresh logic through their own code —
  * they pass what they have and get an answer.
@@ -71,6 +82,10 @@ export async function authedFetch<T>(
   token: string,
   init: RequestInit = {},
 ): Promise<T> {
+  if (__DEV__ && DEBUG_LATENCY_MS > 0) {
+    await new Promise((r) => setTimeout(r, DEBUG_LATENCY_MS));
+  }
+
   const url = `${voiceConfig.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 
   const send = (bearer: string) =>
