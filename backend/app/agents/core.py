@@ -28,6 +28,7 @@ from app.agents.tools import (
     utcnow,
 )
 from app.config import settings
+from app.rag import personal
 
 # Two-tier routing: every live turn starts on the fast model with the full tool set.
 # The model itself calls escalate_to_reasoning to hand off to the reasoning model for
@@ -117,7 +118,12 @@ _HISTORY_TTL_SECONDS = 60.0
 _HISTORY_SESSIONS = 4      # distinct training days rendered
 _HISTORY_EXERCISES = 5     # exercises in the bests list
 _STALL_SESSIONS = 3        # equal top weights across this many days = stalled
-# user_id -> (monotonic deadline, rendered block)
+# How long personal-memory recall may hold up a turn before the coach speaks
+# without it. Sized against the ~1s voice TTFT budget: recall is a bonus, and a
+# turn that never arrives is worse than one that forgot something.
+_PERSONAL_MEMORY_BUDGET_S = 2.0
+# "user_id:tier" -> (monotonic deadline, rendered block). Tier is in the key because the
+# rendered block differs by tier — see _load_recent_history.
 _history_cache: dict[str, tuple[float, str]] = {}
 
 
@@ -126,13 +132,19 @@ def _epley(weight: float, reps: int) -> float:
     return weight * (1 + reps / 30)
 
 
-def _render_recent_history(rows: list[dict]) -> str:
+def _render_recent_history(rows: list[dict], tier: str = "premium") -> str:
     """<recent_history> from newest-first completed_sets rows.
 
     Four parts, each capped so the block stays ~20 lines: how long they've kept
     it up, what the last few sessions were, their best set per lift, and which
     lifts have not moved. `stalled` is the one the model can actually act on —
     a computed signal rather than something it has to infer from a set list.
+
+    `stalled` is Premium-only, and that is where the line between the tiers falls:
+    showing someone their own numbers is Free (the Progress tab already does it),
+    while analysing them and saying what to do next is "Data-Driven Progression
+    Management". Streak, sessions and bests stay on every tier — they were there
+    before this split existed and taking them away would be a downgrade.
     """
     if not rows:
         return ""
@@ -211,7 +223,7 @@ def _render_recent_history(rows: list[dict]) -> str:
 
     # Stalled: top weight unchanged across the last N days the lift was trained.
     stall_lines = []
-    for name in order[:_HISTORY_EXERCISES]:
+    for name in order[:_HISTORY_EXERCISES] if tier == "premium" else []:
         tops: list[float] = []
         for day in days:
             weights = [
@@ -237,15 +249,19 @@ def _render_recent_history(rows: list[dict]) -> str:
     return "<recent_history>\n" + "\n".join(out) + "\n</recent_history>\n\n"
 
 
-async def _load_recent_history(user_id: str, db: AsyncClient) -> str:
+async def _load_recent_history(user_id: str, db: AsyncClient, tier: str = "premium") -> str:
     """Cached <recent_history> block. Best-effort: never blocks a turn.
 
     Cached for a minute because voice turns hit this path too and it is the only
     new DB read inside the speech-to-first-audio budget. A set logged mid-session
     already appears in <session_state>, so a slightly stale digest costs the
     model nothing it doesn't have elsewhere.
+
+    The cache key carries the tier: the rendered block differs between tiers, and a
+    shared key would serve one user's Premium digest to a free account on the next hit.
     """
-    cached = _history_cache.get(user_id)
+    key = f"{user_id}:{tier}"
+    cached = _history_cache.get(key)
     now = time.monotonic()
     if cached and cached[0] > now:
         return cached[1]
@@ -258,12 +274,37 @@ async def _load_recent_history(user_id: str, db: AsyncClient) -> str:
             .limit(400)
             .execute()
         )
-        block = _render_recent_history(res.data or [])
+        block = _render_recent_history(res.data or [], tier)
     except Exception:
         logger.warning("recent history load failed", exc_info=True)
         return ""
-    _history_cache[user_id] = (now + _HISTORY_TTL_SECONDS, block)
+    _history_cache[key] = (now + _HISTORY_TTL_SECONDS, block)
     return block
+
+
+async def _load_personal_memory(
+    user_id: str, query: str, db: AsyncClient, channel: str, tier: str
+) -> str:
+    """Premium's "Lifetime Personal Memory" — semantic recall over what the user has told
+    the coach before, written by rag/memory.remember.
+
+    The tier gate lives here rather than inside prefetch so the retrieval module stays
+    policy-free. Best-effort by construction: prefetch swallows its own failures and
+    returns "", so a cold embedder or a missing RPC costs the turn nothing.
+    """
+    if tier != "premium":
+        return ""
+    # Hard deadline. prefetch() swallows its own *errors*, but its failure mode
+    # on a cold process is being SLOW, not raising: the first call lazily loads
+    # the ONNX embedding model (downloading ~500MB if the cache is cold), and it
+    # sits inside the gather that has to finish before the coach can say
+    # anything. Every other context load here is bounded; this one wasn't.
+    try:
+        async with asyncio.timeout(_PERSONAL_MEMORY_BUDGET_S):
+            return await personal.prefetch(user_id, query, db, channel)
+    except TimeoutError:
+        logger.warning("personal memory prefetch exceeded its budget; skipping")
+        return ""
 
 
 def _fmt_set(row: dict) -> str:
@@ -555,6 +596,7 @@ async def _agent_events(
     model: str | None = None,
     anonymous_profile: dict | None = None,
     personality_preset: str | None = None,
+    channel: str = "text",
 ) -> AsyncGenerator[dict, None]:
     """
     Core agent loop. Yields plain event dicts:
@@ -582,16 +624,19 @@ async def _agent_events(
             "preset_id": personality_preset or DEFAULT_PRESET,
             "system_prompt_override": None,
         }
-        history, session_ctx, profile_ctx, history_ctx = [], "", "", ""
+        history, session_ctx, profile_ctx, history_ctx, personal_ctx = [], "", "", "", ""
     else:
         # Independent reads — run concurrently; on a voice turn this is the
         # bulk of the pre-model latency.
-        personality, history, session_ctx, profile_ctx, history_ctx = await asyncio.gather(
+        (
+            personality, history, session_ctx, profile_ctx, history_ctx, personal_ctx
+        ) = await asyncio.gather(
             _load_personality(user_id, db),
             _load_history(session_id, conversation_id, db),
             _load_session_context(session_id, db),
             _load_profile_context(user_id, db),
-            _load_recent_history(user_id, db),
+            _load_recent_history(user_id, db, tier),
+            _load_personal_memory(user_id, user_message, db, channel, tier),
         )
         if personality_preset:
             personality = {"preset_id": personality_preset, "system_prompt_override": None}
@@ -619,8 +664,10 @@ async def _agent_events(
         messages.append({"role": m["role"], "content": content})
     # Context blocks ride in the USER turn, below the system cache breakpoint —
     # they change as sets are logged and would invalidate the cache every turn
-    # if they sat in the system block.
-    full_user_message = profile_ctx + history_ctx + session_ctx + user_message
+    # if they sat in the system block. Ordered oldest-context-first: who they are,
+    # what they've been lifting, what they've told us, then what's happening right
+    # now — <session_state> stays nearest the message because it moves fastest.
+    full_user_message = profile_ctx + history_ctx + personal_ctx + session_ctx + user_message
     messages.append({"role": "user", "content": full_user_message})
 
     assistant_text_parts: list[str] = []

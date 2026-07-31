@@ -42,7 +42,9 @@ import { Exercise, PlannedSet } from '@/types';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
 import { useBilling } from '@/billing/BillingProvider';
-import type { UpgradeRequired } from '@/billing/upgrade';
+import { isUpgradeError, type UpgradeRequired } from '@/billing/upgrade';
+import { addSessionNote, type SessionNote } from '@/api/session';
+import { SessionNoteSheet } from './SessionNoteSheet';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
 type RouteP = RouteProp<PlanStackParamList, 'WorkoutSession'>;
@@ -190,6 +192,7 @@ function WorkoutSessionActive() {
   const [planChanges, setPlanChanges] = useState<PlanChange[] | null>(null);
   const [planBannerOpen, setPlanBannerOpen] = useState(false);
   const [restExpanded, setRestExpanded] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   // Which set's weight wheel is open — one at a time, per current exercise.
   const [weightEditIdx, setWeightEditIdx] = useState<number | null>(null);
   useEffect(() => {
@@ -452,11 +455,29 @@ function WorkoutSessionActive() {
         case 'go_to_exercise':
           applyGoTo(action);
           break;
+        case 'injury_recorded':
+          // The spoken path's only visible confirmation — the coach is forbidden
+          // from reading the internal action note aloud.
+          pushToast(
+            action.body_part
+              ? `Noted — I'll program around your ${action.body_part.toLowerCase()}`
+              : 'Injury noted',
+            'medkit',
+          );
+          break;
         default:
           break;
       }
     },
-    [actions.apply, applyLogSet, applySwap, applyAdd, applyModifyPlan, applyGoTo],
+    [
+      actions.apply,
+      applyLogSet,
+      applySwap,
+      applyAdd,
+      applyModifyPlan,
+      applyGoTo,
+      pushToast,
+    ],
   );
 
   // When a resumed session belongs to a DIFFERENT workout than the screen was
@@ -630,6 +651,47 @@ function WorkoutSessionActive() {
     nav.goBack();
     promptUpgrade(voiceRefusal?.requiredTier ?? 'pro');
   }, [nav, promptUpgrade, voiceRefusal]);
+
+  // Reporting pain by tapping. Premium, like report_injury — so a customer below it
+  // meets the paywall on the tap rather than after filling the form in. The submit
+  // path still handles a refusal, because the server is the authority on tier and this
+  // check is only here to save the wasted typing.
+  const isPremium = entitlement.tier === 'premium';
+  const openNote = useCallback(() => {
+    if (!isPremium) {
+      promptUpgrade('premium');
+      return;
+    }
+    setNoteOpen(true);
+  }, [isPremium, promptUpgrade]);
+
+  const submitNote = useCallback(
+    async (note: SessionNote) => {
+      // A note needs a session to hang off, and one may not exist yet: nothing starts
+      // a session until voice is enabled. start() returns the existing id when there
+      // is one, so this is safe to call on every note.
+      const sessionId = await workoutSession.start();
+      if (!sessionId) throw new Error('Could not start a session for this note.');
+      try {
+        await addSessionNote(await getToken(), sessionId, note);
+      } catch (e) {
+        if (isUpgradeError(e)) {
+          setNoteOpen(false);
+          promptUpgrade(e.upgrade);
+          return;
+        }
+        throw e;
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      pushToast(
+        note.kind === 'injury'
+          ? `Noted — I'll program around your ${(note.bodyPart ?? 'injury').toLowerCase()}`
+          : 'Noted',
+        note.kind === 'injury' ? 'medkit' : 'create',
+      );
+    },
+    [workoutSession.start, getToken, promptUpgrade, pushToast],
+  );
 
   // A gentle nudge when the rest countdown runs out on its own (not on skip) —
   // haptic plus, when voice is live, a spoken "rest's over" cue from the coach.
@@ -865,6 +927,17 @@ function WorkoutSessionActive() {
           <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
         </Pressable>
         <View style={styles.headerSpacer} />
+        {/* Tell the coach something without talking to it. Sits beside the rest
+            chip because both are things you reach for between sets. */}
+        <Pressable
+          onPress={openNote}
+          hitSlop={8}
+          style={styles.noteBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Report an injury or leave a note"
+        >
+          <Ionicons name="medkit-outline" size={18} color={colors.textSecondary} />
+        </Pressable>
         {timer.status === 'idle' ? (
           <Pressable
             hitSlop={6}
@@ -1202,6 +1275,12 @@ function WorkoutSessionActive() {
         </Animated.View>
       )}
 
+      <SessionNoteSheet
+        visible={noteOpen}
+        onClose={() => setNoteOpen(false)}
+        onSubmit={submitNote}
+      />
+
       <SessionToasts
         toasts={toasts}
         onDismiss={dismissToast}
@@ -1224,6 +1303,17 @@ const useStyles = makeStyles((t) => ({
     gap: spacing.md,
   },
   closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: t.colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: t.colors.border,
+  },
+  // Same geometry as closeBtn — the two flank the title and must read as a pair.
+  noteBtn: {
     width: 34,
     height: 34,
     borderRadius: radius.pill,

@@ -231,6 +231,29 @@ PLAN GENERATION:
   ("Push", "Upper A", "Legs") — never list muscle groups in a title. Rationale is one
   sentence max.
 - modify_plan only adjusts TODAY'S session, never the saved weekly plan.
+
+PROGRESSION:
+- <recent_history> carries only the last few sessions. When the user asks how a specific
+  lift is going, or you need to decide what they should be lifting today, call
+  get_exercise_history — it returns the full picture for that lift plus a recommended
+  next target and whether it has stalled.
+- Prescribe from that recommendation rather than inventing a jump. When it says the lift
+  has stalled, say so plainly and give them the way out (more reps at the same load, or a
+  cut and a rebuild) — do not tell someone to add weight to a lift that has not moved in
+  three sessions.
+
+MEMORY:
+- <personal_memory> may arrive in the user turn: things this user told you in past
+  conversations, each tagged with what it is and when. Treat it as your own
+  recollection — use it naturally ("you said mornings work better") and never announce
+  that you looked it up or mention having a memory system. It is recall, not gospel: if
+  it contradicts what the user says now, the user is right.
+- When the user tells you something durable about themselves that is NOT already in
+  <user_profile> — equipment they do or don't have, a schedule constraint, a movement
+  they refuse, what actually motivates them — call remember_about_user so it survives
+  this conversation. Once per fact: do not re-store what <personal_memory> already
+  shows. Never mention that you stored it, and never store injuries this way
+  (report_injury owns those).
 """
 
 _VOICE_RULES = """
@@ -298,6 +321,40 @@ _TOOL_DOWNGRADES: tuple[tuple[str, str], ...] = (
         "  remembered. If you then substitute an exercise, use swap_exercise.",
         "- When the user reports pain, soreness, a tweak, or an injury, take it seriously in the\n"
         "  moment. If you then substitute an exercise, use swap_exercise.",
+    ),
+    (
+        # No history tool below Premium. The <recent_history> block still arrives, so the
+        # coach keeps citing real numbers — it just can't look past the last few sessions.
+        "\nPROGRESSION:\n"
+        "- <recent_history> carries only the last few sessions. When the user asks how a specific\n"
+        "  lift is going, or you need to decide what they should be lifting today, call\n"
+        "  get_exercise_history — it returns the full picture for that lift plus a recommended\n"
+        "  next target and whether it has stalled.\n"
+        "- Prescribe from that recommendation rather than inventing a jump. When it says the lift\n"
+        "  has stalled, say so plainly and give them the way out (more reps at the same load, or a\n"
+        "  cut and a rebuild) — do not tell someone to add weight to a lift that has not moved in\n"
+        "  three sessions.\n",
+        "\nPROGRESSION:\n"
+        "- Prescribe from the numbers in <recent_history>. When a lift has not moved in three\n"
+        "  sessions, say so plainly and give them the way out (more reps at the same load, or a\n"
+        "  cut and a rebuild) — do not tell someone to add weight to a lift that is stuck.\n",
+    ),
+    (
+        # Below Premium there is no personal memory at all — nothing writes it and nothing
+        # reads it back — so the whole section goes rather than being softened.
+        "\nMEMORY:\n"
+        "- <personal_memory> may arrive in the user turn: things this user told you in past\n"
+        "  conversations, each tagged with what it is and when. Treat it as your own\n"
+        "  recollection — use it naturally (\"you said mornings work better\") and never announce\n"
+        "  that you looked it up or mention having a memory system. It is recall, not gospel: if\n"
+        "  it contradicts what the user says now, the user is right.\n"
+        "- When the user tells you something durable about themselves that is NOT already in\n"
+        "  <user_profile> — equipment they do or don't have, a schedule constraint, a movement\n"
+        "  they refuse, what actually motivates them — call remember_about_user so it survives\n"
+        "  this conversation. Once per fact: do not re-store what <personal_memory> already\n"
+        "  shows. Never mention that you stored it, and never store injuries this way\n"
+        "  (report_injury owns those).\n",
+        "",
     ),
     (
         "- For substantive training / programming / nutrition / recovery questions, ground your\n"

@@ -15,17 +15,29 @@ convention, and `target_sets` uses the frontend's camelCase PlannedSet shape
 ({id, exerciseId, targetReps, weight}) — the same convention the 002 backfill
 established. Keep the two in lockstep.
 """
+import logging
 from datetime import datetime, timezone
 
 from supabase import AsyncClient
+
+from app import progression
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def build_plan_tree(plan_id: str, user_id: str, db: AsyncClient) -> dict | None:
-    """Self-contained plan tree, or None when the plan doesn't exist / isn't theirs."""
+async def build_plan_tree(
+    plan_id: str, user_id: str, db: AsyncClient, tier: str = "free"
+) -> dict | None:
+    """Self-contained plan tree, or None when the plan doesn't exist / isn't theirs.
+
+    Target weights are seeded from the user's own history on the way out — see
+    `_seed_targets`. `tier` decides how clever that seeding is, so callers pass what
+    they know; "free" is the conservative default.
+    """
     plan = (
         await db.table("workout_plans")
         .select("id, name, is_active")
@@ -62,7 +74,7 @@ async def build_plan_tree(plan_id: str, user_id: str, db: AsyncClient) -> dict |
         for row in ex.data or []:
             exercises_by_workout.setdefault(row["plan_workout_id"], []).append(row)
 
-    return {
+    tree = {
         "plan_id": plan.data[0]["id"],
         "name": plan.data[0]["name"],
         "is_active": plan.data[0]["is_active"],
@@ -71,6 +83,7 @@ async def build_plan_tree(plan_id: str, user_id: str, db: AsyncClient) -> dict |
             for w in (workouts.data or [])
         ],
     }
+    return await _seed_targets(tree, user_id, db, tier)
 
 
 async def get_active_plan_id(user_id: str, db: AsyncClient) -> str | None:
@@ -85,11 +98,85 @@ async def get_active_plan_id(user_id: str, db: AsyncClient) -> str | None:
     return res.data[0]["id"] if res.data else None
 
 
-async def get_active_plan_tree(user_id: str, db: AsyncClient) -> dict | None:
+async def get_active_plan_tree(
+    user_id: str, db: AsyncClient, tier: str = "free"
+) -> dict | None:
     plan_id = await get_active_plan_id(user_id, db)
     if plan_id is None:
         return None
-    return await build_plan_tree(plan_id, user_id, db)
+    return await build_plan_tree(plan_id, user_id, db, tier)
+
+
+# How far back to look when seeding weights. Same window core.py uses for the history
+# digest — enough for a month of training on any sane split.
+_HISTORY_ROWS = 400
+
+
+async def _seed_targets(tree: dict, user_id: str, db: AsyncClient, tier: str) -> dict:
+    """Fill each planned set's `weight` from what the user actually lifted.
+
+    Every workout used to open with an empty weight field, on every exercise, forever —
+    `_target_sets_json` writes `"weight": None` at plan-creation time and nothing ever
+    revisited it. So the app knew you benched 60kg on Tuesday and still asked you on
+    Thursday.
+
+    Two tiers of answer, which is exactly where the Premium line falls:
+      • everyone      — "what you lifted last time", straight recall.
+      • Premium       — `next_target`: double progression, plus the stall/deload verdict
+                        attached as `progression` for the coach to talk about.
+
+    Best-effort: a failure here leaves the plan exactly as it was.
+    """
+    workouts = tree.get("workouts") or []
+    if not workouts:
+        return tree
+
+    try:
+        res = (
+            await db.table("completed_sets")
+            .select("exercise_name, reps, weight, weight_unit, logged_at")
+            .eq("user_id", user_id)
+            .order("logged_at", desc=True)
+            .limit(_HISTORY_ROWS)
+            .execute()
+        )
+        rows = res.data or []
+    except Exception:
+        logger.warning("target seeding: history read failed", exc_info=True)
+        return tree
+    if not rows:
+        return tree
+
+    recall = progression.last_performance(rows)
+
+    for workout in workouts:
+        for ex in workout.get("exercises") or []:
+            sets = ex.get("target_sets") or []
+            if not sets:
+                continue
+            name = ex.get("exercise_name") or ""
+            first = sets[0] or {}
+            reps_low = first.get("targetReps") or 8
+            reps_high = first.get("repsHigh")
+
+            if tier == "premium":
+                hint = progression.next_target(
+                    rows, name, reps_low=reps_low, reps_high=reps_high
+                )
+                if hint:
+                    ex["progression"] = hint
+                weight = hint["weight"] if hint else None
+            else:
+                weight = (recall.get(name.strip().lower()) or {}).get("weight")
+
+            if weight is None:
+                continue
+            for s in sets:
+                # Never overwrite a weight someone deliberately set.
+                if s.get("weight") is None:
+                    s["weight"] = weight
+
+    return tree
 
 
 def _target_sets_json(exercise: dict) -> list[dict]:

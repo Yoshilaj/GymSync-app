@@ -24,7 +24,13 @@ from app.agents.core import (
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.ratelimit import client_ip, enforce
-from app.entitlements import PLAN_GENERATION, QuotaExceeded, check_quota, consume_quota
+from app.entitlements import (
+    PLAN_GENERATION,
+    QuotaExceeded,
+    check_quota,
+    consume_quota,
+    resolve_tier,
+)
 
 router = APIRouter(tags=["plans"])
 
@@ -228,7 +234,9 @@ async def get_active_plan(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
-    plan = await plan_store.get_active_plan_tree(user_id, db)
+    # Tier decides how the planned weights are seeded — recall for everyone, real
+    # progression for Premium. See plan_store._seed_targets.
+    plan = await plan_store.get_active_plan_tree(user_id, db, await resolve_tier(user_id, db))
     return {"plan": plan}
 
 
@@ -294,5 +302,26 @@ async def accept_proposal(
     await db.table("plan_proposals").update(
         {"accepted_plan_id": tree["plan_id"], "updated_at": _utcnow()}
     ).eq("id", proposal_id).execute()
+
+    # Why this plan looks the way it does, kept for the long term. Months later the
+    # reasoning is the part no table holds: the plan rows say "Upper A, 3x8 bench", only
+    # this says it was built around two gym days and a cranky shoulder.
+    #
+    # Deliberately NOT tier-gated, unlike the session summary: this costs one embedding
+    # rather than a model call, and reading memory back is already Premium-only. So a free
+    # user who upgrades finds their plan history waiting instead of starting blank —
+    # "Lifetime" ought to mean lifetime, not "since you paid".
+    payload = flipped.data[0].get("payload") or {}
+    rationale = str(payload.get("rationale") or "").strip()
+    if rationale:
+        from app.rag import memory
+
+        await memory.remember(
+            user_id,
+            "plan_rationale",
+            f"Started the plan \"{payload.get('name') or 'their plan'}\". {rationale}",
+            db,
+            source_id=proposal_id,
+        )
 
     return {"plan": tree}

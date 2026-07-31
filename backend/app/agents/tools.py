@@ -153,6 +153,61 @@ TOOL_DEFINITIONS = [
         },
     },
     {
+        "name": "get_exercise_history",
+        "description": (
+            "Look up everything logged for ONE exercise: recent sessions, best set, "
+            "estimated 1RM trend, whether it has stalled, and the recommended next "
+            "target. Use when the user asks about their progress on a specific lift, "
+            "when deciding what they should be lifting today, or when <recent_history> "
+            "doesn't go back far enough — it only carries the last few sessions."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["exercise_name"],
+            "properties": {
+                "exercise_name": {
+                    "type": "string",
+                    "description": "Exactly as it appears in the plan or the catalog.",
+                },
+            },
+        },
+    },
+    {
+        "name": "remember_about_user",
+        "description": (
+            "Store something durable the user told you about themselves, so it is still known "
+            "months from now. Use for lasting facts: equipment they do or don't have, a "
+            "schedule constraint, a movement they love or refuse to do, a coaching style that "
+            "works for them, a goal behind the goal. "
+            "Do NOT use for: anything already in their profile, numbers you can look up "
+            "(sets, reps, weights, PRs), one-off remarks about today, or injuries — injuries "
+            "go to report_injury."
+        ),
+        "input_schema": {
+            "type": "object",
+            "required": ["fact"],
+            "properties": {
+                "fact": {
+                    "type": "string",
+                    "description": (
+                        "One self-contained sentence in the third person, meaningful on its own "
+                        "with no conversation around it. "
+                        "Good: 'Trains fasted before 6am and dislikes long sessions.' "
+                        "Bad: 'He said he prefers that.'"
+                    ),
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["preference", "coaching_note"],
+                    "description": (
+                        "'preference' = what the user wants or won't do. "
+                        "'coaching_note' = what you learned about coaching them well."
+                    ),
+                },
+            },
+        },
+    },
+    {
         "name": "swap_exercise",
         "description": (
             "Swap one exercise for an alternative in today's session. If to_exercise is omitted, "
@@ -341,6 +396,7 @@ UI_ACTION_TOOLS = {
     "modify_plan",
     "go_to_exercise",
     "propose_workout_plan",  # emits {"type": "plan_proposal", ...}
+    "report_injury",
 }
 
 # Internal routing tool handled in the agent loop, not by execute_tool.
@@ -387,6 +443,66 @@ class ToolContext:
     # Defaults to "premium" so internal callers that build a context directly
     # keep working; every request path sets it explicitly.
     tier: str = "premium"
+
+
+# ── Injury recording ──────────────────────────────────────────────────────────
+
+def _injury_sentence(
+    body_part: str, severity: str | None, notes: str | None, avoid: list[str] | None
+) -> str:
+    """One self-contained sentence for personal memory.
+
+    The `injuries` row is the structured truth (and is what the safety layer filters on);
+    this is the prose copy, so semantic recall can surface "my knee" when the user later
+    says "that thing that was bothering me".
+    """
+    parts = [f"Reported {severity + ' ' if severity else ''}{body_part} pain"]
+    if notes:
+        parts.append(f" — {notes.rstrip('.')}")
+    if avoid:
+        parts.append(f". Avoid: {', '.join(avoid)}")
+    return "".join(parts).rstrip(".") + "."
+
+
+async def record_injury(
+    user_id: str,
+    db: AsyncClient,
+    *,
+    body_part: str,
+    severity: str | None = None,
+    notes: str | None = None,
+    avoid_movements: list[str] | None = None,
+    session_id: str | None = None,
+) -> dict:
+    """Persist an injury and mirror it into personal memory. Returns the injury row.
+
+    Shared by the `report_injury` tool and POST /session/{id}/note so the two entry points
+    can't drift — the spoken path and the tapped path must record the same thing.
+    """
+    row: dict = {"user_id": user_id, "body_part": body_part, "status": "active"}
+    if severity:
+        row["severity"] = severity
+    if notes:
+        row["notes"] = notes
+    if avoid_movements:
+        row["avoid_movements"] = avoid_movements
+    if session_id:
+        row["reported_in_session"] = session_id
+
+    res = await db.table("injuries").insert(row).execute()
+    injury = res.data[0] if res.data else row
+
+    # 002_mvp_schema.sql calls this table "feeds Personal RAG" — this is that wire.
+    from app.rag import memory
+
+    await memory.remember(
+        user_id,
+        "injury",
+        _injury_sentence(body_part, severity, notes, avoid_movements),
+        db,
+        source_id=injury.get("id"),
+    )
+    return injury
 
 
 # ── Session plan helpers ──────────────────────────────────────────────────────
@@ -862,7 +978,7 @@ async def execute_tool(
                 return {"plan": snapshot, "source": "session_snapshot"}, []
         from app.plan_store import get_active_plan_tree
 
-        plan = await get_active_plan_tree(ctx.user_id, ctx.db)
+        plan = await get_active_plan_tree(ctx.user_id, ctx.db, ctx.tier)
         if plan:
             return {"plan": plan, "source": "active_plan"}, []
         return {"plan": None, "note": "User has no plan yet — offer to create one."}, []
@@ -871,17 +987,91 @@ async def execute_tool(
         return await _propose_workout_plan(args, ctx)
 
     if name == "report_injury":
-        row: dict = {"user_id": ctx.user_id, "body_part": args["body_part"], "status": "active"}
-        if args.get("severity"):
-            row["severity"] = args["severity"]
-        if args.get("notes"):
-            row["notes"] = args["notes"]
-        if args.get("avoid_movements"):
-            row["avoid_movements"] = args["avoid_movements"]
-        if ctx.session_id:
-            row["reported_in_session"] = ctx.session_id
-        res = await ctx.db.table("injuries").insert(row).execute()
-        return {"status": "injury_recorded", "injury": res.data[0] if res.data else row}, []
+        injury = await record_injury(
+            ctx.user_id,
+            ctx.db,
+            body_part=args["body_part"],
+            severity=args.get("severity"),
+            notes=args.get("notes"),
+            avoid_movements=args.get("avoid_movements"),
+            session_id=ctx.session_id,
+        )
+        # Give the spoken path the same confirmation the tapped one gets. Recording an
+        # injury used to be completely invisible: the prompt forbids reading the action
+        # note aloud, so the user said "my knee hurts" and saw nothing happen at all.
+        ctx.app_actions.append({
+            "type": "app_action",
+            "action": "injury_recorded",
+            "body_part": injury.get("body_part"),
+        })
+        return {"status": "injury_recorded", "injury": injury}, ctx.app_actions
+
+    if name == "get_exercise_history":
+        from app import progression
+
+        exercise_name = args["exercise_name"]
+        res = (
+            await ctx.db.table("completed_sets")
+            .select("exercise_name, reps, weight, weight_unit, logged_at")
+            .eq("user_id", ctx.user_id)
+            .order("logged_at", desc=True)
+            .limit(600)
+            .execute()
+        )
+        rows = res.data or []
+        sessions = progression.sessions_for(rows, exercise_name)
+        if not sessions:
+            return {
+                "exercise": exercise_name,
+                "sessions": [],
+                "note": "Never logged — no history to read from.",
+            }, []
+
+        history = [
+            {
+                "date": str(s[0].get("logged_at"))[:10],
+                "sets": [
+                    {"reps": r.get("reps"), "weight": r.get("weight")} for r in s
+                ],
+                "unit": next((r.get("weight_unit") for r in s if r.get("weight_unit")), None),
+            }
+            for s in sessions[:8]
+        ]
+        best = max(
+            (r for r in rows
+             if (r.get("exercise_name") or "").strip().lower()
+             == exercise_name.strip().lower() and r.get("weight") and r.get("reps")),
+            key=lambda r: progression.estimate_1rm(float(r["weight"]), int(r["reps"])),
+            default=None,
+        )
+        return {
+            "exercise": exercise_name,
+            "sessions": history,
+            "best_set": (
+                {
+                    "weight": best["weight"],
+                    "reps": best["reps"],
+                    "unit": best.get("weight_unit"),
+                    "date": str(best.get("logged_at"))[:10],
+                    "estimated_1rm": round(
+                        progression.estimate_1rm(float(best["weight"]), int(best["reps"])), 1
+                    ),
+                }
+                if best else None
+            ),
+            "verdict": progression.stall_verdict(rows, exercise_name),
+            "next_target": progression.next_target(rows, exercise_name),
+        }, []
+
+    if name == "remember_about_user":
+        from app.rag import memory
+
+        rid = await memory.remember(
+            ctx.user_id, args.get("kind") or "preference", args["fact"], ctx.db
+        )
+        # A failed write is not worth an error the model will apologise for — the fact is
+        # still in this conversation's history either way.
+        return {"status": "remembered" if rid else "not_stored"}, []
 
     if name == "swap_exercise":
         from_name = args["from_exercise"]
