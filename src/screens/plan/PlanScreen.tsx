@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppText, EmptyState, Entering, Screen } from '@/components/ui';
+import { PlanDaySkeleton } from '@/components/PlanDaySkeleton';
 import { DayStrip, getWeekDates } from '@/components/DayStrip';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { RestDayCard, NextWorkoutPreview } from '@/components/RestDayCard';
@@ -34,7 +35,7 @@ export function PlanScreen() {
   const { colors } = useTheme();
   const styles = useStyles();
   const { user } = useUser();
-  const { plan, addExercise, removeExercise } = usePlan();
+  const { plan, status: planStatus, addExercise, removeExercise } = usePlan();
 
   const today = useMemo(() => new Date(), []);
   const todayIso = today.toDateString();
@@ -129,7 +130,11 @@ export function PlanScreen() {
       />
 
       <View style={styles.content}>
-        {workoutForDay ? (
+        {/* Order matters: "the plan hasn't arrived" and "there is no plan" are
+            different sentences, and only the second one is an empty state. */}
+        {planStatus === 'loading' ? (
+          <PlanDaySkeleton />
+        ) : workoutForDay ? (
           <WorkoutDay
             workout={workoutForDay}
             isToday={selectedIso === todayIso}

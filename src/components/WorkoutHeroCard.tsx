@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Button, Chip } from '@/components/ui';
+import { AppText, Button, Chip, Skeleton } from '@/components/ui';
 
 export interface HeroStat {
   label: string;
@@ -160,6 +160,45 @@ export function WorkoutHeroCard({
   return (
     <View style={styles.shadowWrap}>
       <View style={[styles.card, styles.cardCompleted]}>{inner}</View>
+    </View>
+  );
+}
+
+/**
+ * The hero's shape while the plan loads. Deliberately uses the neutral
+ * `cardCompleted` surface rather than the brand gradient: grey blocks on
+ * full-saturation blue read as a rendering failure, and the white sweep is
+ * invisible against it. The gradient arrives with the data.
+ *
+ * Colocated with the card so the two can't drift — PlanScreen and
+ * DayDetailScreen both render it.
+ */
+export function WorkoutHeroCardSkeleton() {
+  const styles = useStyles();
+  return (
+    <View style={styles.shadowWrap}>
+      <View style={[styles.card, styles.cardCompleted]}>
+        <View style={styles.topRow}>
+          <Skeleton width={84} height={24} round />
+          <Skeleton width={52} height={14} />
+        </View>
+        <Skeleton width="66%" height={30} style={styles.title} />
+        <View style={[styles.muscles, styles.musclesScroll]}>
+          <Skeleton width={64} height={26} round />
+          <Skeleton width={78} height={26} round />
+        </View>
+        <View style={[styles.statsRow, styles.statsRowCompleted]}>
+          {[0, 1, 2].map((i) => (
+            <View key={i} style={styles.statCell}>
+              <View style={styles.statInner}>
+                <Skeleton width={40} height={20} />
+                <Skeleton width={54} height={12} style={{ marginTop: spacing.xxs }} />
+              </View>
+            </View>
+          ))}
+        </View>
+        <Skeleton height={52} style={[styles.action, { borderRadius: radius.lg }]} />
+      </View>
     </View>
   );
 }

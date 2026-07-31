@@ -8,6 +8,7 @@ import { RestDayCard } from '@/components/RestDayCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
+import { PlanDaySkeleton } from '@/components/PlanDaySkeleton';
 import { usePlan } from '@/context/PlanContext';
 import { getCategory, getExerciseById } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
@@ -49,7 +50,7 @@ export function DayDetailScreen() {
   const dayLabel = WEEKDAYS[date.getDay()];
   const longDay = LONGDAYS[date.getDay()];
 
-  const { plan } = usePlan();
+  const { plan, status: planStatus } = usePlan();
   const workout = plan?.workouts.find((w) => w.dayLabel === dayLabel);
   const isRest = plan ? plan.restDays.includes(dayLabel) : true;
   const status = dayStatus(date);
@@ -66,7 +67,11 @@ export function DayDetailScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: clearance.scroll }]}
         showsVerticalScrollIndicator={false}
       >
-        {workout ? (
+        {/* Before the plan lands `isRest` defaults true, so this used to open
+            on a Rest Day card for a day that may well be a training day. */}
+        {planStatus === 'loading' ? (
+          <PlanDaySkeleton />
+        ) : workout ? (
           <DayWorkout
             workout={workout}
             status={status}

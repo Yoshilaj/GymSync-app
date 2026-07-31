@@ -1,6 +1,6 @@
 import { View } from 'react-native';
 import { makeStyles, radius, spacing } from '@/theme';
-import { AnimatedPressable, AppText } from '@/components/ui';
+import { AnimatedPressable, AppText, Skeleton } from '@/components/ui';
 import { ExerciseImage } from '@/components/ExerciseImage';
 import { SwipeToDelete } from '@/components/SwipeToDelete';
 import { Exercise, PlannedSet, Units } from '@/types';
@@ -62,6 +62,25 @@ export function ExerciseRow({ exercise, sets, units, onPress, onDelete }: Props)
     >
       {tappable}
     </SwipeToDelete>
+  );
+}
+
+/**
+ * The row's shape while the plan loads. Lives here, next to the thing it
+ * mirrors, because PlanScreen and DayDetailScreen both need it and a copy in
+ * each would drift the moment the real row changes. Keeps the card surface —
+ * only the unknown content is greyed.
+ */
+export function ExerciseRowSkeleton() {
+  const styles = useStyles();
+  return (
+    <View style={styles.row}>
+      <Skeleton width={52} height={52} style={{ borderRadius: radius.md }} />
+      <View style={styles.textBlock}>
+        <Skeleton width="62%" height={17} />
+        <Skeleton width="40%" height={13} style={{ marginTop: spacing.xs }} />
+      </View>
+    </View>
   );
 }
 
