@@ -11,6 +11,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import * as authApi from '@/api/auth';
 import { supabase } from './supabase';
 import { confirmationMessage, parseAuthCallback } from './deepLinks';
+import { getMfaStatus, verifyChallenge } from './mfa';
 
 interface AuthContextValue {
   session: Session | null;
@@ -24,6 +25,16 @@ interface AuthContextValue {
    * with their old password still working.
    */
   recoveryMode: boolean;
+  /**
+   * The account has a second factor and this session hasn't cleared it yet.
+   * A session exists at this point — it's just aal1 — so the gate has to stop
+   * on this before any branch that would show the app.
+   */
+  twoFactorPending: boolean;
+  /** Answer the 2FA challenge. Success upgrades the session to aal2. */
+  submitTwoFactor: (code: string) => Promise<{ error: string | null }>;
+  /** Re-read whether this session still needs a factor (after enrolling, say). */
+  refreshTwoFactor: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
@@ -46,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [twoFactorPending, setTwoFactorPending] = useState(false);
 
   useEffect(() => {
     // Load any persisted session, then subscribe to changes.
@@ -72,6 +84,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appStateSub.remove();
     };
   }, []);
+
+  // Whether this session still owes a second factor. Recomputed whenever the token
+  // changes — which includes the moment a successful verify swaps an aal1 session
+  // for an aal2 one. `mfaChecked` folds into `loading` below: the gate must not get
+  // to choose a branch before this is known, or a 2FA account flashes the app for
+  // a frame on every cold start.
+  const [mfaChecked, setMfaChecked] = useState(false);
+  const accessToken = session?.access_token ?? null;
+  useEffect(() => {
+    if (!accessToken) {
+      setTwoFactorPending(false);
+      setMfaChecked(true);
+      return;
+    }
+    let cancelled = false;
+    void getMfaStatus().then(({ challengeRequired }) => {
+      if (cancelled) return;
+      setTwoFactorPending(challengeRequired);
+      setMfaChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   // Emailed links (reset, signup confirm, email change) all land on
   // gymsync://auth-callback. Handled here rather than in a screen because a
@@ -160,7 +196,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setRecoveryMode(false);
+    setTwoFactorPending(false);
     await supabase.auth.signOut();
+  }, []);
+
+  const submitTwoFactor = useCallback(async (code: string) => {
+    const result = await verifyChallenge(code);
+    // A successful verify mints a fresh aal2 session, so onAuthStateChange fires
+    // and the effect above recomputes anyway. Clearing here as well just avoids a
+    // frame of the challenge screen sitting there after it's been answered.
+    if (!result.error) setTwoFactorPending(false);
+    return result;
+  }, []);
+
+  const refreshTwoFactor = useCallback(async () => {
+    const { challengeRequired } = await getMfaStatus();
+    setTwoFactorPending(challengeRequired);
   }, []);
 
   const getToken = useCallback(async () => {
@@ -197,8 +248,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
-    loading,
+    // Not done loading until we also know whether a second factor is owed.
+    loading: loading || !mfaChecked,
     recoveryMode,
+    twoFactorPending,
+    submitTwoFactor,
+    refreshTwoFactor,
     signIn,
     signUp,
     resetPassword,

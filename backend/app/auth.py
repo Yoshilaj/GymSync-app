@@ -23,6 +23,7 @@ from supabase import AsyncClient
 
 from app.database import get_db
 from app.jwt_verify import TokenClaims, TokenInvalid, VerifierUnavailable, verify_access_token
+from app.mfa_state import is_mfa_required
 
 # bearer: reads the `Authorization: Bearer <token>` header and rejects when absent.
 _bearer = HTTPBearer()
@@ -31,17 +32,19 @@ _bearer = HTTPBearer()
 async def get_claims(
     # Depends = FastAPI resolves this argument for us before the handler runs.
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    db: AsyncClient = Depends(get_db),
 ) -> TokenClaims:
     """The base dependency: verify the bearer token, hand back its claims.
 
-    Note the two distinct failures. An invalid token is the caller's problem (401).
+    Note the three distinct failures. An invalid token is the caller's problem (401).
     A verifier we can't reach is *ours* (503) — returning 401 there would tell every
-    client to sign its user out because our own key fetch hiccuped. The old code
-    collapsed both into 401.
+    client to sign its user out because our own key fetch hiccuped; the original code
+    collapsed both into 401. And a valid token that simply hasn't cleared the second
+    factor yet is 403: the caller is who they say, they just aren't done proving it.
     """
     try:
         # credentials.credentials = the raw token string from the header.
-        return await verify_access_token(credentials.credentials)
+        claims = await verify_access_token(credentials.credentials)
     except TokenInvalid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -53,6 +56,30 @@ async def get_claims(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication is temporarily unavailable. Please try again.",
         )
+
+    # An aal2 token has already cleared the factor, so there is nothing to look up —
+    # which means users with 2FA on pay nothing for this check, and users without it
+    # pay one cached read per minute.
+    if claims.aal != "aal2":
+        try:
+            required = await is_mfa_required(db, claims.sub)
+        except Exception:
+            # Failing open here would silently switch 2FA off for everyone, which is
+            # the one outcome this gate exists to prevent.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Could not verify your sign-in right now. Please try again.",
+            )
+        if required:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Two-factor authentication required.",
+                # Lets a client tell this apart from an ordinary permission failure
+                # without having to string-match the detail.
+                headers={"X-MFA-Required": "1"},
+            )
+
+    return claims
 
 
 async def get_current_user_id(claims: TokenClaims = Depends(get_claims)) -> str:

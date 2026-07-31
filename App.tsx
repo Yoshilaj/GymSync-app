@@ -18,6 +18,7 @@ import { RootNavigator } from '@/navigation/RootNavigator';
 import { AuthNavigator } from '@/navigation/AuthNavigator';
 import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
 import { ResetPasswordScreen } from '@/screens/auth/ResetPasswordScreen';
+import { TwoFactorChallengeScreen } from '@/screens/auth/TwoFactorChallengeScreen';
 import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
@@ -81,7 +82,7 @@ function usePendingOnboardingDraft(userId: string | null): DraftGate {
  * stashed onboarding draft survives that and is picked up on a later launch.
  */
 function RootGate() {
-  const { loading, session, recoveryMode } = useAuth();
+  const { loading, session, recoveryMode, twoFactorPending } = useAuth();
   const { profile, profileStatus } = useUser();
   const { colors, scheme } = useTheme();
   const draftGate = usePendingOnboardingDraft(session?.user?.id ?? null);
@@ -102,9 +103,17 @@ function RootGate() {
   };
 
   const content = () => {
-    // Recovery outranks everything, including `loading`. A reset link carries a
-    // real session, so any branch below would let the user straight into the app
-    // with their old password still working.
+    // Two branches that both sit on top of a real session, in this order.
+    //
+    // 2FA first, and that ordering is load-bearing: someone with 2FA on who
+    // forgets their password opens a reset link, which mints an aal1 session.
+    // Reset-first would let them past the factor; factor-first means they clear
+    // it, twoFactorPending drops, and the very next render is the reset screen.
+    // Composing rather than special-casing is why this is two ifs and not four.
+    if (twoFactorPending) return <TwoFactorChallengeScreen />;
+    // Recovery outranks everything below, including `loading`. A reset link
+    // carries a real session, so any branch below would let the user straight
+    // into the app with their old password still working.
     if (recoveryMode) return <ResetPasswordScreen />;
     // The draft read resolves faster than the profile GET, so waiting on both
     // adds no visible latency — and prevents a one-frame flash of the wrong

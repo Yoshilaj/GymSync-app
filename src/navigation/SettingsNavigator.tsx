@@ -10,6 +10,7 @@ import { ProfileEditScreen } from '@/screens/settings/ProfileEditScreen';
 import { AccountSettingsScreen } from '@/screens/settings/AccountSettingsScreen';
 import { ChangeEmailScreen } from '@/screens/settings/ChangeEmailScreen';
 import { ChangePasswordScreen } from '@/screens/settings/ChangePasswordScreen';
+import { TwoFactorScreen } from '@/screens/settings/TwoFactorScreen';
 import { PricingSettingsRoute } from '@/screens/pricing';
 import type { PricingContext, PaidTierId } from '@/screens/pricing';
 import { NotificationsSettingsScreen } from '@/screens/settings/NotificationsSettingsScreen';
@@ -29,6 +30,7 @@ export type SettingsStackParamList = {
   AccountSettings: undefined;
   ChangeEmail: undefined;
   ChangePassword: undefined;
+  TwoFactor: undefined;
   // No `DeleteAccount` route: deleting is confirmed by a dialog over Account
   // settings (DeleteAccountDialog), not by a page you navigate to.
   // Named `Pricing`, not `Plan*`: in this codebase "plan" means the workout
@@ -64,6 +66,7 @@ export function SettingsNavigator() {
       <Stack.Screen name="AccountSettings" component={AccountSettingsScreen} />
       <Stack.Screen name="ChangeEmail" component={ChangeEmailScreen} />
       <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+      <Stack.Screen name="TwoFactor" component={TwoFactorScreen} />
       {/* The paywall is a decision, not a settings sub-page: presented full
           screen so the floating tab bar can't compete with the CTA. */}
       <Stack.Screen

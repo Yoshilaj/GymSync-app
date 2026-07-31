@@ -96,3 +96,9 @@ export function confirmPasswordReset(
 ): Promise<{ ok: boolean }> {
   return post('reset-password/confirm', { new_password: newPassword }, token);
 }
+
+/** Tell the server the account's MFA factors changed. It re-reads them itself —
+ * this call carries no claim about what the new state is. */
+export function syncMfaState(token: string): Promise<{ mfa_enabled: boolean }> {
+  return post('mfa/state', {}, token);
+}

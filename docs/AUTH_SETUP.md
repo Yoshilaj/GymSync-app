@@ -33,6 +33,26 @@ select count(*) from auth.users u
 
 ---
 
+## 2b. Apply migration 015
+
+`backend/supabase/migrations/015_mfa_flag.sql` — **not yet applied.**
+
+Adds `profiles.mfa_enabled`, which is how the backend knows a second factor is
+*required* (the token only says whether one was *used*). Until it runs, **two-factor
+enforcement is inert**: the backend logs a warning at first use and treats every
+account as 2FA-off, and the enrollment endpoint returns 502 rather than let someone
+believe they've turned on protection that isn't recorded.
+
+That degradation is deliberate so this code could ship ahead of the migration
+without 503-ing every request — but it does mean 2FA does nothing until you run it.
+
+```sql
+select column_name from information_schema.columns
+ where table_name = 'profiles' and column_name = 'mfa_enabled';   -- expect 1 row
+```
+
+---
+
 ## 3. Sign in with Apple
 
 **Supabase → Auth → Providers → Apple**: enable, Client ID =

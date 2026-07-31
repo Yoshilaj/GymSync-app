@@ -38,6 +38,7 @@ from app.auth import get_claims
 from app.config import settings
 from app.database import get_db
 from app.jwt_verify import TokenClaims
+from app.mfa_state import sync_from_factors
 from app.password import validate_password
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,10 @@ class ConfirmResetRequest(BaseModel):
 
 class OkResponse(BaseModel):
     ok: bool = True
+
+
+class MfaStateResponse(BaseModel):
+    mfa_enabled: bool
 
 
 def _map_auth_error(e: Exception) -> HTTPException:
@@ -333,3 +338,24 @@ async def confirm_reset(
         )
     await _set_password(db, claims.sub, body.new_password, claims.email)
     return OkResponse()
+
+
+@router.post("/mfa/state", response_model=MfaStateResponse)
+async def sync_mfa_state(
+    claims: TokenClaims = Depends(get_claims),
+    db: AsyncClient = Depends(get_db),
+) -> MfaStateResponse:
+    """Re-read the account's factor list and update profiles.mfa_enabled.
+
+    Enrollment and unenrollment happen on the device (supabase-js `auth.mfa.*`),
+    because those calls need a GoTrue client holding the user's own session and the
+    stateless anon client here has none. That leaves the server needing to be told
+    the state changed — but NOT to be told what the new state is. It looks the
+    answer up itself through the admin API, since a client that could assert "I have
+    no factors" could switch off its own second factor.
+    """
+    try:
+        enabled = await sync_from_factors(db, claims.sub)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not read your security settings.")
+    return MfaStateResponse(mfa_enabled=enabled)
