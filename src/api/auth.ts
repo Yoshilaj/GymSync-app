@@ -90,12 +90,15 @@ export function requestPasswordReset(email: string): Promise<{ ok: boolean }> {
 }
 
 /** Change the password of a signed-in user. The server re-checks `currentPassword`
- * and applies the same rules sign-up does — neither happens on the client. */
+ * and applies the same rules sign-up does — neither happens on the client.
+ *
+ * Returns a REPLACEMENT session: Supabase revokes refresh tokens on a password
+ * change, so the caller must adopt this one or it is holding a dead session. */
 export function changePassword(
   token: string,
   currentPassword: string,
   newPassword: string,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; session: AuthSession }> {
   return post('change-password', {
     current_password: currentPassword,
     new_password: newPassword,

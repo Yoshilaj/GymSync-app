@@ -7,6 +7,7 @@ import { PasswordStrength } from '@/components/PasswordStrength';
 import { checkPassword } from '@/lib/passwordStrength';
 import { useAuth } from '@/auth/AuthContext';
 import { changePassword } from '@/api/auth';
+import { supabase } from '@/auth/supabase';
 import { SettingsPage } from './SettingsKit';
 
 /**
@@ -34,6 +35,9 @@ export function ChangePasswordScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  // Popping straight back read as "nothing happened" — the change is
+  // invisible by nature, so it has to be stated.
+  const [done, setDone] = useState(false);
   const [nextFocused, setNextFocused] = useState(false);
 
   // The current password only has to be present — the server re-auth decides
@@ -50,8 +54,15 @@ export function ChangePasswordScreen() {
       // re-authentication and the password rules used to live only on this
       // screen — so a client that skipped them could set "gymsync123", which
       // sign-up would have rejected outright. The server owns both now.
-      await changePassword(await getToken(), current, next);
-      nav.goBack();
+      const { session } = await changePassword(await getToken(), current, next);
+      // Adopt the replacement. Supabase revokes refresh tokens on a password
+      // change, so skipping this leaves a session that works for another half
+      // hour and then drops the user on the sign-in screen with no explanation.
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
+      setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update password.');
     } finally {
@@ -107,6 +118,19 @@ export function ChangePasswordScreen() {
               />
             </>
           )}
+        </View>
+      </SettingsPage>
+    );
+  }
+
+  if (done) {
+    return (
+      <SettingsPage title="Password updated" subtitle="You're still signed in on this device.">
+        <View style={styles.fields}>
+          <AppText variant="body" color="textSecondary">
+            Anywhere else you were signed in will need the new password.
+          </AppText>
+          <Button title="Done" onPress={() => nav.goBack()} />
         </View>
       </SettingsPage>
     );

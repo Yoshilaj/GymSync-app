@@ -140,6 +140,14 @@ class OkResponse(BaseModel):
     ok: bool = True
 
 
+class ChangePasswordResponse(BaseModel):
+    ok: bool = True
+    #: A replacement session. Changing the password revokes the old refresh
+    #: token, so without this the caller is left holding a dead session that
+    #: keeps working until its access token expires and then fails hard.
+    session: SessionOut
+
+
 class MfaStateResponse(BaseModel):
     mfa_enabled: bool
 
@@ -311,13 +319,13 @@ async def _set_password(db: AsyncClient, user_id: str, password: str, email: str
         raise _map_auth_error(e)
 
 
-@router.post("/change-password", response_model=OkResponse)
+@router.post("/change-password", response_model=ChangePasswordResponse)
 async def change_password(
     body: ChangePasswordRequest,
     claims: TokenClaims = Depends(get_claims),
     auth: AsyncGoTrueClient = Depends(get_auth_client),
     db: AsyncClient = Depends(get_db),
-) -> OkResponse:
+) -> ChangePasswordResponse:
     """Change the password of a signed-in user who can produce the current one.
 
     The re-authentication used to happen only in the app (ChangePasswordScreen
@@ -343,7 +351,22 @@ async def change_password(
         raise HTTPException(status_code=400, detail="That's your current password. Pick a new one.")
 
     await _set_password(db, claims.sub, body.new_password, claims.email)
-    return OkResponse()
+
+    # Supabase revokes every refresh token when the password changes — the right
+    # call, but it means the caller's session is now dead. Verified on the live
+    # project: the refresh returns refresh_token_not_found while the existing
+    # access token keeps working, so the app looks signed in right up until it
+    # abruptly isn't. Hand back a replacement minted with the new password.
+    try:
+        fresh = await auth.sign_in_with_password(
+            {"email": claims.email, "password": body.new_password}
+        )
+    except Exception as e:
+        raise _map_auth_error(e)
+    if fresh.session is None:
+        raise HTTPException(status_code=502, detail="Auth service unavailable.")
+
+    return ChangePasswordResponse(session=_session_out(fresh.session))
 
 
 @router.post("/reset-password/confirm", response_model=OkResponse)
