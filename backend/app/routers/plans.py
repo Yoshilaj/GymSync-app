@@ -11,7 +11,7 @@ fresh proposal which supersedes the old pending row.
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from supabase import AsyncClient
 
@@ -23,6 +23,7 @@ from app.agents.core import (
 )
 from app.auth import get_current_user_id
 from app.database import get_db
+from app.ratelimit import client_ip, enforce
 from app.entitlements import PLAN_GENERATION, QuotaExceeded, check_quota, consume_quota
 
 router = APIRouter(tags=["plans"])
@@ -86,6 +87,7 @@ class AnonymousProfile(BaseModel):
 
 @router.post("/plans/generate-anonymous")
 async def generate_plan_anonymous(
+    request: Request,
     body: AnonymousProfile,
     db: AsyncClient = Depends(get_db),
 ) -> dict:
@@ -98,7 +100,14 @@ async def generate_plan_anonymous(
     /plans/proposals/adopt instead — otherwise a signed-in free user who spent
     their generation could call this with a hand-built profile and adopt the
     result, and the cap would mean nothing.
+
+    Unmetered is not unlimited, though. Being unauthenticated AND calling the model
+    makes this the most expensive thing a stranger can ask this server to do, so it
+    is rate limited by IP: the entitlement cap governs what you may KEEP, this
+    governs how fast you may spend our money finding out.
     """
+    enforce("generate_anonymous_ip", client_ip(request))
+
     try:
         event = await run_anonymous_plan_generation(
             body.model_dump(), db, personality_preset=body.coach_preset

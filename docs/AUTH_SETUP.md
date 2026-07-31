@@ -128,6 +128,34 @@ send. Needs a Resend (or Postmark) account with a verified sending domain, then
 
 ---
 
+## 7. Backend environment for production
+
+Two settings that are inert in development and matter the moment this is deployed
+behind anything:
+
+```bash
+# Browser origins allowed to call the API. Empty is correct for a native-only app —
+# React Native sends no Origin header and isn't subject to CORS. Set this ONLY if a
+# web client appears.
+CORS_ORIGINS=
+
+# Set to true ONLY when a proxy YOU control appends X-Forwarded-For (a load
+# balancer, Cloudflare, nginx). Left false, the header is ignored and rate limits
+# key on the socket address — because otherwise anyone can set X-Forwarded-For to a
+# fresh value per request and hand themselves an unlimited budget.
+TRUSTED_PROXY=false
+
+# "production" also switches CORS from the permissive dev default to CORS_ORIGINS
+# and refuses to boot on an unsafe billing configuration.
+APP_ENV=production
+```
+
+Rate limits are in-memory, so with N uvicorn workers a limit of 10 is effectively
+10N. That's fine at one worker, which is where this is today; the fix is the Redis
+path already stubbed in `app/cache.py`.
+
+---
+
 ## Test account
 
 `estate+gymsynccurl@scissors-corp.jp` / `GymSync-Test-2026`

@@ -28,9 +28,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText, Button } from '@/components/ui';
+import { AppText, Button, Input } from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { deleteAccount } from '@/api/account';
+import { getMfaStatus } from '@/auth/mfa';
 import { useBilling } from '@/billing/BillingProvider';
 import { TIERS } from '@/screens/pricing/catalog';
 
@@ -101,10 +102,29 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
     transform: [{ scale: 0.94 + 0.06 * enter.value }],
   }));
 
+  // Deleting is irreversible and the cascade is thorough, so the server asks for
+  // the password again — an unlocked phone shouldn't be enough to erase someone's
+  // training history. The one exception is a session that already cleared a second
+  // factor this sign-in, which is the stronger proof; the server decides that, and
+  // this mirrors it so we don't ask for something that won't be checked.
+  const [password, setPassword] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(true);
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void getMfaStatus().then(({ enrolled, challengeRequired }) => {
+      if (!cancelled) setNeedsPassword(!(enrolled && !challengeRequired));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
   // A dismissed dialog must not keep a stale error for the next time it opens.
   const dismiss = () => {
     if (busy) return;
     setError(null);
+    setPassword('');
     onClose();
   };
 
@@ -113,7 +133,7 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      await deleteAccount(await getToken());
+      await deleteAccount(await getToken(), needsPassword ? password : undefined);
       await signOut(); // the auth gate swaps to the sign-in flow
     } catch (e) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -224,6 +244,26 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
             </AppText>
           )}
 
+          {/* Left-aligned, like the list above it — this half of the card is
+              read down a left edge. Kept to one field with no label: the button
+              underneath already says what confirming does. */}
+          {needsPassword ? (
+            <View style={styles.confirm}>
+              <Input
+                value={password}
+                onChangeText={(v) => {
+                  setPassword(v);
+                  if (error) setError(null);
+                }}
+                secure
+                placeholder="Enter your password to confirm"
+                accessibilityLabel="Password"
+                textContentType="password"
+                editable={!busy}
+              />
+            </View>
+          ) : null}
+
           {error ? (
             <AppText
               variant="caption"
@@ -241,6 +281,9 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
               variant="danger"
               onPress={() => void submit()}
               loading={busy}
+              // The server would reject an empty password anyway; disabling it
+              // here means the answer arrives before the tap, not after.
+              disabled={busy || (needsPassword && password.length === 0)}
             />
             {/* Ghost, not secondary: a bordered white button on a white card
                 reads as an empty box, and blue-text-under-the-destructive-action
@@ -328,6 +371,9 @@ const useStyles = makeStyles((t) => ({
   // money if it goes unread.
   billing: { marginTop: spacing.lg, gap: spacing.xs },
   pressedLink: { opacity: 0.6 },
+  // lg, matching the gap the caveat above it takes — the field starts a new
+  // block rather than trailing off the previous one.
+  confirm: { marginTop: spacing.lg },
   error: { marginTop: spacing.sm },
   actions: { gap: spacing.sm, marginTop: spacing.xl },
 }));

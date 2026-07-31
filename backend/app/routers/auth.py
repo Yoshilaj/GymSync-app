@@ -28,7 +28,7 @@ account-takeover shape.
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 from supabase import AsyncClient
 from supabase_auth import AsyncGoTrueClient
@@ -40,6 +40,7 @@ from app.database import get_db
 from app.jwt_verify import TokenClaims
 from app.mfa_state import sync_from_factors
 from app.password import validate_password
+from app.ratelimit import check_only, client_ip, consume, enforce
 
 logger = logging.getLogger(__name__)
 
@@ -178,10 +179,15 @@ def _session_out(session) -> SessionOut:
 
 @router.post("/signup", response_model=SignupResponse)
 async def signup(
+    request: Request,
     body: SignupRequest,
     auth: AsyncGoTrueClient = Depends(get_auth_client),
     db: AsyncClient = Depends(get_db),
 ) -> SignupResponse:
+    # Mass signup is both spam and a drain on the SMTP quota — every one of these
+    # sends a confirmation email.
+    enforce("signup_ip", client_ip(request))
+
     # Server-side authority for the rules the sign-up screen shows live.
     weak = validate_password(body.password, body.email, body.display_name)
     if weak:
@@ -227,14 +233,28 @@ async def signup(
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
+    request: Request,
     body: LoginRequest,
     auth: AsyncGoTrueClient = Depends(get_auth_client),
 ) -> LoginResponse:
+    # Two budgets, checked but not yet spent. Per-email stops password guessing at
+    # one account; per-IP stops a spray across many. Keeping them separate is what
+    # prevents the limiter from becoming a lockout tool: hammering someone else's
+    # address can't exhaust yours.
+    ip = client_ip(request)
+    email_key = body.email.strip().lower()
+    check_only("login_email", email_key)
+    check_only("login_ip", ip)
+
     try:
         res = await auth.sign_in_with_password(
             {"email": body.email, "password": body.password}
         )
     except Exception as e:
+        # Only failures cost budget. Charging successful sign-ins would rate-limit
+        # an app that signs in on every cold start.
+        consume("login_email", email_key)
+        consume("login_ip", ip)
         raise _map_auth_error(e)
 
     if res.session is None or res.user is None:
@@ -248,9 +268,15 @@ async def login(
 
 @router.post("/reset-password", response_model=ResetResponse)
 async def reset_password(
+    request: Request,
     body: ResetRequest,
     auth: AsyncGoTrueClient = Depends(get_auth_client),
 ) -> ResetResponse:
+    # Strict per address: without this, anyone can flood a stranger's inbox by
+    # submitting their email on repeat.
+    enforce("reset_email", body.email.strip().lower())
+    enforce("reset_ip", client_ip(request))
+
     try:
         # Without redirect_to the link lands on Supabase's hosted page and the reset
         # dead-ends outside the app. With it, the user comes back to us holding a
@@ -298,6 +324,9 @@ async def change_password(
     called signInWithPassword first). Anything a client does, a client can skip —
     so it happens here now, against the same stateless GoTrue client used for login.
     """
+    # This endpoint verifies a password, so it is a guessing oracle like login is.
+    enforce("password_change", claims.sub)
+
     if not claims.email:
         raise HTTPException(status_code=400, detail="This account has no email address.")
 
@@ -331,6 +360,8 @@ async def confirm_reset(
     while an ordinary login reports "password". Refusing the latter means a stolen
     access token still cannot rotate the password without the current one.
     """
+    enforce("password_change", claims.sub)
+
     if "otp" not in claims.amr:
         raise HTTPException(
             status_code=403,
@@ -354,6 +385,7 @@ async def sync_mfa_state(
     answer up itself through the admin API, since a client that could assert "I have
     no factors" could switch off its own second factor.
     """
+    enforce("mfa_state", claims.sub)
     try:
         enabled = await sync_from_factors(db, claims.sub)
     except Exception:

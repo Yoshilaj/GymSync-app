@@ -66,5 +66,19 @@ class Settings(BaseSettings):
     # Deployment marker. "development" | "production".
     app_env: str = "development"
 
+    # ── Networking ───────────────────────────────────────────────────────────
+    # Comma-separated origins allowed to call the API from a browser. Empty means
+    # "no browser origins", which is correct for a native-only app — a React Native
+    # fetch sends no Origin header and is unaffected by CORS. The old wildcard
+    # combined with allow_credentials was the worst of both: it permits any site to
+    # make credentialed calls.
+    cors_origins: str = ""
+
+    # Set ONLY when a proxy you control appends X-Forwarded-For (a load balancer,
+    # Cloudflare, nginx). Left off, the header is ignored and rate limits key on the
+    # socket address — because an attacker can otherwise set XFF to whatever they
+    # like and get a fresh budget per request. See app/ratelimit.py.
+    trusted_proxy: bool = False
+
 
 settings = Settings()
