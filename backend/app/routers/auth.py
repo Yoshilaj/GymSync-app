@@ -201,8 +201,10 @@ async def signup(
     if res.user.identities is not None and len(res.user.identities) == 0:
         raise HTTPException(status_code=409, detail="An account with this email already exists.")
 
-    # Seed the profile row now so the app never sees a user without one.
-    # display_name also lives in user metadata, so a failure here is recoverable.
+    # Belt and braces. Migration 014 puts an on_auth_user_created trigger on
+    # auth.users, which is what actually guarantees a profile row — it fires for
+    # social sign-in too, which never reaches this endpoint. This upsert stays
+    # because it costs nothing and covers the window before 014 is applied.
     try:
         await db.table("profiles").upsert(
             {"user_id": str(res.user.id), "display_name": body.display_name},

@@ -9,7 +9,7 @@ import { PasswordStrength } from '@/components/PasswordStrength';
 import { checkPassword } from '@/lib/passwordStrength';
 import { AuthLayout } from '@/components/auth/AuthLayout';
 import { FormError } from '@/components/auth/FormKit';
-import { OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
+import { hasSocialAuth, OrDivider, SocialAuthButtons } from '@/components/auth/SocialAuthButtons';
 import { useAuth } from '@/auth/AuthContext';
 import { AuthStackParamList } from '@/navigation/AuthNavigator';
 
@@ -172,8 +172,14 @@ export function SignUpScreen() {
         style={styles.submit}
       />
 
-      <OrDivider />
-      <SocialAuthButtons />
+      {/* Both vanish together when no provider is available in this build —
+          an "or" rule with nothing under it reads as a broken screen. */}
+      {hasSocialAuth && (
+        <>
+          <OrDivider />
+          <SocialAuthButtons />
+        </>
+      )}
 
       <AppText variant="caption" color="textTertiary" align="center" style={styles.legal}>
         By continuing you agree to the Terms of Service and Privacy Policy.

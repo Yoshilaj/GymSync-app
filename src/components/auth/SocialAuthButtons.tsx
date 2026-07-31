@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AnimatedPressable, AppText, Entering } from '@/components/ui';
+import { isAppleAvailable, isGoogleConfigured, signInWithProvider } from '@/auth/social';
 
 type Provider = 'Apple' | 'Google';
 
@@ -21,8 +22,14 @@ export function OrDivider() {
 }
 
 /**
- * Shortcut sign-in buttons. Visual-only for now — real OAuth arrives with the
- * WorkOS integration, so taps surface a friendly inline notice instead.
+ * Shortcut sign-in buttons — real now, not decoration. A tap runs the native
+ * credential sheet and hands the resulting ID token to Supabase (src/auth/social.ts);
+ * success flips the auth gate on its own, so there is nothing to do here but
+ * surface a failure.
+ *
+ * A provider that isn't available on this platform, or isn't configured in this
+ * build, is not rendered at all. Showing a button that cannot work is what this
+ * component used to do, and it's the kind of thing App Review rejects.
  */
 export function SocialAuthButtons() {
   const { colors, scheme } = useTheme();
@@ -31,13 +38,14 @@ export function SocialAuthButtons() {
   // Brand button content colors follow each brand's dark spec (deliberate hex).
   const appleContent = dark ? '#000000' : '#FFFFFF';
   const googleContent = dark ? '#E3E3E3' : colors.textPrimary;
-  const [notice, setNotice] = useState<Provider | null>(null);
+  const [pending, setPending] = useState<Provider | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const announce = (provider: Provider) => {
+  const announce = (message: string) => {
     if (timer.current) clearTimeout(timer.current);
-    setNotice(provider);
-    timer.current = setTimeout(() => setNotice(null), 3000);
+    setNotice(message);
+    timer.current = setTimeout(() => setNotice(null), 4000);
   };
 
   useEffect(
@@ -47,40 +55,72 @@ export function SocialAuthButtons() {
     [],
   );
 
+  const run = async (provider: Provider) => {
+    // One flow at a time: a second native sheet over the first is a dead end
+    // on iOS, and a double-tap is easy on a pill this size.
+    if (pending) return;
+    setPending(provider);
+    setNotice(null);
+    const { error, cancelled } = await signInWithProvider(
+      provider === 'Apple' ? 'apple' : 'google',
+    );
+    setPending(null);
+    // Backing out of the sheet is a decision, not a failure. Say nothing.
+    if (cancelled) return;
+    if (error) announce(error);
+    // On success the session lands and RootGate swaps the screen out from under us.
+  };
+
   return (
     <View style={styles.stack}>
       {/* Labelled full-width pills. The pill CTA above and the OR divider keep
           the hierarchy honest: these read as an alternative, not the pitch. */}
-      <AnimatedPressable
-        style={[styles.provider, styles.apple]}
-        onPress={() => announce('Apple')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Apple"
-      >
-        <Ionicons name="logo-apple" size={20} color={appleContent} />
-        <AppText variant="button" color={appleContent}>
-          Continue with Apple
-        </AppText>
-      </AnimatedPressable>
+      {isAppleAvailable && (
+        <AnimatedPressable
+          style={[styles.provider, styles.apple, pending === 'Google' && styles.dimmed]}
+          onPress={() => void run('Apple')}
+          disabled={pending !== null}
+          accessibilityRole="button"
+          accessibilityLabel="Continue with Apple"
+          accessibilityState={{ disabled: pending !== null, busy: pending === 'Apple' }}
+        >
+          {pending === 'Apple' ? (
+            <ActivityIndicator size="small" color={appleContent} />
+          ) : (
+            <Ionicons name="logo-apple" size={20} color={appleContent} />
+          )}
+          <AppText variant="button" color={appleContent}>
+            Continue with Apple
+          </AppText>
+        </AnimatedPressable>
+      )}
 
-      <AnimatedPressable
-        style={[styles.provider, styles.google]}
-        onPress={() => announce('Google')}
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Google"
-      >
-        <Ionicons name="logo-google" size={18} color={googleContent} />
-        <AppText variant="button" color={googleContent}>
-          Continue with Google
-        </AppText>
-      </AnimatedPressable>
+      {isGoogleConfigured && (
+        <AnimatedPressable
+          style={[styles.provider, styles.google, pending === 'Apple' && styles.dimmed]}
+          onPress={() => void run('Google')}
+          disabled={pending !== null}
+          accessibilityRole="button"
+          accessibilityLabel="Continue with Google"
+          accessibilityState={{ disabled: pending !== null, busy: pending === 'Google' }}
+        >
+          {pending === 'Google' ? (
+            <ActivityIndicator size="small" color={googleContent} />
+          ) : (
+            <Ionicons name="logo-google" size={18} color={googleContent} />
+          )}
+          <AppText variant="button" color={googleContent}>
+            Continue with Google
+          </AppText>
+        </AnimatedPressable>
+      )}
 
       {notice && (
         <Entering>
           <View style={styles.notice}>
-            <Ionicons name="time-outline" size={15} color={colors.accentText} />
+            <Ionicons name="alert-circle-outline" size={15} color={colors.accentText} />
             <AppText variant="caption" color="accentText" style={styles.noticeText}>
-              {notice} sign-in is coming soon. Use email for now.
+              {notice}
             </AppText>
           </View>
         </Entering>
@@ -88,6 +128,10 @@ export function SocialAuthButtons() {
     </View>
   );
 }
+
+/** True when at least one provider will actually render — lets a screen skip the
+ * "or" divider rather than leave it hanging over nothing. */
+export const hasSocialAuth = isAppleAvailable || isGoogleConfigured;
 
 const useStyles = makeStyles((t) => ({
   stack: { gap: spacing.md },
@@ -128,4 +172,6 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: spacing.md,
   },
   noticeText: { flex: 1 },
+  // The idle provider recedes while the other one's sheet is up.
+  dimmed: { opacity: 0.5 },
 }));

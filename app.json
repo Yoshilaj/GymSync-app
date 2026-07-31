@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.yoshinishikawahara.gymsync",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "GymSync uses your microphone so you can talk to your AI coach during a workout.",
         "ITSAppUsesNonExemptEncryption": false,
@@ -62,7 +63,14 @@
         }
       ],
       "expo-iap",
-      "./plugins/withStoreKitConfig"
+      "./plugins/withStoreKitConfig",
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_IOS_CLIENT_ID"
+        }
+      ]
     ],
     "extra": {
       "eas": {
