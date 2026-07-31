@@ -14,7 +14,9 @@ export function useConversations(getToken: () => Promise<string>) {
   const [items, setItems] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadedOnceRef = useRef(false);
+  // State, not a ref: consumers branch on this to decide between a skeleton and
+  // the stale list, and a ref wouldn't schedule the render that swaps them.
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -23,11 +25,13 @@ export function useConversations(getToken: () => Promise<string>) {
       const token = await getToken();
       const list = await fetchConversations(token);
       setItems(list);
-      loadedOnceRef.current = true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load history');
     } finally {
       setLoading(false);
+      // Latch even on failure, so a fetch that errors falls through to the
+      // error note rather than shimmering indefinitely.
+      setLoadedOnce(true);
     }
   }, [getToken]);
 
@@ -70,7 +74,7 @@ export function useConversations(getToken: () => Promise<string>) {
     items,
     loading,
     error,
-    loadedOnce: loadedOnceRef.current,
+    loadedOnce,
     refresh,
     remove,
     bump,

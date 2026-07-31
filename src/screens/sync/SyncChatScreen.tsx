@@ -25,7 +25,7 @@ import {
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText } from '@/components/ui';
+import { AppText, Skeleton } from '@/components/ui';
 import { ChatBubble } from '@/components/ChatBubble';
 import { ChatInputBar } from '@/components/ChatInputBar';
 import { ScrollToBottomButton } from '@/components/ScrollToBottomButton';
@@ -67,6 +67,38 @@ function dayLabel(d: Date, now: Date): string {
  * via keyboard-controller (native-thread sync), with its resting padding
  * clearing the floating tab bar.
  */
+/**
+ * A thread's shape while it loads: a right-aligned user pill, then the coach's
+ * bare full-width prose, mirroring the bubble-less chat style.
+ *
+ * Bottom-anchored on purpose. The real list is `inverted`, so turns stack up
+ * from the bottom; a top-down placeholder would drop the thread downward the
+ * moment it arrives. (It also can't live in `ListEmptyComponent` — `inverted`
+ * applies scaleY: -1 and would render it upside-down.)
+ */
+function ThreadSkeleton() {
+  const styles = useStyles();
+  return (
+    <View style={[styles.flex, styles.threadSkeleton]}>
+      <View style={styles.threadSkeletonUser}>
+        <Skeleton width="54%" height={44} style={{ borderRadius: radius.xl }} />
+      </View>
+      <View style={styles.threadSkeletonCoach}>
+        <Skeleton height={16} />
+        <Skeleton width="94%" height={16} />
+        <Skeleton width="70%" height={16} />
+      </View>
+      <View style={styles.threadSkeletonUser}>
+        <Skeleton width="38%" height={44} style={{ borderRadius: radius.xl }} />
+      </View>
+      <View style={styles.threadSkeletonCoach}>
+        <Skeleton height={16} />
+        <Skeleton width="82%" height={16} />
+      </View>
+    </View>
+  );
+}
+
 export function SyncChatScreen() {
   const { colors } = useTheme();
   const styles = useStyles();
@@ -399,7 +431,12 @@ export function SyncChatScreen() {
       )}
 
       <KeyboardAvoidingView behavior="padding" style={styles.flex} keyboardVerticalOffset={0}>
-        {chat.items.length === 0 && !loadingConversation ? (
+        {/* Only when there's nothing to show. Switching between two threads
+            keeps the previous one on screen until the new one lands — the
+            skeleton is for opening a conversation from an empty chat. */}
+        {loadingConversation && chat.items.length === 0 ? (
+          <ThreadSkeleton />
+        ) : chat.items.length === 0 ? (
           <Animated.View
             style={[styles.flex, styles.emptyWrap]}
             entering={FadeIn.duration(150)}
@@ -456,6 +493,7 @@ export function SyncChatScreen() {
         onClose={() => setHistoryOpen(false)}
         conversations={history.items}
         loading={history.loading}
+        loadedOnce={history.loadedOnce}
         error={history.error}
         activeId={chat.conversationId}
         onSelect={handleSelectConversation}
@@ -505,6 +543,13 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: layout.SCREEN_H_PADDING,
     paddingVertical: spacing.lg,
   },
+  threadSkeleton: {
+    justifyContent: 'flex-end',
+    paddingHorizontal: layout.SCREEN_H_PADDING,
+    paddingVertical: spacing.lg,
+  },
+  threadSkeletonUser: { alignItems: 'flex-end', marginBottom: spacing.lg },
+  threadSkeletonCoach: { gap: spacing.sm, marginBottom: spacing.xl },
   actionChipRow: { alignItems: 'center', marginBottom: spacing.lg },
   proposalRow: { marginBottom: spacing.lg },
   actionChip: {

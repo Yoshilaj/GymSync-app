@@ -24,7 +24,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
-import { AppText } from '@/components/ui';
+import { AppText, Skeleton } from '@/components/ui';
 import { SwipeToDelete } from '@/components/SwipeToDelete';
 import { ConversationSummary } from '@/api/conversations';
 
@@ -33,6 +33,8 @@ interface Props {
   onClose: () => void;
   conversations: ConversationSummary[];
   loading: boolean;
+  /** Distinguishes a cold first open from a background refresh. */
+  loadedOnce: boolean;
   error: string | null;
   /** Conversation currently on the chat screen, if any. */
   activeId: string | null;
@@ -67,6 +69,33 @@ function relativeLabel(updatedAt: string, now: Date): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
+// Varied widths, and a second date group: uniform bars would read as a striped
+// pattern rather than a list of titles, and the real list is date-grouped.
+const SKELETON_GROUPS: number[][] = [
+  [86, 64, 78],
+  [52, 70],
+];
+
+/** The list's shape on a cold first open. */
+function HistorySkeleton() {
+  const styles = useStyles();
+  return (
+    <View>
+      {SKELETON_GROUPS.map((widths, g) => (
+        <View key={g}>
+          <Skeleton width={72} height={11} style={styles.groupHeader} />
+          {widths.map((w, i) => (
+            <View key={i} style={styles.row}>
+              <Skeleton width={`${w}%`} height={15} />
+              <Skeleton width={44} height={11} style={{ marginTop: spacing.xs }} />
+            </View>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /**
  * ChatGPT-style history: a left slide-in glass panel over the chat. Custom
  * (reanimated + gesture-handler) rather than a drawer library — swipe or tap
@@ -77,6 +106,7 @@ export function HistoryPanel({
   onClose,
   conversations,
   loading,
+  loadedOnce,
   error,
   activeId,
   onSelect,
@@ -207,7 +237,13 @@ export function HistoryPanel({
         </AppText>
       ) : null}
 
-      {!loading && !error && conversations.length === 0 ? (
+      {/* First open only. A refresh keeps the stale list — the panel already
+          promises never to flash empty, and skeletons would break that. The
+          `open` guard matters too: this panel stays mounted while closed, so
+          without it the shimmer loop would run forever behind a shut drawer. */}
+      {open && loading && !loadedOnce ? (
+        <HistorySkeleton />
+      ) : !loading && !error && conversations.length === 0 ? (
         <AppText variant="caption" color="textTertiary" style={styles.stateNote}>
           Conversations you start will show up here for 90 days.
         </AppText>
