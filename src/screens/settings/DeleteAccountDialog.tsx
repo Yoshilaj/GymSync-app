@@ -32,6 +32,7 @@ import { AppText, Button, Input } from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { deleteAccount } from '@/api/account';
 import { getMfaStatus } from '@/auth/mfa';
+import { signInWithProvider, type SocialProvider } from '@/auth/social';
 import { useBilling } from '@/billing/BillingProvider';
 import { TIERS } from '@/screens/pricing/catalog';
 
@@ -77,7 +78,7 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
   const styles = useStyles();
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
-  const { getToken, signOut } = useAuth();
+  const { getToken, signOut, hasPassword, user } = useAuth();
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -113,12 +114,17 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
     if (!visible) return;
     let cancelled = false;
     void getMfaStatus().then(({ enrolled, challengeRequired }) => {
-      if (!cancelled) setNeedsPassword(!(enrolled && !challengeRequired));
+      // Three ways to confirm, and only one of them is a password box:
+      //   cleared 2FA this session -> nothing more to ask
+      //   no password identity     -> re-run Apple/Google instead (see submit)
+      //   otherwise                -> the password field
+      const clearedSecondFactor = enrolled && !challengeRequired;
+      if (!cancelled) setNeedsPassword(!clearedSecondFactor && hasPassword);
     });
     return () => {
       cancelled = true;
     };
-  }, [visible]);
+  }, [visible, hasPassword]);
 
   // A dismissed dialog must not keep a stale error for the next time it opens.
   const dismiss = () => {
@@ -133,6 +139,21 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
+      // An Apple/Google account has no password to check, so the server wants
+      // proof of a RECENT sign-in instead — re-run the provider sheet, which
+      // mints a new token. Without this, a social account simply couldn't be
+      // deleted, which App Review 5.1.1(v) doesn't permit.
+      if (!hasPassword && !needsPassword) {
+        const provider: SocialProvider = user?.app_metadata?.provider === 'google'
+          ? 'google'
+          : 'apple';
+        const { error: reauthError, cancelled } = await signInWithProvider(provider);
+        if (cancelled) {
+          setBusy(false);
+          return;
+        }
+        if (reauthError) throw new Error(reauthError);
+      }
       await deleteAccount(await getToken(), needsPassword ? password : undefined);
       await signOut(); // the auth gate swaps to the sign-in flow
     } catch (e) {
@@ -277,7 +298,9 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
 
           <View style={styles.actions}>
             <Button
-              title="Delete account"
+              // A social account's next tap opens the provider sheet, not a
+              // deletion — say so rather than surprising them with it.
+              title={!hasPassword && !needsPassword ? 'Confirm with Apple or Google' : 'Delete account'}
               variant="danger"
               onPress={() => void submit()}
               loading={busy}

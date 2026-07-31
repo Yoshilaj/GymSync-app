@@ -1,7 +1,8 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.billing.apple import validate_billing_settings
 from app.config import settings
@@ -23,6 +24,23 @@ from app.routers import (
 from app.routers.auth import close_auth_client, init_auth_client
 
 #CORSMiddleware: controls which apps can access the API
+
+# Uvicorn configures only its own loggers and leaves the root alone, so every
+# `logging.getLogger("gymsync.…")` call in this app fell through to the stdlib's
+# lastResort handler: WARNING and above, message text only, no level or name.
+# That is why a voice session whose Deepgram connection died looked, from the
+# console, exactly like one that was working — the restart notices are INFO.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s | %(message)s",
+)
+# The Deepgram SDK attaches its own handler; without this its records reach
+# ours as well and every STT line prints twice.
+logging.getLogger("deepgram").propagate = False
+# httpx logs a line per request, and one voice turn makes several Supabase
+# calls — left at INFO it buries the lines this config exists to surface.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

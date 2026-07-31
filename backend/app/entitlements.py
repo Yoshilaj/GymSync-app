@@ -16,6 +16,7 @@ the paywall on the right tier instead of showing a generic error.
 from __future__ import annotations
 
 import calendar
+import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
@@ -26,6 +27,25 @@ from app.auth import get_current_user_id
 from app.billing import store
 from app.billing.entitlement import Tier, meets
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
+
+
+async def resolve_tier(user_id: str, db: AsyncClient) -> Tier:
+    """The user's tier, or "free" if it can't be read.
+
+    Fails CLOSED, for the reason spelled out in agents/core.py: an outage that briefly
+    costs a paying customer their Premium extras is a bug, and an outage that hands
+    those extras to everyone is a security hole. Only one of those is worth risking.
+
+    Use this where a route needs the tier as a VALUE (to shape a response). Use
+    `require_tier` where the tier decides whether the route runs at all.
+    """
+    try:
+        return await store.tier_for_user(user_id, db)
+    except Exception:
+        logger.warning("tier lookup failed for %s; treating as free", user_id, exc_info=True)
+        return "free"
 
 # ── Features and their limits ────────────────────────────────────────────────
 
@@ -85,7 +105,12 @@ QUOTAS: dict[str, Quota] = {
 
 # Agent tools that only Premium may call. Filtered out of the tool list before
 # the model ever sees them, and re-checked at execution — see agents/tools.py.
-PREMIUM_TOOLS = frozenset({"search_knowledge", "report_injury"})
+PREMIUM_TOOLS = frozenset({
+    "search_knowledge",
+    "report_injury",
+    "remember_about_user",
+    "get_exercise_history",
+})
 
 
 class QuotaExceeded(Exception):

@@ -53,7 +53,7 @@ def test_coalescing_merges_queued_utterances(monkeypatch):
     """Rapid-fire finalizations run as ONE agent turn with the joined text."""
     calls: list[str] = []
 
-    def fake_agent(transcript, session_id, user_id, db):
+    def fake_agent(transcript, session_id, user_id, db, **kwargs):
         async def gen():
             calls.append(transcript)
             yield {"type": "text_delta", "text": "Nice work. "}
@@ -78,7 +78,7 @@ def test_barge_in_cancels_turn_and_sends_one_done(monkeypatch):
     turn still ends with exactly one done."""
     state = {"closed": False, "yielded": 0}
 
-    def fake_agent(transcript, session_id, user_id, db):
+    def fake_agent(transcript, session_id, user_id, db, **kwargs):
         async def gen():
             try:
                 for i in range(50):
@@ -133,7 +133,7 @@ def test_timer_done_announces_when_idle(monkeypatch):
 
 
 def test_timer_done_queued_behind_turn_plays_after_done(monkeypatch):
-    def fake_agent(transcript, session_id, user_id, db):
+    def fake_agent(transcript, session_id, user_id, db, **kwargs):
         async def gen():
             yield {"type": "text_delta", "text": "Logged. "}
             yield {"type": "done"}

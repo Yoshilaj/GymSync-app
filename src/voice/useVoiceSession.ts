@@ -25,6 +25,17 @@ const WATCHDOG_INTERVAL_MS = 1200;
 /** Watchdog: re-arm attempts per listening entry before giving up. */
 const WATCHDOG_MAX_REARMS = 3;
 /**
+ * How long to wait for the server's `transcript` after we finalize an utterance
+ * before telling the user something is wrong.
+ *
+ * The mic watchdog above only proves the MICROPHONE is alive — and a live mic
+ * is exactly what a stalled backend looks like from here: the waveform keeps
+ * moving while nothing comes back. This is the other half: proof that the
+ * SERVER is still answering. Generous, because a slow turn is normal and a
+ * false alarm mid-set is worse than a late one.
+ */
+const REPLY_TIMEOUT_MS = 12000;
+/**
  * Kill switch for barge-in (interrupting the coach mid-speech). Detection is
  * thresholded hard in MicGate (speaker echo could self-trigger without AEC);
  * flip this off if it misfires in the gym.
@@ -139,6 +150,8 @@ export function useVoiceSession({
   const reconnectTriedRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Armed when we finalize an utterance, disarmed by the server's answer.
+  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep the latest callbacks in a ref so message handling never goes stale
   // and doesn't force the socket to be rebuilt when a parent re-renders.
@@ -165,6 +178,26 @@ export function useVoiceSession({
     }
     gateRef.current?.pushFrame(frame);
   }, []);
+
+  // Reply watchdog. Once an utterance is finalized the server owes us a
+  // `transcript` — it is the ONLY thing that moves us out of `listening`. If it
+  // never arrives (STT died, the turn stalled, the socket went half-open) there
+  // is no other escape, so say so instead of listening forever.
+  // Fired through a ref because the gate is built before showNotice exists.
+  const replyLateRef = useRef<() => void>(() => {});
+  const clearReplyWatchdog = useCallback(() => {
+    if (replyTimerRef.current) {
+      clearTimeout(replyTimerRef.current);
+      replyTimerRef.current = null;
+    }
+  }, []);
+  const armReplyWatchdog = useCallback(() => {
+    clearReplyWatchdog();
+    replyTimerRef.current = setTimeout(() => {
+      replyTimerRef.current = null;
+      replyLateRef.current();
+    }, REPLY_TIMEOUT_MS);
+  }, [clearReplyWatchdog]);
 
   // Set both the ref (for reads inside callbacks) and the state (for renders).
   const goto = useCallback((next: VoicePhase) => {
@@ -220,6 +253,7 @@ export function useVoiceSession({
           const sock = socketRef.current;
           if (sock?.isOpen && canSend()) {
             sock.send({ type: 'utterance_end' });
+            armReplyWatchdog();
           }
         },
         bargeIn: () => bargeInRef.current(),
@@ -235,7 +269,7 @@ export function useVoiceSession({
       void vadLoadRef.current.then((vad) => gateRef.current?.setVad(vad));
     }
     return gateRef.current;
-  }, [micLevel]);
+  }, [micLevel, armReplyWatchdog]);
 
   const fail = useCallback(
     (message: string) => {
@@ -270,6 +304,11 @@ export function useVoiceSession({
       if (mountedRef.current) setNotice(null);
     }, NOTICE_MS);
   }, []);
+  replyLateRef.current = () => {
+    // A dead session or a deliberate stop isn't a late reply.
+    if (phaseRef.current === 'idle' || phaseRef.current === 'error') return;
+    showNotice("Your coach didn't answer — check your connection.");
+  };
 
   // Start mic capture and route EVERY frame through the gate, in all phases —
   // the gate's muted state (driven by goto) decides whether anything is sent.
@@ -289,6 +328,22 @@ export function useVoiceSession({
       fail(e instanceof Error ? e.message : 'Microphone failed to start');
     }
   }, [fail, ensureGate, handleFrame]);
+
+  // The server acked a session it is NOT running voice for (quota refusal —
+  // `upgrade_required` arrives just before it). Put the mic away: connect()
+  // starts capture early, in parallel with the handshake, so by now it may
+  // already be recording into a backend that drops every frame on the floor.
+  const declineVoice = useCallback(async () => {
+    goto('idle');
+    clearReplyWatchdog();
+    gateRef.current?.reset();
+    await voiceMic.stop();
+    await releaseAudioSession();
+    // Nothing more will ever come over this socket; closing detaches the
+    // handlers, so it can't trip the reconnect path either.
+    socketRef.current?.close();
+    socketRef.current = null;
+  }, [goto, clearReplyWatchdog]);
 
   // Coach playback (expo-audio players) reconfigures the shared iOS audio
   // session and can silently kill the recorder — re-assert the mode and
@@ -327,6 +382,8 @@ export function useVoiceSession({
   // the server with the first gate-open.
   const handleBargeIn = useCallback(() => {
     if (phaseRef.current !== 'coach_speaking') return;
+    // The turn we're abandoning owes us nothing now.
+    clearReplyWatchdog();
     void voicePlayer.stop();
     const sock = socketRef.current;
     if (sock?.isOpen) sock.send({ type: 'barge_in' });
@@ -335,7 +392,7 @@ export function useVoiceSession({
     void rearmMic();
     goto('listening');
     if (AppState.currentState === 'active') void Haptics.selectionAsync();
-  }, [goto, rearmMic]);
+  }, [goto, rearmMic, clearReplyWatchdog]);
   bargeInRef.current = handleBargeIn;
 
   const handleMessage = useCallback(
@@ -343,13 +400,23 @@ export function useVoiceSession({
       const cb = callbacksRef.current;
       switch (msg.type) {
         case 'ack':
-          // Handshake complete — go live and start streaming mic audio.
           reconnectTriedRef.current = false;
+          // `voice` reports what the client actually GOT, not what it asked
+          // for: the server acks false when it refused to start a voice
+          // session (see _refuse in voice_ws.py). Rendering a listening state
+          // over that is the bug where the mic ran forever into a backend with
+          // no session attached — every frame silently discarded.
+          if (msg.voice === false) {
+            void declineVoice();
+            break;
+          }
+          // Handshake complete — go live and start streaming mic audio.
           goto('listening');
           void startMic();
           break;
         case 'transcript':
           // Backend heard a complete utterance; the agent is now working.
+          clearReplyWatchdog();
           goto('thinking');
           cb.onTranscript?.(msg.text);
           break;
@@ -382,27 +449,38 @@ export function useVoiceSession({
         case 'done':
           // Turn finished — drain remaining coach audio, then back to listening.
           // Already listening = a barged-in turn's trailing done; nothing to do.
+          clearReplyWatchdog();
           if (phaseRef.current !== 'listening') void finishTurn();
           break;
         case 'error':
           // fatal:true = session dead. Anything else is a per-turn problem the
           // server recovers from (it follows with `done`) — just notify.
+          clearReplyWatchdog();
           if (msg.fatal) fail(msg.message);
           else showNotice(msg.message);
           break;
         case 'upgrade_required': {
           // The voice session never started, so there is nothing to tear down
-          // and nothing failed. Return to idle and let the screen offer the
+          // and nothing failed. Stand the mic down and let the screen offer the
           // upgrade — calling fail() here would paint a red error over what is
           // really a sales moment.
           const upgrade = parseUpgrade(msg);
           if (upgrade) onUpgradeRequired?.(upgrade);
-          goto('idle');
+          void declineVoice();
           break;
         }
       }
     },
-    [goto, fail, showNotice, startMic, finishTurn, onUpgradeRequired],
+    [
+      goto,
+      fail,
+      showNotice,
+      startMic,
+      finishTurn,
+      onUpgradeRequired,
+      declineVoice,
+      clearReplyWatchdog,
+    ],
   );
 
   // Open a socket against the given session id. Extracted from start() so the
@@ -502,6 +580,7 @@ export function useVoiceSession({
       reconnectTimerRef.current = null;
     }
     reconnectTriedRef.current = false;
+    clearReplyWatchdog();
 
     // Stop capturing and playback before tearing the socket down.
     gateRef.current?.reset();
@@ -525,7 +604,7 @@ export function useVoiceSession({
       setSessionId(null);
       setMicMutedState(false); // gate.reset() above already cleared user mute
     }
-  }, [goto]);
+  }, [goto, clearReplyWatchdog]);
 
   // Watchdog: the per-turn re-arm covers playback-induced recorder death, but
   // an OS-level session steal (Siri, a call) can kill it at any time. On each
@@ -581,6 +660,7 @@ export function useVoiceSession({
       mountedRef.current = false;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
       gateRef.current?.dispose();
       gateRef.current = null;
       void voiceMic.stop();

@@ -63,7 +63,7 @@ const GROUPS: { title: string; items: Qa[] }[] = [
       },
       {
         q: 'What if I pick up an injury?',
-        a: 'Tell the coach — in chat, or out loud mid-session. It records the area and the movement patterns to avoid, and programs around them from then on. Anything you flagged during onboarding is already factored in.',
+        a: "Tell the coach — in chat, out loud mid-session, or with the medkit button at the top of the workout screen. On Premium it records the area and the movement patterns to avoid, and programs around them from then on; on Free and Pro the coach adapts in the moment but doesn't keep a record. Anything you flagged during onboarding is factored into your plans on every tier.",
       },
     ],
   },

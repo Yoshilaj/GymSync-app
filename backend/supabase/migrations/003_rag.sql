@@ -60,15 +60,13 @@ CREATE INDEX IF NOT EXISTS knowledge_chunks_doctype_idx ON knowledge_chunks (doc
 CREATE INDEX IF NOT EXISTS knowledge_chunks_year_idx    ON knowledge_chunks (year);
 
 --Personal
-'''
- - per-user semantic memory (isolation-critical)
- - Only genuinely semantic data lands here:
-    - injuries
-    - preferences
-    - distilled session summaries
-    - plan rationale
-  - Exact numbers (sets/reps/PRs/volume) stay in SQL tables (completed_sets) !!!NOT embedded!!!
-'''
+--  - per-user semantic memory (isolation-critical)
+--  - Only genuinely semantic data lands here:
+--     - injuries
+--     - preferences
+--     - distilled session summaries
+--     - plan rationale
+--  - Exact numbers (sets/reps/PRs/volume) stay in SQL tables (completed_sets) !!!NOT embedded!!!
 CREATE TABLE IF NOT EXISTS personal_chunks (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id         UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
@@ -94,12 +92,10 @@ CREATE INDEX IF NOT EXISTS personal_chunks_fts_idx
   ON personal_chunks USING gin (fts);
 
 --RLS
-'''
- - DEFENSE-IN-DEPTH only
- - backend uses the service-role key (BYPASSRLS) over a pooled connection -->  the enforced boundary is the mandatory app-layer
-   `.eq("user_id", user_id)` filter
- - this policy is the backstop for any path that ever runs under an authenticated JWT.
-'''
+--  - DEFENSE-IN-DEPTH only
+--  - backend uses the service-role key (BYPASSRLS) over a pooled connection --> the
+--    enforced boundary is the mandatory app-layer `.eq("user_id", user_id)` filter
+--  - this policy is the backstop for any path that ever runs under an authenticated JWT.
 ALTER TABLE personal_chunks ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS personal_chunks_owner ON personal_chunks;
 CREATE POLICY personal_chunks_owner ON personal_chunks

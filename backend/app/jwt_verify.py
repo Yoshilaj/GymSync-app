@@ -84,6 +84,9 @@ class TokenClaims:
     amr: tuple[str, ...]
     session_id: str | None
     expires_at: int
+    #: When this token was minted. Used to prove a *recent* sign-in on accounts
+    #: that have no password to re-check — see routers/account.py.
+    issued_at: int
 
     @property
     def has_mfa(self) -> bool:
@@ -216,6 +219,7 @@ async def verify_access_token(token: str) -> TokenClaims:
         amr=_flatten_amr(claims.get("amr")),
         session_id=claims.get("session_id") or None,
         expires_at=int(claims.get("exp", 0)),
+        issued_at=int(claims.get("iat", 0)),
     )
 
 

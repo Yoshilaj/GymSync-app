@@ -33,13 +33,30 @@ def test_whitespace_fragments_ignored():
     assert agg.flush() == "five reps"
 
 
-def test_generation_bumps_on_every_flush():
+def test_generation_bumps_only_when_an_utterance_is_released():
     # The post-Finalize force-flush uses generation to detect that a real
-    # boundary already handled the utterance — even an empty flush must bump.
+    # boundary already handled the utterance. An EMPTY flush handled nothing,
+    # so it must not consume the generation the force-flush is waiting on.
     agg = UtteranceAggregator()
     g0 = agg.generation
     agg.flush()
-    assert agg.generation == g0 + 1
+    assert agg.generation == g0
     agg.add_final("hi")
     agg.flush()
-    assert agg.generation == g0 + 2
+    assert agg.generation == g0 + 1
+
+
+def test_late_fragment_after_empty_boundary_still_reaches_force_flush():
+    # The silent-hang regression: UtteranceEnd fires on an empty buffer, then
+    # the real fragment lands. The client's gate is closed by now, so no more
+    # audio will advance Deepgram's endpointing — the armed force-flush is the
+    # only thing left that can release this, and it only fires while the
+    # generation it captured is unchanged.
+    agg = UtteranceAggregator()
+    gen_at_request = agg.generation
+
+    agg.flush()                    # empty boundary — releases nothing
+    agg.add_final("sixty five")    # fragment arrives late
+
+    assert agg.generation == gen_at_request
+    assert agg.flush() == "sixty five"

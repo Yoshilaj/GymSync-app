@@ -590,7 +590,12 @@ class VoiceSession:
 
         done_sent = False
         cancelled = False
-        gen = _agent_events(transcript, self._session_id, self._user_id, self._db)
+        # channel="voice" picks RetrievalParams.for_voice() for personal memory —
+        # smaller K and a tighter token budget, because this turn is inside the
+        # speech-to-first-audio budget.
+        gen = _agent_events(
+            transcript, self._session_id, self._user_id, self._db, channel="voice"
+        )
         async for event in gen:
             if self._cancel_turn.is_set():
                 cancelled = True

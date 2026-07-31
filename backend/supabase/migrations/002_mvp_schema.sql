@@ -1,17 +1,15 @@
-'''
-Normalize the workout domain for the MVP pivot
- - Strategy: ADD new normalized tables + seed the exercise catalog + backfill from the legacy JSONB blobs
- - reusing columns :
-    - workout_plans.plan_data
-    - workout_sessions.session_data
-    - rep_count
-    - current_goal
-    (dropped only in a later cleanup migration after backfill is verified)
- - Isolation note: the backend connects with the service-role key (BYPASSRLS) over a pooled connection, 
- so the REAL per-user boundary is a mandatory `.eq("user_id", user_id)` filter in the app layer. 
- - user_id is denormalized onto every child table to make that filter (and future partitioning) cheap
- - RLS is added as defense-in-depth only (see personal_chunks in 003)
-'''
+-- Normalize the workout domain for the MVP pivot
+--  - Strategy: ADD new normalized tables + seed the exercise catalog + backfill from the legacy JSONB blobs
+--  - reusing columns :
+--     - workout_plans.plan_data
+--     - workout_sessions.session_data
+--     - rep_count
+--     - current_goal
+--     (dropped only in a later cleanup migration after backfill is verified)
+--  - Isolation note: the backend connects with the service-role key (BYPASSRLS) over a pooled connection,
+--  so the REAL per-user boundary is a mandatory `.eq("user_id", user_id)` filter in the app layer.
+--  - user_id is denormalized onto every child table to make that filter (and future partitioning) cheap
+--  - RLS is added as defense-in-depth only (see personal_chunks in 003)
 
 --Profiles
 CREATE TABLE IF NOT EXISTS profiles (
@@ -26,12 +24,10 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 --Exercise catalog (shared + user-created)
-'''
- - id is a stable TEXT key so it matches the frontend exerciseId ('ex-bench')
- - makes plan/session backfill a direct join
- - created_by NULL = shared catalog row; non-NULL = user-created (Q3 decision).
- - is_active drives soft-delete; reads filter is_active = true (Q3 decision).
-'''
+--  - id is a stable TEXT key so it matches the frontend exerciseId ('ex-bench')
+--  - makes plan/session backfill a direct join
+--  - created_by NULL = shared catalog row; non-NULL = user-created (Q3 decision).
+--  - is_active drives soft-delete; reads filter is_active = true (Q3 decision).
 CREATE TABLE IF NOT EXISTS exercises (
   id              TEXT PRIMARY KEY DEFAULT ('usr-' || gen_random_uuid()),
   name            TEXT NOT NULL,
@@ -51,10 +47,8 @@ CREATE INDEX IF NOT EXISTS exercises_muscle_equipment_idx ON exercises (muscle_g
 CREATE INDEX IF NOT EXISTS exercises_created_by_idx ON exercises (created_by) WHERE created_by IS NOT NULL;
 
 --Normalized plan structure
-'''
- - exists in 001 as workout_plans
- - workout_plans.plan_data (legacy JSONB) is KEPT <-- these tables are backfilled from it below.
-'''
+--  - exists in 001 as workout_plans
+--  - workout_plans.plan_data (legacy JSONB) is KEPT <-- these tables are backfilled from it below.
 CREATE TABLE IF NOT EXISTS plan_workouts (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   plan_id     UUID NOT NULL REFERENCES workout_plans ON DELETE CASCADE,
@@ -84,22 +78,18 @@ CREATE INDEX IF NOT EXISTS plan_exercises_user_idx ON plan_exercises (user_id);
 
 
 -- Workout Sessions
-'''
- - add session_overrides --> enforce one active session per user 
- - alter table from 001, avoid recreation
-'''
+--  - add session_overrides --> enforce one active session per user
+--  - alter table from 001, avoid recreation
 ALTER TABLE workout_sessions
   ADD COLUMN IF NOT EXISTS session_overrides JSONB NOT NULL DEFAULT '{}';
 -- One active session per user (partial unique). If existing data has >1 active row per user this will fail — resolve duplicates before applying.
 CREATE UNIQUE INDEX IF NOT EXISTS workout_sessions_one_active_idx ON workout_sessions (user_id) WHERE is_active;
 
 -- Completed sets
-'''
- - normalized set log (replaces session_data blob)
- - makes log_set a single INSERT (today read-modify-write of a growing JSONB blob is a lost-update hazard)
- - makes progress/PR/volume indexed SQL
- - rpe is KEPT nullable with no UI (Q4 decision) — substrate for autoregulation.
-'''
+--  - normalized set log (replaces session_data blob)
+--  - makes log_set a single INSERT (today read-modify-write of a growing JSONB blob is a lost-update hazard)
+--  - makes progress/PR/volume indexed SQL
+--  - rpe is KEPT nullable with no UI (Q4 decision) — substrate for autoregulation.
 CREATE TABLE IF NOT EXISTS completed_sets (
   id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, --BIGINT: auto-incrementing integer key 
   user_id       UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,

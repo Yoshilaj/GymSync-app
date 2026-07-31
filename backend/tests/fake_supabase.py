@@ -20,7 +20,14 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "apple_transactions": ("environment", "transaction_id"),
     "apple_subscription_owners": ("environment", "original_transaction_id"),
     "feature_usage": ("user_id", "feature", "period_key"),
+    # Surrogate key — the id is generated on insert, like gen_random_uuid() does.
+    "personal_chunks": ("id",),
+    "injuries": ("id",),
 }
+
+# Tables whose primary key the DATABASE fills in, so an insert without one is normal
+# rather than a collision on None.
+_GENERATED_IDS = {"personal_chunks", "injuries"}
 
 
 class _Result:
@@ -80,6 +87,11 @@ class _Query:
     async def execute(self) -> _Result:
         if self._mode in ("upsert", "insert"):
             assert self._pending is not None
+            if self._table in _GENERATED_IDS and self._pending.get("id") is None:
+                self._pending = {
+                    **self._pending,
+                    "id": f"{self._table}-{len(self._rows) + 1}",
+                }
             key_cols = PRIMARY_KEYS[self._table]
             key = tuple(str(self._pending.get(c)) for c in key_cols)
             for i, existing in enumerate(self._rows):

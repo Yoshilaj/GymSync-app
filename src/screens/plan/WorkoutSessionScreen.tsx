@@ -41,6 +41,8 @@ import {
 import { Exercise, PlannedSet } from '@/types';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
+import { useBilling } from '@/billing/BillingProvider';
+import type { UpgradeRequired } from '@/billing/upgrade';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
 type RouteP = RouteProp<PlanStackParamList, 'WorkoutSession'>;
@@ -585,14 +587,49 @@ function WorkoutSessionActive() {
     resolveConflict,
   });
   const promptUpgrade = useUpgradePrompt();
+  const { entitlement, status: billingStatus } = useBilling();
+
+  // Live coaching is Pro: the backend allows Free 0 voice sessions a month
+  // (entitlements.py, VOICE_SESSION). Knowing that here is what keeps a Free
+  // user out of a session the server will refuse — the workout itself stays
+  // open to everyone, because Free includes Workout Logging.
+  //
+  // Only a CONFIRMED Free tier pre-empts. 'loading' isn't an answer yet, and
+  // 'error' means the entitlement READ failed and the Free it reports is a
+  // display fallback — denying voice on that would cost a paying customer
+  // their coach over a network blip. The server is the authority either way,
+  // and its refusal now lands in the dock instead of a dead mic.
+  const voiceDenied = billingStatus === 'ready' && entitlement.tier === 'free';
+  const voiceEntitled = billingStatus !== 'loading' && !voiceDenied;
+
+  // A refusal that arrives from the server anyway — a Pro customer who has
+  // spent this month's allowance. Held here (rather than jumping straight to
+  // the paywall) because this screen is a fullScreenModal: navigating to
+  // Pricing while it is up opens the paywall UNDERNEATH it, which is why the
+  // upgrade prompt used to appear only after the session was closed.
+  const [voiceRefusal, setVoiceRefusal] = useState<UpgradeRequired | null>(null);
+
   const voice = useVoiceSession({
     userId: authUser?.id ?? '',
     getToken,
     onAppAction: handleAppAction,
-    onUpgradeRequired: promptUpgrade,
+    onUpgradeRequired: setVoiceRefusal,
   });
 
   const voiceLive = voice.phase !== 'idle' && voice.phase !== 'error';
+  // Voice can't run: either we know the tier is too low, or the server said so.
+  // Either way the dock sells instead of pretending to listen. Note this is
+  // NOT `!voiceEntitled` — an unanswered billing read must not flash "Pro
+  // feature" at a subscriber while the entitlement is still in the air.
+  const voiceLocked = voiceDenied || voiceRefusal !== null;
+
+  // Dismiss the session first, then open Pricing — see voiceRefusal above.
+  // Leaving is free: the workout stays active server-side and resumes on the
+  // next open (same as the header chevron).
+  const openVoicePaywall = useCallback(() => {
+    nav.goBack();
+    promptUpgrade(voiceRefusal?.requiredTier ?? 'pro');
+  }, [nav, promptUpgrade, voiceRefusal]);
 
   // A gentle nudge when the rest countdown runs out on its own (not on skip) —
   // haptic plus, when voice is live, a spoken "rest's over" cue from the coach.
@@ -609,18 +646,35 @@ function WorkoutSessionActive() {
 
   const enableVoice = useCallback(async () => {
     if (!authUser?.id) return;
+    // Never open a mic the server won't listen to.
+    if (voiceLocked) {
+      openVoicePaywall();
+      return;
+    }
+    // Billing hasn't answered yet — the auto-start effect fires when it does.
+    if (!voiceEntitled) return;
     const sid = await workoutSession.start();
     if (sid) await voice.start(sid);
-  }, [authUser?.id, workoutSession.start, voice.start]);
+  }, [
+    authUser?.id,
+    voiceLocked,
+    voiceEntitled,
+    openVoicePaywall,
+    workoutSession.start,
+    voice.start,
+  ]);
 
   // Hands-free: the coach comes up with the workout — no mic tap needed. One
   // shot per screen visit; failures land in the dock's error row (Retry).
+  // Waits for the entitlement: on Free this never fires, and the dock offers
+  // the upgrade instead of listening to a session that was refused.
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (!authUser?.id || autoStartedRef.current) return;
+    if (!voiceEntitled) return;
     autoStartedRef.current = true;
     void enableVoice();
-  }, [authUser?.id, enableVoice]);
+  }, [authUser?.id, enableVoice, voiceEntitled]);
 
   // Full-row waveform: the user's voice rides the mic feed (live orange), the
   // coach's rides playback samples (accent), thinking gets a synthetic shimmer.
@@ -1013,7 +1067,44 @@ function WorkoutSessionActive() {
 
       {/* Coach dock */}
       <View style={styles.dock}>
-        {voiceError ? (
+        {/* Non-fatal notices (a lost turn, a coach that didn't answer) used to
+            be set and never rendered — which is how a stalled session looked
+            identical to a healthy one. */}
+        {voice.notice && !voiceLocked && (
+          <View style={styles.dockNoticeRow}>
+            <Ionicons
+              name="information-circle-outline"
+              size={15}
+              color={colors.textSecondary}
+            />
+            <AppText variant="caption" color="textSecondary" numberOfLines={2} style={{ flex: 1 }}>
+              {voice.notice}
+            </AppText>
+          </View>
+        )}
+        {voiceLocked ? (
+          <View style={styles.dockLiveCol}>
+            <View style={styles.dockLockedRow}>
+              <Ionicons name="mic-off-outline" size={16} color={colors.textSecondary} />
+              <AppText variant="caption" color="textSecondary" style={{ flex: 1 }} numberOfLines={2}>
+                {voiceRefusal?.message ?? 'Live voice coaching is a Pro feature.'}
+              </AppText>
+              <Button
+                title="Upgrade"
+                variant="secondary"
+                size="sm"
+                full={false}
+                onPress={openVoicePaywall}
+              />
+            </View>
+            <Button
+              title="End workout"
+              variant="secondary"
+              icon="stop-circle-outline"
+              onPress={endWorkout}
+            />
+          </View>
+        ) : voiceError ? (
           <View style={styles.dockErrorRow}>
             <Ionicons name="warning-outline" size={16} color={colors.dangerText} />
             <AppText variant="caption" color="dangerText" style={{ flex: 1 }} numberOfLines={2}>
@@ -1307,5 +1398,16 @@ const useStyles = makeStyles((t) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  dockLockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  dockNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
   },
 }));

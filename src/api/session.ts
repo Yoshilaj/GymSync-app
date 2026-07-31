@@ -3,7 +3,8 @@
  * All calls go through api/client.ts, so an expired token refreshes and retries
  * once mid-workout rather than surfacing as a failed set.
  */
-import { api, authedFetch } from './client';
+import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
+import { api, ApiError, authedFetch } from './client';
 
 export interface SessionSetRow {
   exercise_name: string;
@@ -64,4 +65,50 @@ export async function patchCurrentExercise(
 /** DELETE /api/session/{id} — end the session. */
 export async function endSession(token: string, sessionId: string): Promise<void> {
   await api.del<void>(`/api/session/${sessionId}`, token);
+}
+
+/** Movement patterns the backend accepts for `avoid_movements` (MOVEMENTS in tools.py). */
+export type Movement =
+  | 'push' | 'pull' | 'hinge' | 'squat' | 'lunge' | 'carry' | 'core' | 'isolation';
+
+export type Severity = 'mild' | 'moderate' | 'severe';
+
+/**
+ * Something the user tells the coach mid-workout by tapping instead of talking.
+ *
+ * An `injury` becomes a row the safety layer programs around; a `comment` is only ever
+ * recalled semantically. Both are Premium, so a 403 here is a paywall prompt rather than
+ * a failure — same rethrow shape as api/personality.ts.
+ */
+export interface SessionNote {
+  kind: 'injury' | 'comment';
+  text?: string;
+  bodyPart?: string;
+  severity?: Severity;
+  avoidMovements?: Movement[];
+}
+
+function rethrowUpgrade(e: unknown): never {
+  if (e instanceof ApiError) {
+    const upgrade = parseUpgrade(e.detail);
+    if (upgrade) throw new UpgradeRequiredError(upgrade);
+  }
+  throw e;
+}
+
+/** POST /api/session/{id}/note — report an injury or leave a note. */
+export async function addSessionNote(
+  token: string,
+  sessionId: string,
+  note: SessionNote,
+): Promise<void> {
+  await api
+    .post<unknown>(`/api/session/${sessionId}/note`, token, {
+      kind: note.kind,
+      text: note.text ?? '',
+      body_part: note.bodyPart ?? null,
+      severity: note.severity ?? null,
+      avoid_movements: note.avoidMovements ?? [],
+    })
+    .catch(rethrowUpgrade);
 }

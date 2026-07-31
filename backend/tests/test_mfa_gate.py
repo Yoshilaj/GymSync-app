@@ -133,7 +133,7 @@ class Creds:
 
 def _claims(aal: str) -> TokenClaims:
     return TokenClaims(sub=USER, email="a@b.c", aal=aal, amr=("password",),
-                       session_id="s", expires_at=9_999_999_999)
+                       session_id="s", expires_at=9_999_999_999, issued_at=0)
 
 
 @pytest.fixture

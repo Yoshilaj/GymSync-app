@@ -1,7 +1,5 @@
 --Personality Table
-'''
-primary = userid <- references auth.users
-'''
+-- primary = userid <- references auth.users
 CREATE TABLE IF NOT EXISTS personalities (
   user_id                UUID PRIMARY KEY REFERENCES auth.users ON DELETE CASCADE,
   preset_id              TEXT NOT NULL DEFAULT 'supportive'
@@ -12,11 +10,9 @@ CREATE TABLE IF NOT EXISTS personalities (
 );
 
 --Workout plans
-'''
-Stores the users training programs
-plan_data shape mirrors the frontend WeeklyPlan TypeScript type.
- - create separate index : user_id, is_active <-- frequently used
-'''
+-- Stores the users training programs
+-- plan_data shape mirrors the frontend WeeklyPlan TypeScript type.
+--  - create separate index : user_id, is_active <-- frequently used
 CREATE TABLE IF NOT EXISTS workout_plans (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,
@@ -30,12 +26,10 @@ CREATE INDEX IF NOT EXISTS workout_plans_user_active_idx
   ON workout_plans (user_id, is_active);
 
 --Live workout sessions
-'''
- - One active row per user at any time.
- - plan_snapshot: copy of plan_data at session start — ensures consistency if the user edits their plan mid-workout.
- - chat_history:  last 20 turns [{role, content, ts}] — survives app restarts.
- - separate index : user_id, is_active 
-'''
+--  - One active row per user at any time.
+--  - plan_snapshot: copy of plan_data at session start — ensures consistency if the user edits their plan mid-workout.
+--  - chat_history:  last 20 turns [{role, content, ts}] — survives app restarts.
+--  - separate index : user_id, is_active
 CREATE TABLE IF NOT EXISTS workout_sessions (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id          UUID NOT NULL REFERENCES auth.users ON DELETE CASCADE,

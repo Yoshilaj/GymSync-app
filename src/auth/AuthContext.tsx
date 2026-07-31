@@ -49,6 +49,12 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   /** A fresh Supabase JWT for the backend. Throws if not authenticated. */
   getToken: () => Promise<string>;
+  /**
+   * False for accounts created with Apple or Google — they have no password
+   * identity, so anything that asks for "your current password" can only fail.
+   * Screens use this to offer the right thing instead of a box that can't work.
+   */
+  hasPassword: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -124,7 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (callback.kind === 'confirmed') {
-        Alert.alert('Confirmed', confirmationMessage(callback.type));
+        // The change already happened server-side, but the session in memory
+        // still carries the OLD user object — so a confirmed email change left
+        // the old address on screen in Settings until the token happened to
+        // refresh. Pull a fresh one so what's displayed matches what's true.
+        if (callback.type === 'email_change') await supabase.auth.refreshSession();
+        if (!cancelled) Alert.alert('Confirmed', confirmationMessage(callback.type));
         return;
       }
 
@@ -245,9 +256,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  // Supabase puts the identity list on the session user, so this needs no call.
+  const hasPassword = (session?.user?.identities ?? []).some(
+    (i) => i.provider === 'email',
+  );
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
+    hasPassword,
     // Not done loading until we also know whether a second factor is owed.
     loading: loading || !mfaChecked,
     recoveryMode,
