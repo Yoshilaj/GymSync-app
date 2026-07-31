@@ -160,6 +160,9 @@ export function BuildingPlanScreen() {
   const [blockedMsg, setBlockedMsg] = useState<string | null>(null);
   const [proposalId, setProposalId] = useState<string | null>(null);
   const [plan, setPlan] = useState<PlanProposalWire | null>(null);
+  // Only a freshly generated plan carries these — a recovered or adopted
+  // proposal is just a stored payload, with no validation pass behind it.
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [status, setStatus] = useState<ProposalStatus>('pending');
   const [captionIdx, setCaptionIdx] = useState(0);
   const startedRef = useRef(false);
@@ -234,6 +237,7 @@ export function BuildingPlanScreen() {
         const result = await generatePlan(token);
         setProposalId(result.proposal_id);
         setPlan(result.plan);
+        setWarnings(result.warnings ?? []);
         setPhase('ready');
       } catch (e) {
         // A refusal is not a failure: the request was understood and declined
@@ -335,6 +339,7 @@ export function BuildingPlanScreen() {
           acceptLabel="Start training"
           secondaryLabel="Regenerate"
           initialOpenDay={null}
+          warnings={warnings}
         />
       )}
 

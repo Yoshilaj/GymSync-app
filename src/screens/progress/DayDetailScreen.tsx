@@ -10,7 +10,7 @@ import { WorkoutHeroCard } from '@/components/WorkoutHeroCard';
 import { ExerciseRow } from '@/components/ExerciseRow';
 import { PlanDaySkeleton } from '@/components/PlanDaySkeleton';
 import { usePlan } from '@/context/PlanContext';
-import { getCategory, getExerciseById } from '@/data/mockExercises';
+import { getCategory, resolvePlannedExercise } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { useTabBarClearance } from '@/hooks';
 import { PlannedWorkout, Units } from '@/types';
@@ -115,7 +115,7 @@ function DayWorkout({
   const muscles = Array.from(
     new Set(
       workout.exercises
-        .map((pe) => getExerciseById(pe.exerciseId)?.muscleGroup)
+        .map((pe) => resolvePlannedExercise(pe.exerciseId, pe.name).muscleGroup)
         .filter((m) => !!m && m !== 'Full Body')
         .map((m) => getCategory(m!)),
     ),
@@ -149,8 +149,11 @@ function DayWorkout({
           Exercises
         </AppText>
         {workout.exercises.map((pe, i) => {
-          const ex = getExerciseById(pe.exerciseId);
-          if (!ex) return null;
+          // Never drop a row we can't look up. Ad-hoc exercises and any the
+          // local library doesn't carry used to return null here, so a session
+          // the user actually trained came back missing exercises. The Plan tab
+          // has always resolved these; history has to as well.
+          const ex = resolvePlannedExercise(pe.exerciseId, pe.name);
           return (
             <ExerciseRow
               key={pe.exerciseId}

@@ -27,7 +27,7 @@ import { AppText, Card, EmptyState, Entering, Skeleton } from '@/components/ui';
 import { ChartCard } from '@/components/ChartCard';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { usePlan } from '@/context/PlanContext';
-import { getExerciseById, getExerciseByName, mockExercises } from '@/data/mockExercises';
+import { getExerciseByName, resolvePlannedExercise } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { useProgress, useTabBarClearance } from '@/hooks';
@@ -458,7 +458,10 @@ function ExerciseTrends({
   const { colors } = useTheme();
   const styles = useStyles();
   const { user } = useUser();
-  const ex = getExerciseById(exerciseId) ?? mockExercises[0];
+  // Falling back to mockExercises[0] would label this chart "Barbell Bench
+  // Press" and draw someone else's numbers under it. Resolve properly instead —
+  // an unknown id yields a generic entry that at least carries the right name.
+  const ex = resolvePlannedExercise(exerciseId);
 
   // Real logged history only, as daily points for the interactive chart.
   const points = useMemo(

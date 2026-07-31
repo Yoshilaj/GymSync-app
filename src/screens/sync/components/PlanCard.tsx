@@ -28,6 +28,14 @@ interface Props {
    *  null for all-collapsed — the onboarding reveal reads better as a
    *  scannable week than with one day pre-opened. */
   initialOpenDay?: number | null;
+  /**
+   * Ways the plan doesn't match the profile — wrong number of days, a session
+   * far over the user's time budget, a movement an active injury says to
+   * avoid. The server has always computed these and no screen ever showed
+   * them, which is how a plan full of exercises the app couldn't render
+   * shipped unnoticed. Usually empty.
+   */
+  warnings?: string[];
 }
 
 /** "4 – 6 reps × 4 sets" — reps range first, then sets, spelled out. */
@@ -127,6 +135,7 @@ export function PlanCard({
   acceptLabel = 'Accept plan',
   secondaryLabel = 'Request changes',
   initialOpenDay = 0,
+  warnings = [],
 }: Props) {
   const { colors, gradients } = useTheme();
   const styles = useStyles();
@@ -190,6 +199,23 @@ export function PlanCard({
           </View>
         ) : (
           <View style={styles.footer}>
+            {warnings.length > 0 && (
+              <View style={styles.warnings}>
+                {warnings.map((w) => (
+                  <View key={w} style={styles.warningRow}>
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={14}
+                      color={colors.warningText}
+                      style={styles.warningIcon}
+                    />
+                    <AppText variant="caption" color="warningText" style={styles.warningText}>
+                      {w}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+            )}
             {status === 'failed' && (
               <AppText variant="caption" color="dangerText">
                 Couldn't save the plan — check your connection and try again.
@@ -252,6 +278,22 @@ const useStyles = makeStyles((t) => ({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.lg,
     gap: spacing.sm,
+  },
+  // No panel or tinted box — these sit as quiet notes above the buttons, in
+  // the same footer rhythm as the failure caption.
+  warnings: {
+    gap: spacing.xxs,
+  },
+  warningRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  warningIcon: {
+    // Optical align with the caption's cap height rather than its box.
+    marginTop: 1,
+  },
+  warningText: {
+    flex: 1,
   },
   liveRow: {
     flexDirection: 'row',

@@ -62,6 +62,8 @@ export type ChatItem =
       proposalId: string;
       plan: PlanProposalWire;
       status: ProposalStatus;
+      /** Ways the plan doesn't match the profile; usually empty. */
+      warnings: string[];
     };
 
 /** A conversation_messages row as returned by GET /api/conversations/{id}. */
@@ -266,6 +268,7 @@ export function useTextChat({
               proposalId: msg.proposal_id,
               plan: msg.plan,
               status: 'pending',
+              warnings: msg.warnings ?? [],
             },
           ]);
           break;

@@ -353,6 +353,7 @@ export function SyncChatScreen() {
             onAccept={() => void handleAcceptProposal(item)}
             onRequestChanges={handleRequestChanges}
             onViewPlan={handleViewPlan}
+            warnings={item.warnings}
           />
         </View>
       );
