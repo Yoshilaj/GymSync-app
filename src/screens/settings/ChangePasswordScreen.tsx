@@ -6,13 +6,13 @@ import { AppText, Button, Input } from '@/components/ui';
 import { PasswordStrength } from '@/components/PasswordStrength';
 import { checkPassword } from '@/lib/passwordStrength';
 import { useAuth } from '@/auth/AuthContext';
-import { supabase } from '@/auth/supabase';
+import { changePassword } from '@/api/auth';
 import { SettingsPage } from './SettingsKit';
 
 export function ChangePasswordScreen() {
   const styles = useStyles();
   const nav = useNavigation();
-  const { user } = useAuth();
+  const { user, getToken } = useAuth();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -30,14 +30,11 @@ export function ChangePasswordScreen() {
     setBusy(true);
     setError(null);
     try {
-      // Re-authenticate with the current password before changing it.
-      const { error: reauth } = await supabase.auth.signInWithPassword({
-        email: user?.email ?? '',
-        password: current,
-      });
-      if (reauth) throw new Error('Current password is incorrect.');
-      const { error: err } = await supabase.auth.updateUser({ password: next });
-      if (err) throw err;
+      // Through the backend, not supabase.auth.updateUser. Both the
+      // re-authentication and the password rules used to live only on this
+      // screen — so a client that skipped them could set "gymsync123", which
+      // sign-up would have rejected outright. The server owns both now.
+      await changePassword(await getToken(), current, next);
       nav.goBack();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update password.');

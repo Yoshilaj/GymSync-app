@@ -1,14 +1,29 @@
 """Email/password auth endpoints proxying Supabase GoTrue.
 
 The app talks to these instead of Supabase directly so the backend stays the
-single auth surface — when WorkOS (or another provider) lands, only this file
-and the app-side auth API wrapper need to change.
+single auth surface, and so password rules are enforced somewhere a client can't
+skip. Social sign-in (Apple/Google) is the deliberate exception: the ID-token
+exchange has to happen on the device that holds the native credential.
 
 IMPORTANT: these endpoints must NOT use the shared service-role client from
 app.database. That client listens for auth events and would swap its
 process-wide postgrest Authorization header to the signed-in user's token,
 silently downgrading every later DB query from service-role. We use a
 dedicated stateless GoTrue client with the anon key instead.
+
+PASSWORD CHANGES COME IN TWO FLAVOURS, and the difference is what proves you may
+make one:
+
+  /change-password         — you know the current password. Re-checked here, not
+                             just on the client, so a stolen access token alone
+                             can't rotate the password out from under someone.
+  /reset-password/confirm  — you proved you own the inbox. Recognised by the
+                             session's `amr` being "otp" (verified empirically:
+                             a recovery link mints amr=[{"method":"otp"}], a
+                             normal login mints amr=[{"method":"password"}]).
+
+Neither accepts a plain password session with no current password, which is the
+account-takeover shape.
 """
 
 import logging
@@ -19,13 +34,20 @@ from supabase import AsyncClient
 from supabase_auth import AsyncGoTrueClient
 from supabase_auth.errors import AuthApiError, AuthWeakPasswordError
 
+from app.auth import get_claims
 from app.config import settings
 from app.database import get_db
+from app.jwt_verify import TokenClaims
 from app.password import validate_password
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Where Supabase sends the user after they click an emailed link. The app's scheme
+# is registered in app.json and this exact value is on the project's redirect
+# allow-list; GoTrue silently falls back to SITE_URL for anything not on it.
+AUTH_CALLBACK_URL = "gymsync://auth-callback"
 
 _auth: AsyncGoTrueClient | None = None
 
@@ -101,6 +123,19 @@ class ResetRequest(BaseModel):
 class ResetResponse(BaseModel):
     ok: bool = True
     message: str = "If an account exists for that email, a reset link has been sent."
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ConfirmResetRequest(BaseModel):
+    new_password: str
+
+
+class OkResponse(BaseModel):
+    ok: bool = True
 
 
 def _map_auth_error(e: Exception) -> HTTPException:
@@ -210,7 +245,12 @@ async def reset_password(
     auth: AsyncGoTrueClient = Depends(get_auth_client),
 ) -> ResetResponse:
     try:
-        await auth.reset_password_for_email(body.email)
+        # Without redirect_to the link lands on Supabase's hosted page and the reset
+        # dead-ends outside the app. With it, the user comes back to us holding a
+        # recovery session — see /reset-password/confirm.
+        await auth.reset_password_for_email(
+            body.email, {"redirect_to": AUTH_CALLBACK_URL}
+        )
     except AuthApiError as e:
         if "rate_limit" in (e.code or ""):
             raise HTTPException(status_code=429, detail="Too many attempts. Try again shortly.")
@@ -220,3 +260,74 @@ async def reset_password(
         logger.exception("Password reset request failed")
 
     return ResetResponse()
+
+
+async def _set_password(db: AsyncClient, user_id: str, password: str, email: str | None) -> None:
+    """Apply the server-side rules, then write the new password via the admin API.
+
+    The rules run HERE and not only on the client because `updateUser({password})`
+    from the app bypassed them entirely — the sign-up blocklist would reject
+    "gymsync123" while the change-password screen happily accepted it.
+    """
+    weak = validate_password(password, email)
+    if weak:
+        raise HTTPException(status_code=400, detail=weak)
+    try:
+        await db.auth.admin.update_user_by_id(user_id, {"password": password})
+    except Exception as e:
+        raise _map_auth_error(e)
+
+
+@router.post("/change-password", response_model=OkResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    claims: TokenClaims = Depends(get_claims),
+    auth: AsyncGoTrueClient = Depends(get_auth_client),
+    db: AsyncClient = Depends(get_db),
+) -> OkResponse:
+    """Change the password of a signed-in user who can produce the current one.
+
+    The re-authentication used to happen only in the app (ChangePasswordScreen
+    called signInWithPassword first). Anything a client does, a client can skip —
+    so it happens here now, against the same stateless GoTrue client used for login.
+    """
+    if not claims.email:
+        raise HTTPException(status_code=400, detail="This account has no email address.")
+
+    try:
+        await auth.sign_in_with_password(
+            {"email": claims.email, "password": body.current_password}
+        )
+    except Exception:
+        # Deliberately not _map_auth_error: every failure here is "wrong password"
+        # as far as the caller is concerned, and the distinction leaks nothing useful.
+        raise HTTPException(status_code=401, detail="Current password is incorrect.")
+
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="That's your current password. Pick a new one.")
+
+    await _set_password(db, claims.sub, body.new_password, claims.email)
+    return OkResponse()
+
+
+@router.post("/reset-password/confirm", response_model=OkResponse)
+async def confirm_reset(
+    body: ConfirmResetRequest,
+    claims: TokenClaims = Depends(get_claims),
+    db: AsyncClient = Depends(get_db),
+) -> OkResponse:
+    """Finish a password reset, authorised by the recovery session from the email link.
+
+    There is no current password to check — the proof is that they opened a link sent
+    to their inbox. What stops this from being "change anyone's password with any
+    token" is the `amr` check: a session minted by a recovery link reports "otp",
+    while an ordinary login reports "password". Refusing the latter means a stolen
+    access token still cannot rotate the password without the current one.
+    """
+    if "otp" not in claims.amr:
+        raise HTTPException(
+            status_code=403,
+            detail="Open the link from your password reset email to set a new password.",
+        )
+    await _set_password(db, claims.sub, body.new_password, claims.email)
+    return OkResponse()

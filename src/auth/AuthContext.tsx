@@ -6,16 +6,24 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
-import { AppState } from 'react-native';
+import { Alert, AppState, Linking } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import * as authApi from '@/api/auth';
 import { supabase } from './supabase';
+import { confirmationMessage, parseAuthCallback } from './deepLinks';
 
 interface AuthContextValue {
   session: Session | null;
   user: User | null;
   /** True until the persisted session has been loaded on startup. */
   loading: boolean;
+  /**
+   * A password-reset link was opened and its session is live. The app must show
+   * the "set a new password" screen and nothing else — a recovery session is a
+   * real session, so without this gate the user would land straight in the app
+   * with their old password still working.
+   */
+  recoveryMode: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (
     email: string,
@@ -23,6 +31,10 @@ interface AuthContextValue {
     displayName?: string,
   ) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
+  /** Set a new password using the live recovery session, then leave recovery mode. */
+  completeRecovery: (newPassword: string) => Promise<{ error: string | null }>;
+  /** Abandon a reset without setting a password. Signs the recovery session out. */
+  cancelRecovery: () => Promise<void>;
   signOut: () => Promise<void>;
   /** A fresh Supabase JWT for the backend. Throws if not authenticated. */
   getToken: () => Promise<string>;
@@ -33,6 +45,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recoveryMode, setRecoveryMode] = useState(false);
 
   useEffect(() => {
     // Load any persisted session, then subscribe to changes.
@@ -40,8 +53,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
+      // Belt and braces: supabase-js raises this itself when it recognises a
+      // recovery session. On native we normally get there first, via the deep
+      // link below, but a duplicate signal is harmless — the flag is idempotent.
+      if (event === 'PASSWORD_RECOVERY') setRecoveryMode(true);
     });
 
     // Keep tokens fresh while the app is foregrounded (Supabase's recommendation).
@@ -53,6 +70,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       sub.subscription.unsubscribe();
       appStateSub.remove();
+    };
+  }, []);
+
+  // Emailed links (reset, signup confirm, email change) all land on
+  // gymsync://auth-callback. Handled here rather than in a screen because a
+  // recovery link has to change what the whole app is showing.
+  useEffect(() => {
+    let cancelled = false;
+
+    const handle = async (url: string | null) => {
+      const callback = parseAuthCallback(url);
+      if (!callback || cancelled) return;
+
+      if (callback.kind === 'error') {
+        Alert.alert('Link expired', callback.message);
+        return;
+      }
+      if (callback.kind === 'confirmed') {
+        Alert.alert('Confirmed', confirmationMessage(callback.type));
+        return;
+      }
+
+      // Recovery: adopt the session, then take over the UI. Order matters — the
+      // flag goes up FIRST, because setSession fires onAuthStateChange and the
+      // gate would otherwise render the app for a frame before flipping.
+      setRecoveryMode(true);
+      const { error } = await supabase.auth.setSession({
+        access_token: callback.accessToken,
+        refresh_token: callback.refreshToken,
+      });
+      if (error && !cancelled) {
+        setRecoveryMode(false);
+        Alert.alert('Link expired', 'That reset link is no longer valid. Request a new one.');
+      }
+    };
+
+    const sub = Linking.addEventListener('url', (e) => void handle(e.url));
+    void Linking.getInitialURL().then(handle);
+    return () => {
+      cancelled = true;
+      sub.remove();
     };
   }, []);
 
@@ -101,6 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    setRecoveryMode(false);
     await supabase.auth.signOut();
   }, []);
 
@@ -111,13 +170,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return token;
   }, []);
 
+  const completeRecovery = useCallback(
+    async (newPassword: string) => {
+      try {
+        const token = await getToken();
+        // Via the backend, not supabase.auth.updateUser: the server owns the
+        // password rules and checks that this really is a recovery session.
+        await authApi.confirmPasswordReset(token, newPassword);
+        // Drop the recovery session rather than continuing into the app on it.
+        // Signing in with the new password is the honest confirmation that it took.
+        setRecoveryMode(false);
+        await supabase.auth.signOut();
+        return { error: null };
+      } catch (e) {
+        return { error: e instanceof Error ? e.message : 'Could not set your password.' };
+      }
+    },
+    [getToken],
+  );
+
+  const cancelRecovery = useCallback(async () => {
+    setRecoveryMode(false);
+    await supabase.auth.signOut();
+  }, []);
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
     loading,
+    recoveryMode,
     signIn,
     signUp,
     resetPassword,
+    completeRecovery,
+    cancelRecovery,
     signOut,
     getToken,
   };

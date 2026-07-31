@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { Alert, Linking, StyleSheet } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import {
@@ -17,6 +17,7 @@ import {
 import { RootNavigator } from '@/navigation/RootNavigator';
 import { AuthNavigator } from '@/navigation/AuthNavigator';
 import { OnboardingNavigator } from '@/navigation/OnboardingNavigator';
+import { ResetPasswordScreen } from '@/screens/auth/ResetPasswordScreen';
 import { UserProvider, useUser } from '@/context/UserContext';
 import { PlanProvider } from '@/context/PlanContext';
 import { AuthProvider, useAuth } from '@/auth/AuthContext';
@@ -42,24 +43,6 @@ function useAdoptServerTheme() {
       setThemePreference(serverTheme);
     }
   }, [serverTheme, setThemePreference]);
-}
-
-/**
- * Supabase email links (change-email / reset confirmations) redirect to
- * gymsync://auth-callback — the verification already happened server-side by
- * the time the app opens, so just acknowledge it.
- */
-function useAuthDeepLinks() {
-  useEffect(() => {
-    const handle = (url: string | null) => {
-      if (url?.startsWith('gymsync://auth-callback')) {
-        Alert.alert('Confirmed', 'Your change has been confirmed.');
-      }
-    };
-    const sub = Linking.addEventListener('url', (e) => handle(e.url));
-    void Linking.getInitialURL().then(handle);
-    return () => sub.remove();
-  }, []);
 }
 
 /**
@@ -98,8 +81,7 @@ function usePendingOnboardingDraft(userId: string | null): DraftGate {
  * stashed onboarding draft survives that and is picked up on a later launch.
  */
 function RootGate() {
-  useAuthDeepLinks();
-  const { loading, session } = useAuth();
+  const { loading, session, recoveryMode } = useAuth();
   const { profile, profileStatus } = useUser();
   const { colors, scheme } = useTheme();
   const draftGate = usePendingOnboardingDraft(session?.user?.id ?? null);
@@ -120,6 +102,10 @@ function RootGate() {
   };
 
   const content = () => {
+    // Recovery outranks everything, including `loading`. A reset link carries a
+    // real session, so any branch below would let the user straight into the app
+    // with their old password still working.
+    if (recoveryMode) return <ResetPasswordScreen />;
     // The draft read resolves faster than the profile GET, so waiting on both
     // adds no visible latency — and prevents a one-frame flash of the wrong
     // branch (questions vs BuildingPlan) before the stash is known.
