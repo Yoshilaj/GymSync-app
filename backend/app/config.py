@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # like and get a fresh budget per request. See app/ratelimit.py.
     trusted_proxy: bool = False
 
+    # Shared cache / rate-limit store. NOT IMPLEMENTED — `RedisCache` in
+    # app/cache.py still raises. The field exists so that setting REDIS_URL is a
+    # loud startup failure rather than a silent no-op: `extra="ignore"` above
+    # means an undeclared REDIS_URL is dropped on the floor, and someone reading
+    # docs/AUTH_SETUP.md could reasonably set it, believe rate limits were now
+    # shared, and scale to several machines. Every limit would then be per
+    # machine. See validate_scaling_settings() in main.py.
+    redis_url: str = ""
+
     # ── Observability ────────────────────────────────────────────────────────
     # Sentry DSN. Empty disables reporting entirely, which is the right default
     # for local work: a dev session produces exactly the noise that makes a

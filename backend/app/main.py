@@ -63,6 +63,27 @@ if settings.sentry_dsn:
     logger.info("sentry enabled (env=%s)", settings.app_env)
 
 
+def validate_scaling_settings() -> None:
+    """Refuse to start if someone configured a shared store that doesn't exist.
+
+    Rate limiting counts in a module-level dict (app/ratelimit.py), so it is only
+    correct while this runs as a single process. The documented way out is Redis,
+    and `RedisCache` in app/cache.py is still a stub that raises — so a REDIS_URL
+    set in good faith buys nothing while looking like it bought everything. That
+    is the dangerous combination: believing limits are shared is what makes it
+    safe-seeming to add a second machine.
+
+    Fail here, where the message can say so, rather than let signup and login
+    budgets quietly multiply by the number of machines.
+    """
+    if settings.redis_url:
+        raise RuntimeError(
+            "REDIS_URL is set, but RedisCache is not implemented (app/cache.py). "
+            "Rate limits are still per-process, so this process must stay the only "
+            "one. Implement RedisCache before scaling out, or unset REDIS_URL."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Before anything else: refuse to start on a billing config that could hand
@@ -70,6 +91,7 @@ async def lifespan(app: FastAPI):
     # Production environment with no App Store ID). A startup crash with a clear
     # message beats discovering it as an entitlement bug.
     validate_billing_settings()
+    validate_scaling_settings()
     await init_db()
     await init_auth_client()
     # Pull the JWT signing keys now so the first authenticated request isn't the one

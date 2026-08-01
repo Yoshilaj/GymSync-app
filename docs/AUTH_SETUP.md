@@ -207,9 +207,16 @@ TRUSTED_PROXY=false
 APP_ENV=production
 ```
 
-Rate limits are in-memory, so with N uvicorn workers a limit of 10 is effectively
-10N. That's fine at one worker, which is where this is today; the fix is the Redis
-path already stubbed in `app/cache.py`.
+Rate limits are in-memory, so with N uvicorn workers — or N Fly machines — a limit
+of 10 is effectively 10N. That's fine at one worker, which is where this is today,
+and both `backend/Dockerfile` (`--workers 1`) and `backend/fly.toml`
+(`auto_stop_machines = false`, one machine) hold it there deliberately.
+
+**Setting `REDIS_URL` does not lift that constraint.** `RedisCache` in
+`app/cache.py` is still a stub that raises, so the process now refuses to start
+when `REDIS_URL` is set rather than pretend the limits became shared — that
+false belief is what would make it feel safe to add a second machine. Implement
+`RedisCache` first, then scale.
 
 ---
 

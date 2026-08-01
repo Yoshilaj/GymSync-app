@@ -1,0 +1,60 @@
+# Fly.io config for the GymSync API.
+#
+# Set the app name with `fly launch --name <name>` on first deploy; it rewrites
+# this line. Region: pick one near your users, not near you.
+
+app = "gymsync-api"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  APP_ENV = "production"
+  # Fly terminates TLS and appends the real client IP as the LAST X-Forwarded-For
+  # hop. app/ratelimit.py reads that hop, but ONLY when this is on — left off,
+  # every request would key on Fly's proxy address and the whole gym would share
+  # one rate-limit bucket.
+  TRUSTED_PROXY = "true"
+  # Must match what the Dockerfile baked into the image. Anything else sends the
+  # first premium search back to HuggingFace at runtime.
+  EMBEDDER = "nomic"
+  RERANKER = "cross_encoder"
+  FASTEMBED_CACHE_PATH = "/opt/models"
+  # The app is native and sends no Origin header, so an empty allow-list costs it
+  # nothing and keeps browsers out. See the CORS note in app/main.py.
+  CORS_ORIGINS = ""
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+
+  # Both false on purpose. This process serves live voice WebSockets, and a
+  # machine that stops under an idle session drops it mid-sentence; a scale-to-
+  # zero cold start also puts several seconds in front of the first request,
+  # which is exactly the impression you don't want during App Review.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # One machine, deliberately. The rate limiter's counters live in process
+  # memory, so a second machine doubles every limit. Scaling out needs the
+  # shared store in app/cache.py first.
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 60
+    hard_limit = 100
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 1GB, not the 256MB default: onnxruntime holds the embedding and reranker
+  # models in memory once a premium search warms them. 256MB gets OOM-killed on
+  # the first one.
+  memory = "1gb"

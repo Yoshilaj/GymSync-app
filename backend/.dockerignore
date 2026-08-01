@@ -1,0 +1,20 @@
+# The venv is 3.14/macOS — copying it in would shadow the image's site-packages
+# with binaries that can't load.
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Secrets never enter the image. Fly injects them as env vars via `fly secrets`,
+# and pydantic-settings reads those directly when no .env file is present.
+.env
+.env.*
+!.env.example
+
+# Build/test noise
+.pytest_cache/
+tests/
+.fastembed_cache/
+
+# Migrations are applied to Supabase by hand, not from the running container.
+supabase/
