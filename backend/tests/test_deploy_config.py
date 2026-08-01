@@ -11,6 +11,7 @@ So these read the deployment files as text and assert against the settings
 defaults. Crude, and deliberately so — it fails when someone edits one side of
 the pair, which is the only way this ever goes wrong.
 """
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -32,8 +33,18 @@ def dockerfile() -> str:
 
 
 @pytest.fixture(scope="module")
-def fly() -> str:
-    return FLY_TOML.read_text() if FLY_TOML.exists() else ""
+def fly() -> dict:
+    """Parsed, not string-matched.
+
+    These assertions used to grep the file text and every one of them broke the
+    first time `fly launch` touched it — flyctl rewrites the config it manages,
+    normalising double quotes to single and `false` to `'off'`. None of that
+    changed a setting; it just changed the spelling. Parse the TOML so the tests
+    check what Fly will actually read.
+    """
+    if not FLY_TOML.exists():
+        return {}
+    return tomllib.loads(FLY_TOML.read_text())
 
 
 def _default(field: str) -> str:
@@ -61,7 +72,7 @@ def test_model_cache_path_is_pinned_and_matches_fly(dockerfile, fly):
     in both places or the baked models are written somewhere the app won't look."""
     assert "FASTEMBED_CACHE_PATH=/opt/models" in dockerfile
     if fly:
-        assert 'FASTEMBED_CACHE_PATH = "/opt/models"' in fly
+        assert fly["env"]["FASTEMBED_CACHE_PATH"] == "/opt/models"
 
 
 def test_single_uvicorn_worker(dockerfile):
@@ -77,7 +88,15 @@ def test_production_enables_trusted_proxy(fly):
     proxy, so every caller shares one bucket."""
     if not fly:
         pytest.skip("no fly.toml")
-    assert 'TRUSTED_PROXY = "true"' in fly
+    assert fly["env"]["TRUSTED_PROXY"] == "true"
+
+
+def test_production_runs_as_production(fly):
+    """APP_ENV gates the billing startup check that refuses locally-signed
+    Apple transactions. Wrong here, and free Premium is one env var away."""
+    if not fly:
+        pytest.skip("no fly.toml")
+    assert fly["env"]["APP_ENV"] == "production"
 
 
 def test_production_sets_the_real_rag_backends(fly):
@@ -85,21 +104,44 @@ def test_production_sets_the_real_rag_backends(fly):
     and must opt in to exactly what the image baked."""
     if not fly:
         pytest.skip("no fly.toml")
-    assert 'EMBEDDER = "nomic"' in fly
-    assert 'RERANKER = "cross_encoder"' in fly
+    assert fly["env"]["EMBEDDER"] == "nomic"
+    assert fly["env"]["RERANKER"] == "cross_encoder"
 
 
 def test_voice_machines_do_not_auto_stop(fly):
-    """A machine that stops under an idle websocket drops a live voice session."""
+    """A machine that stops under an idle websocket drops a live voice session.
+
+    flyctl accepts both the old boolean and the newer 'off' | 'stop' | 'suspend'
+    form, and rewrites false to 'off' when it regenerates the file. Anything that
+    isn't one of those two spellings of "don't" is a regression.
+    """
     if not fly:
         pytest.skip("no fly.toml")
-    assert "auto_stop_machines = false" in fly
+    value = fly["http_service"]["auto_stop_machines"]
+    assert value in (False, "off"), f"machines may auto-stop: {value!r}"
+
+
+def test_one_machine_stays_up(fly):
+    """Paired with the single worker: the rate limiter is per-process, so the
+    count of running machines IS the multiplier on every limit."""
+    if not fly:
+        pytest.skip("no fly.toml")
+    assert fly["http_service"]["min_machines_running"] == 1
+
+
+def test_memory_is_enough_for_the_onnx_models(fly):
+    """256MB is the Fly default and is OOM-killed the first time a premium search
+    loads the embedder and reranker."""
+    if not fly:
+        pytest.skip("no fly.toml")
+    assert fly["vm"][0]["memory"] == "1gb"
 
 
 def test_healthcheck_points_at_the_route_that_exists(fly):
     if not fly:
         pytest.skip("no fly.toml")
-    assert 'path = "/health"' in fly
+    paths = [c["path"] for c in fly["http_service"]["checks"]]
+    assert "/health" in paths
 
 
 # ── The shared-store guard ────────────────────────────────────────────────────
