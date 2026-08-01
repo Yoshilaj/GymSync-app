@@ -77,7 +77,12 @@ primary_region = 'nrt'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  # 1GB, not the 256MB default: onnxruntime holds the embedding and reranker
-  # models in memory once a premium search warms them, and 256MB is OOM-killed
-  # on the first one.
-  memory = '1gb'
+  # 2GB, measured rather than estimated. onnxruntime holds the embedding and
+  # reranker models resident once a premium search warms them; the first real
+  # search on a 1GB machine was OOM-killed at 871MB RSS while still growing.
+  # 256MB (the Fly default) doesn't survive the import, let alone the models.
+  #
+  # This is the single biggest line on the bill — roughly $11/mo against $6 at
+  # 1GB. The way down is to stop serving RAG from inside the API process, not to
+  # shave this number; the models are the memory.
+  memory = '2gb'

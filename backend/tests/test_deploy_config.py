@@ -147,11 +147,19 @@ def test_one_machine_stays_up(fly):
 
 
 def test_memory_is_enough_for_the_onnx_models(fly):
-    """256MB is the Fly default and is OOM-killed the first time a premium search
-    loads the embedder and reranker."""
+    """Measured, not guessed.
+
+    1GB was the first estimate and it was wrong: the first real premium search
+    OOM-killed uvicorn at 871MB RSS while still growing. onnxruntime keeps both
+    the embedder and the reranker resident once warmed, on top of Python, the
+    Anthropic and Supabase clients, and the app itself.
+
+    Anything below 2GB needs a measurement behind it, not an estimate — the
+    failure mode is a killed process under real load, not a startup error.
+    """
     if not fly:
         pytest.skip("no fly.toml")
-    assert fly["vm"][0]["memory"] == "1gb"
+    assert fly["vm"][0]["memory"] == "2gb"
 
 
 def test_healthcheck_points_at_the_route_that_exists(fly):
