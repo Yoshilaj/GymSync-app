@@ -73,7 +73,13 @@
         }
       ],
       "expo-secure-store",
-      "@sentry/react-native"
+      [
+        "@sentry/react-native",
+        {
+          "organization": "gymsync-7s",
+          "project": "gymsync-app"
+        }
+      ]
     ],
     "extra": {
       "eas": {
