@@ -244,3 +244,44 @@ def test_startup_is_happy_without_one(monkeypatch):
 
     monkeypatch.setattr(settings, "redis_url", "", raising=False)
     main.validate_scaling_settings()  # must not raise
+
+
+# ── Schema exposure ───────────────────────────────────────────────────────────
+
+def _app_with_env(monkeypatch, env: str):
+    """Rebuild the FastAPI object under a given APP_ENV.
+
+    The docs flag is read at import time, so flipping the setting afterwards
+    changes nothing — the module has to be re-imported to be tested at all.
+    """
+    import importlib
+
+    from app import config
+
+    monkeypatch.setattr(config.settings, "app_env", env, raising=False)
+    import app.main as main
+
+    return importlib.reload(main).app
+
+
+def test_schema_is_not_public_in_production(monkeypatch):
+    app = _app_with_env(monkeypatch, "production")
+    assert app.docs_url is None
+    assert app.redoc_url is None
+    # The UIs are cosmetic; this is the one that actually publishes the surface.
+    assert app.openapi_url is None
+    paths = {getattr(r, "path", None) for r in app.routes}
+    assert "/openapi.json" not in paths and "/docs" not in paths
+
+
+def test_schema_stays_available_in_development(monkeypatch):
+    app = _app_with_env(monkeypatch, "development")
+    assert app.docs_url == "/docs"
+    assert app.openapi_url == "/openapi.json"
+
+
+def test_health_survives_both(monkeypatch):
+    """Whatever else is hidden, the thing Fly probes must still answer."""
+    for env in ("production", "development"):
+        app = _app_with_env(monkeypatch, env)
+        assert "/health" in {getattr(r, "path", None) for r in app.routes}

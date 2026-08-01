@@ -102,7 +102,27 @@ async def lifespan(app: FastAPI):
     await close_db()
 
 
-app = FastAPI(title="GymSync API", version="0.1.0", lifespan=lifespan)
+# /docs, /redoc and /openapi.json are development tools, and FastAPI serves all
+# three publicly by default. On a laptop that's free convenience; on the open
+# internet it publishes the complete API surface — every route, every request
+# shape — to anyone who asks, including POST /plans/generate-anonymous, the
+# unauthenticated one that spends Anthropic tokens.
+#
+# This is not the security boundary; authorization and rate limiting are, and
+# they don't depend on the schema being secret. But a native-only app has no use
+# for a public schema, so there's nothing to weigh against handing out the map.
+_expose_docs = settings.app_env != "production"
+
+app = FastAPI(
+    title="GymSync API",
+    version="0.1.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _expose_docs else None,
+    redoc_url="/redoc" if _expose_docs else None,
+    # Without this the schema stays reachable even with the UIs switched off,
+    # which is the whole thing we're closing.
+    openapi_url="/openapi.json" if _expose_docs else None,
+)
 
 # CORS. The old setting was allow_origins=["*"] WITH allow_credentials=True — the
 # combination browsers refuse for a reason: it invites any website to make
