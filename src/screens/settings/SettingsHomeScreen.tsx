@@ -158,27 +158,6 @@ export function SettingsHomeScreen() {
         />
       </SettingsGroup>
 
-      {__DEV__ && (
-        <SettingsGroup title="🛠  Developer" inset>
-          <SettingsRow
-            label="Replay onboarding"
-            icon="refresh-outline"
-            value="Preview"
-            chevron
-            onPress={() => nav.navigate('OnboardingPreview')}
-          />
-          {/* Exercises the exact branch the onboarding mount will use: back
-              chevron instead of the modal's X, plus the Skip affordance. */}
-          <SettingsRow
-            label="Pricing (onboarding layout)"
-            icon="pricetag-outline"
-            value="Preview"
-            chevron
-            onPress={() => nav.navigate('Pricing', { context: 'onboarding' })}
-          />
-        </SettingsGroup>
-      )}
-
       <SettingsGroup>
         <DestructiveRow label="Sign out" onPress={confirmSignOut} />
       </SettingsGroup>
