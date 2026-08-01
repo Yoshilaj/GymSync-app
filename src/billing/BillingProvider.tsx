@@ -99,7 +99,27 @@ export function BillingProvider({ children }: { children: ReactNode }) {
   const pending = useRef<{
     resolve: (e: Entitlement) => void;
     reject: (e: unknown) => void;
+    timer: ReturnType<typeof setTimeout>;
   } | null>(null);
+
+  /**
+   * Settle the in-flight purchase exactly once, and always clear its timer.
+   *
+   * Every settle path has to go through here. Resolving or rejecting `pending`
+   * directly leaves the timeout armed, and it fires later against a promise
+   * nobody is waiting on — or worse, against the *next* purchase.
+   */
+  const settlePending = useCallback(
+    (outcome: { ok: true; value: Entitlement } | { ok: false; error: unknown }) => {
+      const p = pending.current;
+      if (!p) return;
+      pending.current = null;
+      clearTimeout(p.timer);
+      if (outcome.ok) p.resolve(outcome.value);
+      else p.reject(outcome.error);
+    },
+    [],
+  );
   const alive = useRef(true);
   // Fingerprints of transactions already settled with the backend this
   // session — see the reconcile effect below. Cleared on account change so a
@@ -138,8 +158,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
             : err.code === ErrorCode.ItemUnavailable
               ? 'unavailable'
               : 'unknown';
-      pending.current?.reject(new BillingError(err.message, code));
-      pending.current = null;
+      settlePending({ ok: false, error: new BillingError(err.message, code) });
     },
   });
 
@@ -158,13 +177,13 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       // Ask to Buy / SCA. Apple has not charged anyone yet and there is nothing
       // to verify; the transaction arrives again once it is approved.
       if (purchase.purchaseState === 'pending') {
-        pending.current?.reject(
-          new BillingError(
+        settlePending({
+          ok: false,
+          error: new BillingError(
             'This purchase needs approval before it can be completed.',
             'unavailable',
           ),
-        );
-        pending.current = null;
+        });
         return { done: false, entitlement: null };
       }
 
@@ -172,10 +191,10 @@ export function BillingProvider({ children }: { children: ReactNode }) {
       if (!jws) {
         // Typed nullable by expo-iap. Without the signed transaction there is
         // nothing the backend could verify, so don't finish it either.
-        pending.current?.reject(
-          new BillingError('This purchase could not be read.', 'unavailable'),
-        );
-        pending.current = null;
+        settlePending({
+          ok: false,
+          error: new BillingError('This purchase could not be read.', 'unavailable'),
+        });
         // Nothing to verify and nothing to finish — but re-reading it every
         // foreground would not make a signature appear either.
         return { done: true, entitlement: null };
@@ -192,8 +211,7 @@ export function BillingProvider({ children }: { children: ReactNode }) {
           setEntitlement(next);
           setStatus('ready');
         }
-        pending.current?.resolve(next);
-        pending.current = null;
+        settlePending({ ok: true, value: next });
         return { done: true, entitlement: next };
       } catch (err) {
         const terminal = err instanceof BillingError && err.terminal;
@@ -203,12 +221,11 @@ export function BillingProvider({ children }: { children: ReactNode }) {
           // the customer can never get past it.
           await finishTransaction({ purchase }).catch(() => {});
         }
-        pending.current?.reject(err);
-        pending.current = null;
+        settlePending({ ok: false, error: err });
         return { done: terminal, entitlement: null };
       }
     },
-    [finishTransaction, getToken],
+    [finishTransaction, getToken, settlePending],
   );
 
   const refresh = useCallback(async () => {
@@ -361,7 +378,37 @@ export function BillingProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        pending.current = { resolve, reject };
+        // A second attempt while one is in flight would orphan the first
+        // promise — its caller would await forever. Settle it first.
+        settlePending({
+          ok: false,
+          error: new BillingError('Purchase superseded by a new attempt.', 'cancelled'),
+        });
+
+        // The escape hatch for a purchase that never comes back.
+        //
+        // This promise settles only when the transaction listener fires. If
+        // StoreKit accepts requestPurchase but emits no transaction the listener
+        // recognises — which is exactly what "You're already subscribed to this"
+        // does — nothing ever settles it. The paywall then sits at
+        // work.kind === 'working' forever, which disables its own Restore, Terms
+        // and Privacy links, and the only way out is force-quitting the app.
+        //
+        // 90s because a legitimate purchase can genuinely take a while: Face ID,
+        // password entry, Ask to Buy, a slow storefront. This is a backstop, not
+        // a deadline.
+        const timer = setTimeout(() => {
+          settlePending({
+            ok: false,
+            error: new BillingError(
+              "The App Store didn't respond. If you were charged, your plan will " +
+                'activate shortly — try Restore.',
+              'unknown',
+            ),
+          });
+        }, 90_000);
+
+        pending.current = { resolve, reject, timer };
         void requestPurchase({
           type: 'subs',
           request: {
@@ -372,11 +419,10 @@ export function BillingProvider({ children }: { children: ReactNode }) {
             apple: { sku: productId, appAccountToken: userId },
           },
         }).catch((err) => {
-          pending.current?.reject(err);
-          pending.current = null;
+          settlePending({ ok: false, error: err });
         });
       }),
-    [connected, products, requestPurchase, userId],
+    [connected, products, requestPurchase, settlePending, userId],
   );
 
   const restore = useCallback(async () => {

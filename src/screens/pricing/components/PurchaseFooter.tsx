@@ -107,12 +107,19 @@ export function PurchaseFooter({
           ) : null}
         </View>
 
+        {/* Restore is disabled while busy — running it against an in-flight
+            purchase is genuinely ambiguous. Terms and Privacy are NOT: they
+            only open a page of text, they can't conflict with anything, and
+            Apple requires them to be reachable from the paywall. Gating them on
+            `busy` meant a purchase that never settled took the legal links down
+            with it, leaving no way to read the terms and no way to restore —
+            which is exactly what happened in testing. */}
         <View style={styles.links}>
           <FooterLink label={restoring ? 'Restoring…' : 'Restore'} onPress={onRestore} disabled={busy} />
           <Dot />
-          <FooterLink label="Terms" onPress={() => onLegal('terms')} disabled={busy} />
+          <FooterLink label="Terms" onPress={() => onLegal('terms')} />
           <Dot />
-          <FooterLink label="Privacy" onPress={() => onLegal('privacy')} disabled={busy} />
+          <FooterLink label="Privacy" onPress={() => onLegal('privacy')} />
         </View>
       </View>
     </View>
