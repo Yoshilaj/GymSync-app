@@ -8,6 +8,7 @@ import React, {
   ReactNode,
 } from 'react';
 import { Alert, AppState, Linking } from 'react-native';
+import * as Sentry from '@sentry/react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import * as authApi from '@/api/auth';
 import { supabase } from './supabase';
@@ -126,6 +127,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       appStateSub.remove();
     };
   }, []);
+
+  // Tell Sentry who a crash happened to — the account id only. Not the email,
+  // not the token: enough to see "this is one user hitting this ten times" or to
+  // match a support message, and nothing that turns the issue feed into a place
+  // personal data accumulates. Cleared on sign-out so reports from a shared
+  // device aren't misattributed to whoever was here last.
+  const userId = session?.user?.id ?? null;
+  useEffect(() => {
+    Sentry.setUser(userId ? { id: userId } : null);
+  }, [userId]);
 
   // Whether this session still owes a second factor. Recomputed whenever the token
   // changes — which includes the moment a successful verify swaps an aal1 session

@@ -44,6 +44,24 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+# Crash reporting. Inert without a DSN, so local work and CI stay silent.
+#
+# send_default_pii stays off deliberately: on it, the SDK attaches request
+# headers and cookies to every event, and this API's Authorization header is a
+# live Supabase access token. An issue tracker is not where those belong.
+if settings.sentry_dsn:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        send_default_pii=False,
+        # Errors only, matching the client. Tracing the voice path would sample
+        # every turn and spend quota we'd rather keep for crashes.
+        traces_sample_rate=0.0,
+    )
+    logger.info("sentry enabled (env=%s)", settings.app_env)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

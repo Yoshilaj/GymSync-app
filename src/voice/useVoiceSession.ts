@@ -15,6 +15,7 @@ import { SileroVad } from './SileroVad';
 import { LevelEmitter, type WaveformSource } from './levels';
 import { AppActionMessage, ServerMessage, VoicePhase } from './protocol';
 import { parseUpgrade, type UpgradeRequired } from '@/billing/upgrade';
+import { warnDegraded } from '@/lib/log';
 
 /** How long a non-fatal notice banner stays up before auto-clearing. */
 const NOTICE_MS = 5000;
@@ -354,7 +355,7 @@ export function useVoiceSession({
       await reassertAudioMode();
       await voiceMic.restart(handleFrame);
     } catch (e) {
-      console.warn('[useVoiceSession] mic re-arm failed', e);
+      warnDegraded('useVoiceSession', 'mic re-arm failed', e);
     }
   }, [handleFrame]);
 

@@ -80,5 +80,11 @@ class Settings(BaseSettings):
     # like and get a fresh budget per request. See app/ratelimit.py.
     trusted_proxy: bool = False
 
+    # ── Observability ────────────────────────────────────────────────────────
+    # Sentry DSN. Empty disables reporting entirely, which is the right default
+    # for local work: a dev session produces exactly the noise that makes a
+    # production issue feed useless.
+    sentry_dsn: str = ""
+
 
 settings = Settings()

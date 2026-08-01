@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import * as Sentry from '@sentry/react-native';
 import { useEffect, useRef, useState } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
@@ -25,7 +26,35 @@ import { AuthProvider, useAuth } from '@/auth/AuthContext';
 import { BillingProvider } from '@/billing/BillingProvider';
 import { LaunchScreen } from '@/components/LaunchScreen';
 import { readPendingStash, type PendingStash } from '@/screens/onboarding/draftStash';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
+
+/**
+ * Crash reporting. Until now a render throw was a white screen nobody could
+ * recover from and nobody heard about; ErrorBoundary fixes the first half, this
+ * fixes the second.
+ *
+ * Off unless a DSN is configured, and off in development — a dev session
+ * generates exactly the noise that makes a production issue feed useless, and
+ * the red box already reports those to the person who caused them.
+ *
+ * Sentry installs its own global error and unhandled-rejection handlers here, so
+ * failures outside React's render tree (a rejected promise in a hook, a socket
+ * callback) are captured too. Don't call ErrorUtils.setGlobalHandler elsewhere
+ * without chaining to the previous handler — it would silently unhook these.
+ */
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
+
+Sentry.init({
+  dsn: SENTRY_DSN,
+  enabled: !!SENTRY_DSN && !__DEV__,
+  // Errors only for now. Tracing on a voice app samples the hot path and costs
+  // quota we'd rather spend on crashes; turn it on deliberately, with a rate.
+  tracesSampleRate: 0,
+  // The user id is set by AuthContext; nothing here should carry a token, an
+  // email, or anything typed into the coach.
+  sendDefaultPii: false,
+});
 
 /**
  * Adopt the theme preference stored on the server profile once, when it
@@ -145,12 +174,17 @@ function RootGate() {
   return (
     <>
       <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      <NavigationContainer theme={navTheme}>{content()}</NavigationContainer>
+      <NavigationContainer theme={navTheme}>
+        {/* Inner boundary: one screen throwing shouldn't take the shell with
+            it. Remounting from here re-runs that screen's fetches and leaves
+            the session, the navigator and the providers alone. */}
+        <ErrorBoundary scope="navigation">{content()}</ErrorBoundary>
+      </NavigationContainer>
     </>
   );
 }
 
-export default function App() {
+function App() {
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -160,29 +194,38 @@ export default function App() {
   });
 
   return (
-    <GestureHandlerRootView style={styles.flex}>
-      <KeyboardProvider>
-        <SafeAreaProvider>
-          <AuthProvider>
-            <UserProvider>
-              <ThemeProvider>
-                <PlanProvider>
-                  {/* Inside AuthProvider because it needs the token, and
-                      mounted exactly once: useIAP opens a native StoreKit
-                      connection and registers transaction listeners, so a
-                      second instance would deliver every purchase twice. */}
-                  <BillingProvider>
-                    {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
-                  </BillingProvider>
-                </PlanProvider>
-              </ThemeProvider>
-            </UserProvider>
-          </AuthProvider>
-        </SafeAreaProvider>
-      </KeyboardProvider>
-    </GestureHandlerRootView>
+    // Outermost, and outside every provider on purpose: PlanContext,
+    // UserContext and BillingProvider each throw when consumed out of order,
+    // and a boundary nested inside them can't catch the stack it lives in.
+    <ErrorBoundary scope="root">
+      <GestureHandlerRootView style={styles.flex}>
+        <KeyboardProvider>
+          <SafeAreaProvider>
+            <AuthProvider>
+              <UserProvider>
+                <ThemeProvider>
+                  <PlanProvider>
+                    {/* Inside AuthProvider because it needs the token, and
+                        mounted exactly once: useIAP opens a native StoreKit
+                        connection and registers transaction listeners, so a
+                        second instance would deliver every purchase twice. */}
+                    <BillingProvider>
+                      {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
+                    </BillingProvider>
+                  </PlanProvider>
+                </ThemeProvider>
+              </UserProvider>
+            </AuthProvider>
+          </SafeAreaProvider>
+        </KeyboardProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
+
+// Sentry.wrap is what attaches the native crash handlers to the running app —
+// init alone doesn't, and a JS-only setup silently misses native crashes.
+export default Sentry.wrap(App);
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },

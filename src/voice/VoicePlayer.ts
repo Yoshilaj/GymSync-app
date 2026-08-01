@@ -22,6 +22,7 @@
 import { AudioPlayer, AudioStatus, createAudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { LevelEmitter } from './levels';
+import { devLog, warnDegraded } from '@/lib/log';
 
 /** Upper bound for one segment (a single sentence). A corrupt file may never
  * fire didJustFinish (AudioStatus carries no error), so the loop must not
@@ -138,9 +139,7 @@ function playFile(file: File, myEpoch: number): Promise<void> {
       if (!sampleSeen) {
         if (!samplingDead) {
           samplingDead = true;
-          console.log(
-            '[VoicePlayer] audioSampleUpdate never fired — using decorative envelope',
-          );
+          devLog('VoicePlayer', 'audioSampleUpdate never fired — using decorative envelope');
         }
         startFallbackEnvelope();
       }
@@ -195,7 +194,7 @@ async function runLoop(): Promise<void> {
     try {
       await playFile(file, myEpoch);
     } catch (e) {
-      console.warn('[VoicePlayer] segment failed, skipping', e);
+      warnDegraded('VoicePlayer', 'segment failed, skipping', e);
     } finally {
       try {
         file.delete();
@@ -247,7 +246,7 @@ export const voicePlayer = {
       queue.push(file);
       playedThisTurn = true;
     } catch (e) {
-      console.warn('[VoicePlayer] failed to stage segment, dropping', e);
+      warnDegraded('VoicePlayer', 'failed to stage segment, dropping', e);
       return;
     }
     if (!loopRunning) void runLoop();

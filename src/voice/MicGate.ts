@@ -24,6 +24,7 @@
  * frame-drop behavior, and the server-side SDK keepalive covers idle timeouts.
  */
 import type { SileroVad } from './SileroVad';
+import { warnDegraded } from '@/lib/log';
 
 export interface MicGateConfig {
   /** Speech probability that opens the gate. */
@@ -218,7 +219,7 @@ export class MicGate {
         this.applyGate(frame, prob);
       } catch (e) {
         // Inference broke mid-session — drop to passthrough for good.
-        console.warn('[MicGate] VAD failed, switching to passthrough:', e);
+        warnDegraded('MicGate', 'VAD failed, switching to passthrough', e);
         this.vad = null;
         if (!this.muted) this.events.send([frame]);
       }

@@ -11,6 +11,7 @@
  * back to continuous streaming — the session never breaks over VAD.
  */
 import { Asset } from 'expo-asset';
+import { devLog, warnDegraded } from '@/lib/log';
 
 /** Samples per inference window at 16kHz (32ms). Fixed by the model. */
 const WINDOW = 512;
@@ -90,7 +91,7 @@ export class SileroVad {
           try {
             await vad.runWindow(new Float32Array(inputLen));
             vad.reset();
-            console.log(`[SileroVad] ready (input=[1,${inputLen}], sr dims=[${srDims}])`);
+            devLog('SileroVad', `ready (input=[1,${inputLen}], sr dims=[${srDims}])`);
             return vad;
           } catch {
             /* try the next variant */
@@ -99,7 +100,7 @@ export class SileroVad {
       }
       throw new Error('No known input variant accepted by the VAD model');
     } catch (e) {
-      console.warn('[SileroVad] unavailable, falling back to continuous streaming:', e);
+      warnDegraded('SileroVad', 'unavailable, falling back to continuous streaming', e);
       return null;
     }
   }
