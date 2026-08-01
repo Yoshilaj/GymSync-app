@@ -7,11 +7,13 @@ it matters.
 
 ## 1. Right now, to test it (≈10 minutes)
 
-### a. Apply migration 013 to Supabase — **required, nothing works without it**
+### a. Migration 013 — **applied, nothing to do**
 
 `backend/supabase/migrations/013_billing.sql` creates the three billing tables and the
-`increment_feature_usage()` function. Until it's applied, every entitlement read fails
-and everyone is Free.
+`increment_feature_usage()` function. Without it every entitlement read fails and
+everyone is Free — but it is applied, verified against the live database 2026-08-01:
+all three tables exist, and calling the RPC reaches its foreign-key constraint, which
+proves the function and the constraint are both live.
 
 Run it in the Supabase SQL editor (or via the Management API route you've used before).
 It is idempotent — `CREATE TABLE IF NOT EXISTS` throughout — so it's safe to re-run.
@@ -24,8 +26,11 @@ where table_schema = 'public'
   and table_name in ('apple_transactions','apple_subscription_owners','feature_usage');
 ```
 
-> The SQL was parsed against the Postgres dialect but **never executed** — there's no local
-> Postgres or Docker on this machine. Applying it is the first real test of it.
+> Historical note: this doc long said the SQL had been parsed but **never executed**, which
+> stayed here after the migration was actually applied and was still misleading readers on
+> 2026-08-01. When you apply a migration, correct its status here in the same sitting —
+> nothing in the repo tracks applied state, so these lines are the only record and a stale
+> one is worse than none.
 
 ### b. Start the backend
 

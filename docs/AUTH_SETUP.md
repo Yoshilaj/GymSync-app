@@ -16,7 +16,8 @@ instead of asking GoTrue on every request (`backend/app/jwt_verify.py`).
 
 ## 2. Apply migration 014
 
-`backend/supabase/migrations/014_profile_on_signup.sql` — **not yet applied.**
+`backend/supabase/migrations/014_profile_on_signup.sql` — **applied** (verified against
+the live database 2026-08-01: 5 auth users, 5 profiles, no gaps).
 
 Creates the `on_auth_user_created` trigger so every new account gets a `profiles`
 row, and backfills anyone missing one. Until it runs, **a social sign-in produces an
@@ -35,7 +36,8 @@ select count(*) from auth.users u
 
 ## 2b. Apply migration 015
 
-`backend/supabase/migrations/015_mfa_flag.sql` — **not yet applied.**
+`backend/supabase/migrations/015_mfa_flag.sql` — **applied** (verified against the live
+database 2026-08-01: `profiles.mfa_enabled` exists).
 
 Adds `profiles.mfa_enabled`, which is how the backend knows a second factor is
 *required* (the token only says whether one was *used*). Until it runs, **two-factor
