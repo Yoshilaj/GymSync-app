@@ -144,6 +144,55 @@ def test_healthcheck_points_at_the_route_that_exists(fly):
     assert "/health" in paths
 
 
+# ── Would this config actually boot? ──────────────────────────────────────────
+
+def test_flys_env_would_pass_the_billing_startup_check(fly, monkeypatch):
+    """Run the real startup validator against the real deployed env block.
+
+    This is the test that was missing. The first deploy crash-looped ten times
+    and failed the release, because `apple_environments` defaults to
+    'Production,Sandbox' and fly.toml didn't override it — so the process asked
+    Apple for a Production verifier, which cannot be built without the numeric
+    APPLE_APP_ID that doesn't exist until the App Store record does.
+
+    Every individual setting looked right. The combination didn't, and nothing
+    checked the combination until Fly did, in production, out loud.
+    """
+    if not fly:
+        pytest.skip("no fly.toml")
+
+    from app.billing import apple
+
+    # _env_file=None is the whole point: the container has no .env, so every
+    # field not in fly.toml takes its declared default. Reading the developer's
+    # local .env here would have hidden this bug and invented a different one —
+    # APPLE_ALLOW_LOCAL_TESTING is true locally and must never be true on Fly.
+    deployed = Settings(
+        _env_file=None,
+        # Stand-ins for the six required secrets, which live in `fly secrets`.
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="x",
+        supabase_anon_key="x",
+        anthropic_api_key="x",
+        deepgram_api_key="x",
+        elevenlabs_api_key="x",
+        **{k.lower(): v for k, v in fly["env"].items() if k.lower() in Settings.model_fields},
+    )
+    monkeypatch.setattr(apple, "settings", deployed)
+
+    apple.validate_billing_settings()  # must not raise
+
+
+def test_production_does_not_accept_unsigned_transactions(fly):
+    """Sandbox and Production are signed; Xcode and LocalTesting are not. An
+    unsigned environment here would hand out Premium to anyone who can POST."""
+    if not fly:
+        pytest.skip("no fly.toml")
+    envs = fly["env"].get("APPLE_ENVIRONMENTS", "")
+    assert "Xcode" not in envs and "LocalTesting" not in envs
+    assert "APPLE_ALLOW_LOCAL_TESTING" not in fly["env"]
+
+
 # ── The shared-store guard ────────────────────────────────────────────────────
 
 def test_redis_url_is_a_declared_setting():

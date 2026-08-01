@@ -71,11 +71,28 @@ fly secrets set APPLE_BUNDLE_ID="com.yoshinishikawahara.gymsync"
 because `RedisCache` in `app/cache.py` is still a stub and setting it would
 imply rate limits are shared across processes when they are not.
 
-**Do not set `APPLE_ALLOW_LOCAL_TESTING`, and leave `APPLE_ENVIRONMENTS` alone
-until the App Store record exists.** `APP_ENV=production` is already set in
-`fly.toml`, and `validate_billing_settings()` refuses to start a production
-process that would accept locally-signed Xcode transactions. That refusal is
-the feature — it's what stops free Premium.
+**Do not set `APPLE_ALLOW_LOCAL_TESTING`.** It's true in your local `.env` and
+must never be true on Fly — `validate_billing_settings()` refuses to start a
+production process that would accept locally-signed Xcode transactions as real
+purchases. That refusal is the feature; it's what stops free Premium.
+
+**`APPLE_ENVIRONMENTS` is set to `Sandbox` in `fly.toml`, and must stay that way
+until the App Store record exists.** It is config, not a secret, so it belongs
+there rather than in `fly secrets`. The default in `app/config.py` is
+`Production,Sandbox`, and Apple's `SignedDataVerifier` cannot build a Production
+verifier without the numeric `APPLE_APP_ID` — which doesn't exist yet. Leaving it
+unset is what crash-looped the first deploy: ten restarts, then a failed release.
+
+Once the App Store Connect record exists:
+
+```bash
+fly secrets set APPLE_APP_ID="<numeric id>"
+# then change APPLE_ENVIRONMENTS to 'Production,Sandbox' in fly.toml and redeploy
+```
+
+`backend/tests/test_deploy_config.py` now runs the real startup validator against
+the real `fly.toml` env block, so this specific mistake fails in `pytest` instead
+of in production.
 
 Verify (this prints names only, never values):
 
