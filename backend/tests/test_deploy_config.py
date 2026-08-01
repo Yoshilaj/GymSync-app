@@ -75,6 +75,23 @@ def test_model_cache_path_is_pinned_and_matches_fly(dockerfile, fly):
         assert fly["env"]["FASTEMBED_CACHE_PATH"] == "/opt/models"
 
 
+def test_model_cache_is_writable_by_the_runtime_user(dockerfile):
+    """The cache must be chowned to the app user, not left owned by root.
+
+    Baking the models as root and then running as uid 10001 leaves them readable
+    but not writable — and huggingface_hub writes tree-cache metadata on every
+    model load. In production that surfaced as "Permission denied", a stalled
+    load, and a failed Fly health check, on the first premium search. Read-only
+    looks like it works until it very suddenly doesn't.
+    """
+    chown_lines = [ln for ln in dockerfile.splitlines() if "chown" in ln]
+    assert chown_lines, "nothing is chowned; the app runs as root"
+    assert any("/opt/models" in ln for ln in chown_lines), (
+        "the model cache isn't chowned to the runtime user — huggingface_hub "
+        "needs write access to it, not just read"
+    )
+
+
 def test_single_uvicorn_worker(dockerfile):
     """app/ratelimit.py counts in a module-level dict: N workers = N x every limit."""
     assert '"--workers", "1"' in dockerfile, (

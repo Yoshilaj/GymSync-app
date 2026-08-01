@@ -48,10 +48,19 @@ print('model cache warmed')"
 
 COPY app ./app
 
-# Drop privileges. The app writes nothing to disk at runtime — the model cache is
-# read-only after build — so an unprivileged user costs nothing.
+# Drop privileges.
+#
+# /opt/models MUST be chowned too, not just /app. The models are downloaded above
+# as root; the app then runs as uid 10001 and can read them but not write. That
+# is not enough: huggingface_hub writes tree-cache metadata every time it loads a
+# model, so a root-owned cache produces
+#
+#   Ignoring corrupted tree cache file ...: [Errno 13] Permission denied
+#
+# and the load stalls long enough to fail Fly's health check. Read-only looks
+# sufficient right up until the first premium search in production.
 RUN useradd --create-home --uid 10001 gymsync \
-    && chown -R gymsync:gymsync /app
+    && chown -R gymsync:gymsync /app /opt/models
 USER gymsync
 
 EXPOSE 8000
