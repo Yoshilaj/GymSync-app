@@ -18,16 +18,19 @@ primary_region = 'nrt'
   # process that would accept locally-signed Xcode transactions as real
   # purchases. Getting this wrong is free Premium for anyone who asks.
   APP_ENV = 'production'
-  # MUST be set, and must NOT include Production yet. The default in
-  # app/config.py is 'Production,Sandbox', and Apple's SignedDataVerifier cannot
-  # construct a Production verifier without the numeric APPLE_APP_ID — which
-  # doesn't exist until the App Store Connect record does. Leaving this unset is
-  # what crash-looped the very first deploy.
+  # Both signed environments. Order matters only as verification order.
   #
-  # When the app record exists: set APPLE_APP_ID as a secret, then change this to
-  # 'Production,Sandbox'. Not before — Sandbox alone is correct for TestFlight
-  # and for real sandbox testers.
-  APPLE_ENVIRONMENTS = 'Sandbox'
+  # Production requires the numeric APPLE_APP_ID (set via `fly secrets`, not
+  # here — it's an identifier, but it lives with the other Apple settings).
+  # Without it Apple's SignedDataVerifier refuses to construct, which is what
+  # crash-looped the first deploy when this key was absent and the config.py
+  # default 'Production,Sandbox' applied.
+  #
+  # Sandbox is what TestFlight builds and sandbox testers produce; Production is
+  # what real App Store purchases produce. Both are Apple-signed and safe to
+  # accept. Xcode and LocalTesting are NOT — they're unsigned, and the startup
+  # check refuses them whenever APP_ENV is production.
+  APPLE_ENVIRONMENTS = 'Production,Sandbox'
   # Empty on purpose. The app is native and a React Native fetch sends no Origin
   # header, so an empty allow-list costs it nothing and keeps browsers out.
   CORS_ORIGINS = ''

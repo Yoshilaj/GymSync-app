@@ -167,20 +167,48 @@ def test_flys_env_would_pass_the_billing_startup_check(fly, monkeypatch):
     # field not in fly.toml takes its declared default. Reading the developer's
     # local .env here would have hidden this bug and invented a different one —
     # APPLE_ALLOW_LOCAL_TESTING is true locally and must never be true on Fly.
+    secrets = {
+        # Stand-ins for the secrets, which live in `fly secrets`, not fly.toml.
+        "supabase_url": "https://example.supabase.co",
+        "supabase_service_role_key": "x",
+        "supabase_anon_key": "x",
+        "anthropic_api_key": "x",
+        "deepgram_api_key": "x",
+        "elevenlabs_api_key": "x",
+    }
+    # APPLE_APP_ID is only required once Production is in the environment list —
+    # so model it exactly that way rather than always supplying it. Get this
+    # backwards and the test passes while the deploy crash-loops, which is the
+    # failure this whole file exists to prevent.
+    if "Production" in fly["env"].get("APPLE_ENVIRONMENTS", ""):
+        secrets["apple_app_id"] = 6796369704
+
     deployed = Settings(
         _env_file=None,
-        # Stand-ins for the six required secrets, which live in `fly secrets`.
-        supabase_url="https://example.supabase.co",
-        supabase_service_role_key="x",
-        supabase_anon_key="x",
-        anthropic_api_key="x",
-        deepgram_api_key="x",
-        elevenlabs_api_key="x",
+        **secrets,
         **{k.lower(): v for k, v in fly["env"].items() if k.lower() in Settings.model_fields},
     )
     monkeypatch.setattr(apple, "settings", deployed)
 
     apple.validate_billing_settings()  # must not raise
+
+
+def test_production_verification_needs_the_app_id_secret(fly):
+    """A reminder with teeth: listing Production here is a promise that
+    APPLE_APP_ID exists in `fly secrets`. Nothing in the repo can see Fly's
+    secret store, so this test can't verify it — it exists so that adding
+    Production is a deliberate act with a visible obligation attached.
+
+    If this fails after a deploy, run:  fly secrets set APPLE_APP_ID=<numeric id>
+    """
+    if not fly:
+        pytest.skip("no fly.toml")
+    envs = fly["env"].get("APPLE_ENVIRONMENTS", "")
+    if "Production" not in envs:
+        pytest.skip("Production not configured; APPLE_APP_ID not required yet")
+    # The obligation is documented in DEPLOY.md; assert it's still written down.
+    deploy_doc = (BACKEND.parent / "docs" / "DEPLOY.md").read_text()
+    assert "APPLE_APP_ID" in deploy_doc
 
 
 def test_production_does_not_accept_unsigned_transactions(fly):

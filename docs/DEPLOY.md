@@ -76,19 +76,24 @@ must never be true on Fly — `validate_billing_settings()` refuses to start a
 production process that would accept locally-signed Xcode transactions as real
 purchases. That refusal is the feature; it's what stops free Premium.
 
-**`APPLE_ENVIRONMENTS` is set to `Sandbox` in `fly.toml`, and must stay that way
-until the App Store record exists.** It is config, not a secret, so it belongs
-there rather than in `fly secrets`. The default in `app/config.py` is
-`Production,Sandbox`, and Apple's `SignedDataVerifier` cannot build a Production
-verifier without the numeric `APPLE_APP_ID` — which doesn't exist yet. Leaving it
-unset is what crash-looped the first deploy: ten restarts, then a failed release.
-
-Once the App Store Connect record exists:
+**`APPLE_APP_ID` is required**, because `fly.toml` lists `Production` in
+`APPLE_ENVIRONMENTS`:
 
 ```bash
-fly secrets set APPLE_APP_ID="<numeric id>"
-# then change APPLE_ENVIRONMENTS to 'Production,Sandbox' in fly.toml and redeploy
+fly secrets set APPLE_APP_ID="6796369704"
 ```
+
+This is the **numeric App Store ID** — App Store Connect shows it as "Apple ID"
+under App Information → General Information. It is not your login Apple ID, and
+not the Bundle ID. Apple's `SignedDataVerifier` refuses to construct a Production
+verifier without it, and the server refuses to start rather than defer that to
+someone's first purchase. That pairing is what crash-looped the very first
+deploy, when `APPLE_ENVIRONMENTS` was unset and the `config.py` default
+`'Production,Sandbox'` applied with no App ID behind it.
+
+If you ever need to run before the App Store record exists, set
+`APPLE_ENVIRONMENTS = 'Sandbox'` in `fly.toml` instead and drop the secret —
+Sandbox is what TestFlight and sandbox testers produce, and it needs no App ID.
 
 `backend/tests/test_deploy_config.py` now runs the real startup validator against
 the real `fly.toml` env block, so this specific mistake fails in `pytest` instead
