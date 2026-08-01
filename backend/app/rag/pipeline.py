@@ -108,6 +108,9 @@ async def search(args: dict, ctx) -> dict:
     if cache is not None:
         hit = await cache.get(key)
         if hit is not None:
+            logger.info(
+                "knowledge_search cached: %d chunks for %r", hit.get("chunk_count", 0), query[:60]
+            )
             return hit  # hit → return cached; miss → continue
 
     try:
@@ -121,6 +124,16 @@ async def search(args: dict, ctx) -> dict:
         "citations": [asdict(c) for c in result.citations],
         "chunk_count": len(result.chunks),
     }
+    # Success was silent before this — only failures logged. That made "the RAG
+    # answered" indistinguishable from "the model answered from its own
+    # knowledge and never called the tool", which is exactly the question you
+    # ask when verifying the corpus is actually wired up in production.
+    logger.info(
+        "knowledge_search: %d chunks, %d citations for %r",
+        len(result.chunks),
+        len(result.citations),
+        query[:60],
+    )
     if cache is not None:
         await cache.set(key, payload, ttl_s=settings.knowledge_cache_ttl_s)
     return payload
