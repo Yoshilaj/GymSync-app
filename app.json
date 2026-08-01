@@ -52,7 +52,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "GymSync uses your photos so you can set a profile picture."
+          "photosPermission": "GymSync uses your photos so you can set a profile picture.",
+          "cameraPermission": false
         }
       ],
       [
