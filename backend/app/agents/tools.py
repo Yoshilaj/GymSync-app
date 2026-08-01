@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 
 from supabase import AsyncClient
 
+from app.units import format_weight, to_kg
+
 
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -52,7 +54,9 @@ TOOL_DEFINITIONS = [
             "60'). Appends the next set by default; pass set_number when the user "
             "names a specific set, which OVERWRITES it if already logged (that is "
             "how corrections work). Never call this for stated intentions about a "
-            "future set."
+            "future set. The result carries `confirm_weight` — say that phrasing "
+            "back verbatim when you acknowledge the set, so a mis-heard number or "
+            "a unit that doesn't match their settings is caught immediately."
         ),
         "input_schema": {
             "type": "object",
@@ -64,7 +68,11 @@ TOOL_DEFINITIONS = [
                 "weight_unit": {
                     "type": "string",
                     "enum": ["kg", "lbs"],
-                    "description": "Only when the user says it — omitted, the user's profile unit applies.",
+                    "description": (
+                        "The unit the user SAID, whenever they said one ('75 kilos' -> kg, "
+                        "'two plates' -> omit). Omitted, their profile unit is assumed. "
+                        "Getting this wrong stores the wrong lift, so pass it when you heard it."
+                    ),
                 },
                 "set_number": {
                     "type": "integer",
@@ -861,16 +869,21 @@ async def execute_tool(
             "set_index": set_index,
             "reps": args["reps"],
         }
+        spoken_unit: str | None = None
+        profile_unit = "lbs"
         if "weight" in args:
-            row["weight"] = args["weight"]
-            unit = args.get("weight_unit")
-            if unit is None:
-                # The model rarely hears a unit — default to the user's profile.
-                prof = await ctx.db.table("profiles").select("units").eq(
-                    "user_id", ctx.user_id
-                ).limit(1).execute()
-                unit = (prof.data[0].get("units") if prof.data else None) or "lbs"
-            row["weight_unit"] = unit
+            # The unit the user's app displays. Needed either way: to interpret a
+            # bare number, and to tell them what a stated unit converts to.
+            prof = await ctx.db.table("profiles").select("units").eq(
+                "user_id", ctx.user_id
+            ).limit(1).execute()
+            profile_unit = (prof.data[0].get("units") if prof.data else None) or "lbs"
+            # Said out loud, or implied by their settings.
+            spoken_unit = args.get("weight_unit") or profile_unit
+            # Stored in kilograms, always — see 017 and app/units.py. Storing the
+            # spoken unit is what let 75kg outrank 165lbs in the PR check.
+            row["weight"] = to_kg(float(args["weight"]), spoken_unit)
+            row["weight_unit"] = "kg"
         # Upsert on the slot key (012): a correction updates only the columns
         # present here, so an omitted weight survives a reps-only correction.
         await ctx.db.table("completed_sets").upsert(
@@ -888,17 +901,33 @@ async def execute_tool(
             "action": "log_set",
             "exercise": exercise_name,
             "reps": args["reps"],
-            "weight": args.get("weight"),
+            # Kilograms, matching what was stored. The client converts for
+            # display. This used to send the raw spoken number with no unit at
+            # all, so "75 kg" rendered as "75 lbs" in a pounds session.
+            "weight": row.get("weight"),
+            "weight_unit": "kg" if "weight" in row else None,
             "set_index": set_index,
             "mode": mode,
         })
         status = "set_corrected" if mode == "corrected" else "set_logged"
-        return {
+        result = {
             "status": status,
             "set_number": set_index + 1,
             "set_index": set_index,
             **args,
-        }, ctx.app_actions
+        }
+        if "weight" in row:
+            # What the coach should say back. When the spoken unit differs from
+            # the one their app shows, name both — saying "kg" while the app is
+            # in pounds is usually a slip, and hearing the conversion is how the
+            # user catches it without being interrogated mid-set.
+            result["confirm_weight"] = (
+                f"{format_weight(row['weight'], spoken_unit)} "
+                f"({format_weight(row['weight'], profile_unit)})"
+                if spoken_unit != profile_unit
+                else format_weight(row["weight"], profile_unit)
+            )
+        return result, ctx.app_actions
 
     if name == "add_exercise_to_session":
         if not ctx.session_id:

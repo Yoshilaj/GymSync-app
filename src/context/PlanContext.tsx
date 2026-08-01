@@ -52,6 +52,10 @@ const PlanContext = createContext<PlanContextValue | undefined>(undefined);
 export function PlanProvider({ children }: { children: ReactNode }) {
   const { session, getToken } = useAuth();
   const { profile } = useUser();
+  // Plan target weights arrive as kilograms and are converted at the API
+  // boundary (see toWeeklyPlan) — this is the only place that knows which unit
+  // to convert into, so it's threaded from here rather than read per screen.
+  const units = profile?.units === 'kg' ? 'kg' : 'lbs';
   const [plan, setPlan] = useState<WeeklyPlan | null>(null);
   const [status, setStatus] = useState<PlanStatus>('loading');
 
@@ -82,7 +86,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const token = await getToken();
-      const fetched = await fetchActivePlan(token);
+      const fetched = await fetchActivePlan(token, units);
       planRef.current = fetched;
       setPlan(fetched);
       setStatus(fetched ? 'ready' : 'empty');
@@ -105,7 +109,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
       const token = await getToken();
       let created;
       try {
-        created = await addPlanExercise(token, workoutId, ex);
+        created = await addPlanExercise(token, workoutId, ex, units);
       } catch (err) {
         // 409 = the plan was replaced elsewhere; resync so the screen stops
         // lying. A 422 (duplicate) leaves the plan correct, so refetching it

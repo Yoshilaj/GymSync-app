@@ -44,6 +44,7 @@ import { useOnboarding } from './OnboardingContext';
 import { matchCoach } from './coachMatch';
 import { GOALS } from './options';
 import { isUpgradeError } from '@/billing/upgrade';
+import { useUser } from '@/context/UserContext';
 
 /** Loose, like PricingRoutes' — the onboarding stack has no exported param list. */
 type OnboardingNav = NativeStackNavigationProp<Record<string, object | undefined>>;
@@ -125,6 +126,9 @@ export function GhostCard() {
 
 export function BuildingPlanScreen() {
   const styles = useStyles();
+  // Plan weights come back in kilograms; accepting converts them into whatever
+  // unit this user reads in.
+  const { user } = useUser();
   const { colors } = useTheme();
   // Only used to reach this stack's own Pricing route on a quota refusal. The
   // app-wide useUpgradePrompt is no help here — it dispatches through
@@ -278,7 +282,7 @@ export function BuildingPlanScreen() {
       if (!acceptedRef.current) {
         const token = await getToken();
         if (!token) throw new Error('Not signed in.');
-        await acceptPlanProposal(token, proposalId);
+        await acceptPlanProposal(token, proposalId, user.units);
         await refresh();
         acceptedRef.current = true;
       }

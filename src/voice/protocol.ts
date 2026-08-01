@@ -61,7 +61,14 @@ export type AppActionMessage =
       action: 'log_set';
       exercise: string;
       reps: number;
+      /**
+       * KILOGRAMS, always — the server's canonical unit (migration 017).
+       * Convert before showing it. This carried the raw spoken number and no
+       * unit at all until 017, so "75 kg" rendered as 75 in a pounds session.
+       */
       weight: number | null;
+      /** Always 'kg' when weight is present. Present so the unit is never implied. */
+      weight_unit?: 'kg' | null;
       /** Authoritative 0-based slot the server wrote (absent on older servers). */
       set_index?: number;
       /** 'corrected' = an existing set was overwritten — don't start rest. */

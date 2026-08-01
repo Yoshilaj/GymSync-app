@@ -294,7 +294,7 @@ export function SyncChatScreen() {
       chat.setProposalStatus(item.id, 'accepting');
       try {
         const token = await getToken();
-        await acceptPlanProposal(token, item.proposalId);
+        await acceptPlanProposal(token, item.proposalId, user.units);
         // The Plan tab must show the new plan IMMEDIATELY — no app restart.
         await refreshPlan();
         chat.setProposalStatus(item.id, 'accepted');

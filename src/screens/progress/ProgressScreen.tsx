@@ -464,9 +464,22 @@ function ExerciseTrends({
   const ex = resolvePlannedExercise(exerciseId);
 
   // Real logged history only, as daily points for the interactive chart.
+  //
+  // The server computes both metrics from stored weights, which are kilograms
+  // (migration 017) — estimated 1RM directly, volume as reps x weight. Both
+  // therefore scale with the unit, and both need converting for a lbs user.
+  // The body-weight chart below has always done this; this one didn't, because
+  // the stored unit used to be whatever the user happened to log in.
   const points = useMemo(
-    () => series.map((p) => ({ day: p.date, value: p.value })),
-    [series],
+    () =>
+      series.map((p) => ({
+        day: p.date,
+        value:
+          user.units === 'kg'
+            ? Math.round(p.value * 10) / 10
+            : Math.round(kgToLbs(p.value) * 10) / 10,
+      })),
+    [series, user.units],
   );
 
   const hasEnough = points.length >= 2;

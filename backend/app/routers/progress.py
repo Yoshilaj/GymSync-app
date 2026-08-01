@@ -22,6 +22,7 @@ from app import plan_store
 from app.auth import get_current_user_id
 from app.database import get_db
 from app.session_store import assert_session_owner
+from app.units import to_kg
 
 router = APIRouter(tags=["progress"])
 
@@ -69,8 +70,11 @@ async def log_set(
         "reps": body.reps,
     }
     if body.weight is not None:
-        row["weight"] = body.weight
-        row["weight_unit"] = body.weight_unit
+        # Kilograms on the way in — see 017 and app/units.py. The client sends
+        # whatever unit it displays; storing that verbatim is what made PR
+        # detection compare 75kg against 165lbs as though they were comparable.
+        row["weight"] = to_kg(body.weight, body.weight_unit)
+        row["weight_unit"] = "kg"
     # Upsert on the slot key (migration 012): re-toggling a set updates the
     # existing row instead of stacking duplicates.
     res = await db.table("completed_sets").upsert(

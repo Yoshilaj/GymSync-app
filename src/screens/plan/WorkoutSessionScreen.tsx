@@ -45,6 +45,7 @@ import { useBilling } from '@/billing/BillingProvider';
 import { isUpgradeError, type UpgradeRequired } from '@/billing/upgrade';
 import { addSessionNote, type SessionNote } from '@/api/session';
 import { SessionNoteSheet } from './SessionNoteSheet';
+import { kgToLbs } from '@/lib/units';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
 type RouteP = RouteProp<PlanStackParamList, 'WorkoutSession'>;
@@ -138,6 +139,19 @@ function WorkoutSessionActive() {
   const nav = useNavigation<Nav>();
   const route = useRoute<RouteP>();
   const { user } = useUser();
+
+  /**
+   * Server weights are kilograms, always (migration 017). Everything on this
+   * screen is shown in the unit the user picked, so convert once, here.
+   *
+   * Before this, the raw stored number was rendered as-is: a set logged by
+   * voice as "75 kg" appeared as "75" next to a lbs label.
+   */
+  const toDisplayWeight = useCallback(
+    (kg: number | null | undefined): number =>
+      kg == null ? 0 : user.units === 'kg' ? Math.round(kg * 10) / 10 : kgToLbs(kg),
+    [user.units],
+  );
   const { user: authUser, getToken } = useAuth();
 
   const { plan, todaysWorkout, getWorkoutById } = usePlan();
@@ -240,7 +254,7 @@ function WorkoutSessionActive() {
                   id: newSetId(),
                   exerciseId: meta?.id ?? '',
                   targetReps: action.reps,
-                  weight: action.weight ?? 0,
+                  weight: toDisplayWeight(action.weight),
                   achievedReps: action.reps,
                   completed: true,
                 },
@@ -266,7 +280,7 @@ function WorkoutSessionActive() {
                   id: newSetId(),
                   exerciseId: last?.exerciseId ?? '',
                   targetReps: action.reps,
-                  weight: action.weight ?? last?.weight ?? 0,
+                  weight: action.weight != null ? toDisplayWeight(action.weight) : (last?.weight ?? 0),
                   achievedReps: action.reps,
                   completed: true,
                 },
@@ -280,7 +294,7 @@ function WorkoutSessionActive() {
                 ? {
                     ...s,
                     achievedReps: action.reps,
-                    weight: action.weight ?? s.weight,
+                    weight: action.weight != null ? toDisplayWeight(action.weight) : s.weight,
                     completed: true,
                   }
                 : s,
@@ -293,7 +307,7 @@ function WorkoutSessionActive() {
       if (!corrected) actions.startRest(DEFAULT_REST_SECONDS);
       const detail =
         action.weight != null
-          ? `${action.reps} × ${action.weight}`
+          ? `${action.reps} × ${toDisplayWeight(action.weight)}`
           : `${action.reps} reps`;
       pushToast(
         corrected
@@ -508,7 +522,7 @@ function WorkoutSessionActive() {
                 exerciseId: s.exerciseId ?? e.exercise_id ?? '',
                 targetReps: s.targetReps ?? 10,
                 repsHigh: s.repsHigh,
-                weight: s.weight ?? 0,
+                weight: toDisplayWeight(s.weight),
               })),
             };
           })

@@ -5,6 +5,10 @@
  * module maps it into the client's WeeklyPlan type so every screen keeps
  * consuming the shape it always has.
  */
+import { kgToLbs } from '@/lib/units';
+
+type WeightUnit = 'kg' | 'lbs';
+
 import { voiceConfig } from '@/voice/config';
 import { ApiError, authedFetch } from './client';
 import { parseUpgrade, UpgradeRequiredError } from '@/billing/upgrade';
@@ -132,7 +136,17 @@ async function raiseForStatus(res: Response, label: string): Promise<never> {
  * appending a single exercise can't drift on the ad-hoc id fallback or the
  * null-weight coercion.
  */
-function toPlannedExercise(ex: ServerPlanExercise): PlannedExercise {
+/**
+ * Server target weights are kilograms (migration 017) — they're seeded from the
+ * user's own logged sets, which are canonical kg. Convert once, here, so no
+ * screen has to remember: this file is the only boundary plan data crosses.
+ */
+function displayWeight(kg: number | null | undefined, units: WeightUnit): number {
+  if (kg == null) return 0;
+  return units === 'kg' ? Math.round(kg * 10) / 10 : kgToLbs(kg);
+}
+
+function toPlannedExercise(ex: ServerPlanExercise, units: WeightUnit): PlannedExercise {
   // Uncatalogued exercises have no exercise_id; synthesize a stable key so
   // resolvePlannedExercise can still find them by name.
   const exerciseId = ex.exercise_id ?? `name:${ex.exercise_name}`;
@@ -146,18 +160,18 @@ function toPlannedExercise(ex: ServerPlanExercise): PlannedExercise {
       exerciseId: s.exerciseId || exerciseId,
       targetReps: s.targetReps,
       repsHigh: s.repsHigh,
-      weight: s.weight ?? 0,
+      weight: displayWeight(s.weight, units),
     })),
   };
 }
 
-export function toWeeklyPlan(tree: ServerPlanTree): WeeklyPlan {
+export function toWeeklyPlan(tree: ServerPlanTree, units: WeightUnit): WeeklyPlan {
   const workouts: PlannedWorkout[] = tree.workouts.map((w) => ({
     id: w.id,
     dayLabel: canonDayLabel(w.day_label),
     title: w.title,
     estMinutes: w.est_minutes ?? 45,
-    exercises: w.exercises.map(toPlannedExercise),
+    exercises: w.exercises.map((e) => toPlannedExercise(e, units)),
   }));
 
   const trainingDays = new Set(workouts.map((w) => w.dayLabel));
@@ -170,9 +184,12 @@ export function toWeeklyPlan(tree: ServerPlanTree): WeeklyPlan {
 }
 
 /** The user's active plan, or null when none exists yet. */
-export async function fetchActivePlan(token: string): Promise<WeeklyPlan | null> {
+export async function fetchActivePlan(
+  token: string,
+  units: WeightUnit,
+): Promise<WeeklyPlan | null> {
   const data = await request<{ plan: ServerPlanTree | null }>(token, 'GET', '/plans/active');
-  return data.plan ? toWeeklyPlan(data.plan) : null;
+  return data.plan ? toWeeklyPlan(data.plan, units) : null;
 }
 
 /**
@@ -184,6 +201,7 @@ export async function addPlanExercise(
   token: string,
   workoutId: string,
   input: { exerciseId: string | null; exerciseName: string; note?: string },
+  units: WeightUnit,
 ): Promise<PlannedExercise> {
   const data = await request<{ exercise: ServerPlanExercise }>(
     token,
@@ -195,7 +213,7 @@ export async function addPlanExercise(
       note: input.note ?? null,
     },
   );
-  return toPlannedExercise(data.exercise);
+  return toPlannedExercise(data.exercise, units);
 }
 
 /**
@@ -219,13 +237,14 @@ export async function deletePlanExercise(
 export async function acceptPlanProposal(
   token: string,
   proposalId: string,
+  units: WeightUnit,
 ): Promise<WeeklyPlan> {
   const data = await request<{ plan: ServerPlanTree }>(
     token,
     'POST',
     `/plans/proposals/${proposalId}/accept`,
   );
-  return toWeeklyPlan(data.plan);
+  return toWeeklyPlan(data.plan, units);
 }
 
 export interface GeneratedProposal {
