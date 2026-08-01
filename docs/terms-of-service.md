@@ -1,7 +1,7 @@
 # Terms of Service for GymSync
 
-**Effective Date:** July 30, 2026
-**Last Updated:** July 30, 2026
+**Effective Date:** August 1, 2026
+**Last Updated:** August 1, 2026
 
 Please read these Terms of Service ("Terms") carefully before using GymSync ("the App"), operated by Yoshiharu Nishikawahara ("we," "our," "us," or "GymSync").
 
@@ -17,7 +17,7 @@ By accessing or using GymSync, you confirm that you are at least 13 years of age
 
 ## 2. Changes to the App or These Terms
 
-We may modify, update, or discontinue any feature or functionality of GymSync at any time, without liability, including changes required by our service providers (Apple, Supabase, Anthropic, or ElevenLabs).
+We may modify, update, or discontinue any feature or functionality of GymSync at any time, without liability, including changes required by our service providers (Apple, Supabase, Anthropic, Deepgram, or ElevenLabs).
 
 We may update these Terms from time to time. When we make material changes, we will update the "Last Updated" date above and, where reasonably practicable, notify you through the App. Continued use of GymSync after changes are posted constitutes acceptance of the updated Terms. If you disagree with a change, your only remedy is to stop using GymSync and delete your account.
 
@@ -111,7 +111,7 @@ GymSync offers a free tier and two paid subscription tiers (Pro and Premium), pu
 
 ## 10. Third-Party Services
 
-GymSync relies on third-party services (Supabase, Anthropic, ElevenLabs, and Apple) to operate, as described in our [Privacy Policy](./privacy-policy.md). We are not responsible for the accuracy, availability, or performance of these third-party services, and your use of them (to the extent you interact with them directly) is subject to their own terms.
+GymSync relies on third-party services (Supabase, Anthropic, Deepgram, ElevenLabs, Sentry, Apple, and Google) to operate, as described in our [Privacy Policy](./privacy-policy.md). We are not responsible for the accuracy, availability, or performance of these third-party services, and your use of them (to the extent you interact with them directly) is subject to their own terms.
 
 These Terms govern the relationship between you and GymSync; they do not alter your relationship with Apple. Apple has no obligation to furnish maintenance or support for the App, and Apple is a third-party beneficiary of these Terms with the right to enforce them against you.
 

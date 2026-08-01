@@ -1,6 +1,6 @@
 import type { LegalBlock } from './types';
 
-export const TERMS_OF_SERVICE_EFFECTIVE_DATE = 'July 30, 2026';
+export const TERMS_OF_SERVICE_EFFECTIVE_DATE = 'August 1, 2026';
 
 /**
  * Kept word-for-word identical to docs/terms-of-service.md and the hosted
@@ -24,7 +24,7 @@ export const TERMS_OF_SERVICE_BLOCKS: LegalBlock[] = [
   { type: 'h', text: '2. Changes to the App or These Terms' },
   {
     type: 'p',
-    text: 'We may modify, update, or discontinue any feature or functionality of GymSync at any time, without liability, including changes required by our service providers (Apple, Supabase, Anthropic, or ElevenLabs).',
+    text: 'We may modify, update, or discontinue any feature or functionality of GymSync at any time, without liability, including changes required by our service providers (Apple, Supabase, Anthropic, Deepgram, or ElevenLabs).',
   },
   {
     type: 'p',
@@ -130,7 +130,7 @@ export const TERMS_OF_SERVICE_BLOCKS: LegalBlock[] = [
   { type: 'h', text: '10. Third-Party Services' },
   {
     type: 'p',
-    text: 'GymSync relies on third-party services (Supabase, Anthropic, ElevenLabs, and Apple) to operate, as described in our Privacy Policy. We are not responsible for the accuracy, availability, or performance of these third-party services, and your use of them (to the extent you interact with them directly) is subject to their own terms.',
+    text: 'GymSync relies on third-party services (Supabase, Anthropic, Deepgram, ElevenLabs, Sentry, Apple, and Google) to operate, as described in our Privacy Policy. We are not responsible for the accuracy, availability, or performance of these third-party services, and your use of them (to the extent you interact with them directly) is subject to their own terms.',
   },
   {
     type: 'p',

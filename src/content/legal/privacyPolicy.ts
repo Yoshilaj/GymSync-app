@@ -1,6 +1,6 @@
 import type { LegalBlock } from './types';
 
-export const PRIVACY_POLICY_EFFECTIVE_DATE = 'July 30, 2026';
+export const PRIVACY_POLICY_EFFECTIVE_DATE = 'August 1, 2026';
 
 /**
  * Kept word-for-word identical to docs/privacy-policy.md and the hosted page
@@ -22,7 +22,7 @@ export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
     type: 'list',
     items: [
       { label: 'Account information', text: 'When you create an account, we collect your email address and password (handled by our authentication provider, Supabase — we never see your password in plain text).' },
-      { label: 'Profile information', text: 'Your display name, age, sex, and body statistics you choose to enter (used only to calculate your coaching math — calorie needs, recovery, and training load), and, if you choose to set one, a profile picture selected from your photo library or taken with your camera.' },
+      { label: 'Profile information', text: 'Your display name, age, sex, and body statistics you choose to enter (used only to calculate your coaching math — calorie needs, recovery, and training load), and, if you choose to set one, a profile picture selected from your photo library.' },
       { label: 'Workout data', text: 'The workout plans, exercises, sets, reps, weights, and body-weight logs you create or record in the app.' },
       { label: 'Coach conversations', text: 'The messages you send to your AI coach, and any voice audio captured during a live voice coaching session.' },
       { label: 'Support requests', text: 'If you contact us for support, we collect your email address and the content of your message.' },
@@ -33,16 +33,21 @@ export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
     type: 'list',
     items: [
       { label: 'Device information', text: 'We may collect basic device and app version information for compatibility and debugging purposes.' },
+      { label: 'Crash reports', text: 'When the app or our server hits an unexpected error, we send a diagnostic report to Sentry (see Section 4). A report contains the error, where in the code it happened, your device and app version, and your account ID — so we can tell one user hitting a bug ten times from ten users hitting it once. It does not contain your messages to the coach, your voice audio, your password, or your login tokens.' },
     ],
   },
   {
     type: 'p',
-    text: "GymSync does not use third-party analytics or advertising SDKs, does not use cookies or cross-device ad tracking, and does not show ads. If this changes in a future version, this Policy will be updated first.",
+    text: "GymSync does not use third-party analytics or advertising SDKs, does not use cookies or cross-device ad tracking, and does not show ads. Crash reporting is not analytics: it records failures, not what you do in the app. If this changes in a future version, this Policy will be updated first.",
   },
   { type: 'h2', text: 'Information from Third Parties' },
   {
     type: 'p',
-    text: "GymSync does not currently offer third-party or social sign-in, and has no public forums, community feed, or user-to-user messaging — your workout data and coach conversations are private to your account. If this changes, this Policy will be updated before the feature ships.",
+    text: 'GymSync offers Sign in with Apple and Sign in with Google. If you use either, we receive the email address and name that provider chooses to share with us — with Sign in with Apple, that may be a private relay address rather than your real one, and that is entirely your choice at the point of sign-in. We never receive your Apple or Google password. We do not import your contacts, friends, or any other data from those accounts.',
+  },
+  {
+    type: 'p',
+    text: 'GymSync has no public forums, community feed, or user-to-user messaging — your workout data and coach conversations are private to your account. If this changes, this Policy will be updated before the feature ships.',
   },
   { type: 'h', text: '2. How We Use Your Information' },
   { type: 'p', text: 'We use the information we collect to:' },
@@ -84,8 +89,12 @@ export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
     items: [
       { name: 'Supabase', purpose: 'Account authentication and database storage for your profile, plans, and training history', url: 'https://supabase.com/privacy' },
       { name: 'Anthropic (Claude)', purpose: 'Processes your coach conversations and workout data to generate AI coaching replies and plans', url: 'https://www.anthropic.com/legal/privacy' },
-      { name: 'ElevenLabs', purpose: "Converts your coach's text replies into spoken voice audio during live voice coaching", url: 'https://elevenlabs.io/privacy' },
-      { name: 'Apple (on-device/Apple Speech services)', purpose: 'Converts your speech to text during live voice coaching', url: 'https://www.apple.com/legal/privacy/' },
+      { name: 'Deepgram', purpose: "Receives your voice audio during a live voice coaching session and converts it to text, and converts your coach's text replies back into spoken audio", url: 'https://deepgram.com/privacy' },
+      { name: 'ElevenLabs', purpose: 'A backup voice provider, used only if Deepgram is unavailable when generating your coach\'s spoken replies', url: 'https://elevenlabs.io/privacy' },
+      { name: 'Apple (on-device Speech framework)', purpose: 'Converts speech to text when you dictate a chat message using the microphone button. This runs on your device — dictated audio is not sent to us or to Deepgram', url: 'https://www.apple.com/legal/privacy/' },
+      { name: 'Sentry', purpose: 'Receives crash and error reports, as described in Section 1', url: 'https://sentry.io/privacy/' },
+      { name: 'Apple (Sign in with Apple)', purpose: 'Authenticates you if you choose to sign in with your Apple account', url: 'https://www.apple.com/legal/privacy/' },
+      { name: 'Google (Sign in with Google)', purpose: 'Authenticates you if you choose to sign in with your Google account', url: 'https://policies.google.com/privacy' },
       { name: 'Apple App Store', purpose: 'Processes subscription payments; Apple, not GymSync, handles your payment details', url: 'https://www.apple.com/legal/privacy/' },
     ],
   },
@@ -101,7 +110,7 @@ export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
   { type: 'h', text: '5. International Data Transfers' },
   {
     type: 'p',
-    text: "GymSync's service providers (Supabase, Anthropic, and ElevenLabs) operate servers in the United States. If you are located outside the United States, using GymSync means your personal information — including workout and coaching data — is transferred to and processed in the United States, which may have different data protection laws than your home country. We require our service providers to protect your data under contractual safeguards.",
+    text: "GymSync's service providers (Supabase, Anthropic, Deepgram, ElevenLabs, and Sentry) operate servers in the United States. If you are located outside the United States, using GymSync means your personal information — including workout and coaching data — is transferred to and processed in the United States, which may have different data protection laws than your home country. We require our service providers to protect your data under contractual safeguards.",
   },
   { type: 'h', text: '6. Data Retention' },
   {
@@ -152,7 +161,7 @@ export const PRIVACY_POLICY_BLOCKS: LegalBlock[] = [
     type: 'list',
     items: [
       { label: 'Purpose of use', text: 'Your personal information is used solely for the purposes described in Section 2 of this Policy.' },
-      { label: 'Cross-border transfer', text: 'Because we use overseas service providers (Supabase, Anthropic, and ElevenLabs, all of which process data on servers located outside Japan), your personal information is transferred to and processed in other countries, including the United States. By using GymSync, you consent to this transfer.' },
+      { label: 'Cross-border transfer', text: 'Because we use overseas service providers (Supabase, Anthropic, Deepgram, ElevenLabs, and Sentry, all of which process data on servers located outside Japan), your personal information is transferred to and processed in other countries, including the United States. By using GymSync, you consent to this transfer.' },
       { label: 'Disclosure, correction, and deletion', text: 'You have the right to request disclosure of, correction to, or deletion of your personal information. Contact us at support@gymsyncapp.me to make a request.' },
       { label: 'Complaints', text: "If you believe your rights under APPI have not been respected, you may contact Japan's Personal Information Protection Commission (個人情報保護委員会), or reach out to us directly first so we can address your concern." },
     ],
