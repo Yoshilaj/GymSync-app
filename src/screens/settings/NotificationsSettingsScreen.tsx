@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { useUser } from '@/context/UserContext';
 import { SettingsGroup, SettingsPage, ToggleRow } from './SettingsKit';
 
@@ -20,12 +21,20 @@ export function NotificationsSettingsScreen() {
     ...((profile?.preferences?.notifications as Partial<NotifPrefs>) ?? {}),
   };
 
+  // A rejected save used to vanish: the switch stayed where the user put it and
+  // then silently snapped back on the next profile read, which reads as the app
+  // forgetting a choice rather than failing to store one. Say so instead.
   const set = (key: keyof NotifPrefs) => (value: boolean) => {
-    void saveProfile({
+    saveProfile({
       preferences: {
         ...(profile?.preferences ?? {}),
         notifications: { ...prefs, [key]: value },
       },
+    }).catch(() => {
+      Alert.alert(
+        "Couldn't save that",
+        'Check your connection and try again.',
+      );
     });
   };
 

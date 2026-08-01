@@ -99,12 +99,12 @@ export function SettingsHomeScreen() {
             onPress={() => void manage()}
           />
         ) : null}
-        <SettingsRow
-          label="Notifications"
-          icon="notifications-outline"
-          chevron
-          onPress={() => nav.navigate('Notifications')}
-        />
+        {/* Notifications is deliberately not linked yet. The screen and the
+            stored preferences still exist, but expo-notifications isn't
+            installed and nothing delivers — and "Rest timer alert" is the one
+            a user would trust mid-set and be let down by. A footnote saying
+            "coming soon" under a switch that moves doesn't undo that. Restore
+            this row in the same commit that ships delivery. */}
         <SettingsRow
           label="Workout"
           icon="barbell-outline"
