@@ -67,8 +67,15 @@ primary_region = 'nrt'
 
   [[http_service.checks]]
     interval = '30s'
-    timeout = '5s'
-    grace_period = '20s'
+    # 10s, not 5s. /health itself is trivial, but it can only answer when the
+    # event loop gets a turn — and onnxruntime inference is CPU-bound and holds
+    # the GIL, which on a shared CPU starves everything else in bursts. A 5s
+    # timeout reported the app unresponsive during a perfectly healthy voice
+    # session. Startup now pre-warms the models (see _warm_rag_models), so this
+    # is the margin for steady-state contention rather than for a cold load.
+    timeout = '10s'
+    # Covers the detached model warm-up racing the first few checks.
+    grace_period = '45s'
     method = 'GET'
     # Deliberately dependency-free: it reports that the process is alive, not
     # that Supabase is reachable, so a brief Supabase blip can't trigger a

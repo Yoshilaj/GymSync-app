@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -84,6 +85,41 @@ def validate_scaling_settings() -> None:
         )
 
 
+async def _warm_rag_models() -> None:
+    """Load the ONNX models before a user request is the thing that loads them.
+
+    They're lazy by design, so the first embed pays for ~600MB of model coming
+    off disk into memory. That work is CPU-bound and holds the GIL, and on a
+    shared-cpu machine it starves the event loop for long enough that /health
+    misses its timeout — which is exactly what happened on the first live voice
+    conversation: the turn called _load_personal_memory, the embedder loaded,
+    and Fly reported the app unresponsive thirty seconds into the session.
+
+    Doing it here doesn't make the load cheaper, it just moves it off the
+    critical path onto startup, where the health check's grace period covers it
+    and no user is waiting.
+
+    Best-effort throughout: a failure here must not stop the app booting. The
+    models stay lazy, so anything that doesn't warm simply loads on demand as
+    before.
+    """
+    from app.rag.embedder import get_embedder
+    from app.rag.models import Chunk
+    from app.rag.rerank import get_reranker
+
+    try:
+        await get_embedder().embed_query("warm up")
+        logger.info("rag: embedder warm")
+    except Exception:
+        logger.exception("rag: embedder failed to warm; it will load on first use")
+
+    try:
+        await get_reranker().rerank("warm up", [Chunk(id="warm", content="warm up")], top_n=1)
+        logger.info("rag: reranker warm")
+    except Exception:
+        logger.exception("rag: reranker failed to warm; it will load on first use")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Before anything else: refuse to start on a billing config that could hand
@@ -97,7 +133,13 @@ async def lifespan(app: FastAPI):
     # Pull the JWT signing keys now so the first authenticated request isn't the one
     # that pays for the fetch. Non-fatal: it retries on demand.
     await warm_jwks()
+    # Detached, not awaited: loading the ONNX models takes tens of seconds and
+    # holding up startup would push the app past Fly's health-check grace period
+    # and fail the deploy. Requests served while it runs are simply the ones that
+    # would have paid this cost anyway.
+    warm_task = asyncio.create_task(_warm_rag_models())
     yield
+    warm_task.cancel()
     await close_auth_client()
     await close_db()
 
