@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Platform } from 'react-native';
+import { Alert, Animated, AppState, Linking, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { voiceSocketProtocols, voiceSocketUrl } from './config';
 import { VoiceSocket } from './VoiceSocket';
@@ -319,7 +319,21 @@ export function useVoiceSession({
     try {
       const granted = await ensureMicAccess();
       if (!granted) {
-        fail('Microphone access is required to talk to your coach.');
+        // A denial is permanent until the user changes it in Settings: iOS shows
+        // its prompt once and silently no-ops every request after that. The
+        // error phase's hint says "tap the mic to try again", which for a denied
+        // user is an instruction that cannot work — so offer the only thing that
+        // can. Same pattern as dictation in SyncChatScreen, which already does
+        // this correctly.
+        Alert.alert(
+          'Microphone access needed',
+          'Enable the microphone for GymSync in Settings to talk to your coach.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+          ],
+        );
+        fail('Microphone access is off. Enable it in Settings to use voice.');
         return;
       }
       if (!mountedRef.current || phaseRef.current === 'idle') return;
