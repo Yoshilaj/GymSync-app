@@ -55,3 +55,8 @@ yarn-error.*
 # Claude Code local settings + skills (per-machine, not part of the app)
 .claude/
 .fastembed_cache/
+
+# App Store marketing artefacts — screenshots and banners for the listing.
+# Kept on disk, out of git: 25 MB of PNGs that no build imports, and that
+# would sit in history forever once committed. Regenerate from the app.
+marketing/

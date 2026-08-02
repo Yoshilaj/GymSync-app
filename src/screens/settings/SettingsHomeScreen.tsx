@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Alert, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +10,7 @@ import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { useEntitlement } from '@/hooks';
 import { useBilling } from '@/billing/BillingProvider';
+import { BillingError } from '@/api/billing';
 import { TIERS } from '@/screens/pricing';
 import type { SettingsStackParamList } from '@/navigation/SettingsNavigator';
 import {
@@ -31,10 +33,40 @@ export function SettingsHomeScreen() {
   const { preference } = useThemePref();
   // Reads the billing seam rather than a literal. Resolves to "Free" today, and
   // becomes correct on its own the moment a real purchase SDK is wired in.
-  const { entitlement, status: entitlementStatus } = useEntitlement();
-  const { manage } = useBilling();
+  const { entitlement, status: entitlementStatus, refresh } = useEntitlement();
+  const { manage, restore } = useBilling();
+  const [restoring, setRestoring] = useState(false);
 
   const language = (profile?.preferences?.language as string) ?? 'English';
+
+  /**
+   * The same call the paywall footer makes, and the same reading of the result.
+   *
+   * A restore that finds nothing is an *answer*, not a failure — it means this
+   * Apple ID never bought anything — so it gets a plain statement rather than an
+   * error. Backing out of Apple's sheet is silent for the same reason.
+   */
+  const runRestore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    try {
+      const next = await restore();
+      if (next.tier === 'free') {
+        Alert.alert('Nothing to restore', 'No previous purchase found on this Apple ID.');
+        return;
+      }
+      await refresh();
+      Alert.alert('Purchases restored', `Your ${TIERS[next.tier].name} plan is active again.`);
+    } catch (e) {
+      if (e instanceof BillingError && e.code === 'cancelled') return;
+      Alert.alert(
+        'Could not restore',
+        e instanceof Error ? e.message : 'Something went wrong. Try again.',
+      );
+    } finally {
+      setRestoring(false);
+    }
+  };
 
   const confirmSignOut = () => {
     Alert.alert('Sign out?', "You'll need your password to sign back in.", [
@@ -99,6 +131,19 @@ export function SettingsHomeScreen() {
             onPress={() => void manage()}
           />
         ) : null}
+        {/* Unlike "Manage subscription", this shows on every tier — an account
+            that *looks* Free while Apple still holds a live subscription is the
+            exact case restore exists for, and gating it on tier would hide it
+            from everyone who needs it. Until now the paywall footer was the
+            only restore in the app, so a subscriber reinstalling had to go
+            looking for a price list to get their purchase back. Apple requires
+            the mechanism (3.1.1); a customer requires it to be findable. */}
+        <SettingsRow
+          label="Restore purchases"
+          icon="refresh-outline"
+          value={restoring ? 'Restoring…' : undefined}
+          onPress={() => void runRestore()}
+        />
         {/* Notifications is deliberately not linked yet. The screen and the
             stored preferences still exist, but expo-notifications isn't
             installed and nothing delivers — and "Rest timer alert" is the one

@@ -1,45 +1,34 @@
 # Submitting GymSync to the App Store
 
-Everything in the codebase is ready. What's left is App Store Connect work, one
-credential rotation, and one thing that has never actually been tested.
-
-Work top to bottom — the order matters, because step 2 gates the review itself.
+Everything in the codebase is ready. What's left is App Store Connect work.
 
 ---
 
-## 1. Rotate the test-account password — 2 minutes
+## 1. The review account — done, 2026-08-02
 
-Open since the first security pass. `estate+gymsynccurl@scissors-corp.jp` had its
-password committed in plaintext to a public repo. Removing it from the file did
-not un-leak it.
+The old test account (`estate+gymsynccurl@scissors-corp.jp`) had its password
+committed in plaintext to a public repo, and was later deleted from Supabase.
+Deleting it was clean: every user-owned table is `REFERENCES auth.users ON
+DELETE CASCADE`, so no orphan rows survive. The one exception is the `avatars`
+bucket — `account.py` purges `avatars/{user_id}/` on the in-app delete path
+precisely because no foreign key reaches object storage, and a dashboard delete
+skips that. Sweep the bucket eventually; the naming user_id is unrecoverable.
 
-1. [supabase.com/dashboard](https://supabase.com/dashboard) → project →
-   **Authentication → Users**
-2. Find that address → **⋯ → Reset password** (or set one directly)
-3. Store the new password in your password manager — **not** back in a repo file
-4. Confirm **2FA is OFF** for this account (see step 2)
+Replaced by **`gymsyncreview@gmail.com`**, created through the app's normal
+email/password signup so the account carries real onboarding data and a built
+plan. Password is in the password manager, not in this repo.
 
-It must satisfy `backend/app/password.py`: 8+ characters, and it is normalised
-before being checked against a common-password blocklist.
+Deliberately on **Gmail, not the app's own domain**: `gymsyncapp.me` mail is
+handled by a service Namecheap can't edit, and changing MX there would risk the
+DKIM/SPF/DMARC records the signup mail depends on. Not worth it days before
+submission. `scissors-corp.jp` rejects plus-addressing, so that route was out.
 
-**Keep this password to hand — step 2 needs it.**
+## 2. Signup email — verified working, 2026-08-02
 
----
-
-## 2. Test the signup email — 10 minutes
-
-**The single highest-risk untested path.** Custom SMTP is configured but has
-never delivered a real message. If confirmation email is broken, an App Review
-reviewer cannot get into your app, and that is a rejection rather than a retry.
-
-1. Sign up in the app with a **fresh** address you control
-2. Confirm the email arrives — **from your domain**, not in spam
-3. Click the link and confirm the account activates
-4. Then trigger **Forgot password** and confirm that email arrives too
-
-If either lands in spam, check the Resend dashboard for delivery status before
-submitting. DKIM, SPF and DMARC are all published correctly, so it should be
-clean.
+Custom SMTP had never delivered a live message. It has now: signup confirmation
+and password reset both arrived in a **Gmail inbox, not spam**, which is the
+harshest deliverability test available. This was the highest-risk unknown in the
+submission and it is now proven rather than assumed.
 
 ---
 
@@ -50,17 +39,34 @@ clean.
 Give the reviewer a working account, or they cannot see your app at all:
 
 - **Sign-in required:** Yes
-- **Username:** `estate+gymsynccurl@scissors-corp.jp`
-- **Password:** the one from step 1
+- **Username:** `gymsyncreview@gmail.com`
+- **Password:** the GymSync password from the password manager — *not* the
+  Gmail one
 - **2FA must be OFF** on it. A reviewer cannot receive your second factor.
+- **Attachment:** none needed. That field is for demo videos when a feature is
+  hard to reach; sign-in is one tap from the first screen.
 
-**Notes field** — worth writing, because a reviewer who can't find the paywall
-may reject for "incomplete functionality":
+**Notes field** — worth writing, because onboarding runs *before* signup here. A
+reviewer who taps "Get started" out of habit lands in 19 onboarding questions and
+may never reach the account you gave them:
 
-> GymSync is an AI fitness coach. Subscriptions are reachable from
-> Settings → Plan. Live voice coaching (Pro and above) is on the Sync tab.
-> Knowledge search with cited sources is a Premium feature — ask the coach a
-> technique question such as "why does my lower back round when I deadlift".
+> GymSync is an AI fitness coach.
+>
+> Onboarding runs before account creation, so please tap "Log in" on the first
+> screen and use the credentials above — this account already has a training
+> plan set up.
+>
+> Subscriptions are reachable from Settings → Plan. Live voice coaching (Pro and
+> above) is on the Sync tab. Knowledge search with cited sources is a Premium
+> feature — ask the coach a technique question such as "why does my lower back
+> round when I deadlift".
+>
+> To see the new-user onboarding flow, tap "Get started" on the first screen
+> instead.
+
+`WelcomeScreen.tsx` puts **Log in** on the first screen beside **Get started**,
+so onboarding never blocks a reviewer. The `OnboardingPreview` and Sync debug
+routes are `__DEV__`-gated and are stripped from the production build.
 
 ### Privacy questionnaire
 
