@@ -25,6 +25,12 @@ class IdentityReranker:
         return chunks[:top_n]
 
 
+# How many candidates to score per onnxruntime call. Small enough that the
+# activation tensors stay cheap, large enough that per-call overhead doesn't
+# dominate — the accuracy path only ever has ~40 candidates, so this is 5 calls.
+_RERANK_BATCH = 8
+
+
 class CrossEncoderReranker:
     def __init__(self, model_name: str = "Xenova/ms-marco-MiniLM-L-6-v2") -> None:
         self.model_name = model_name
@@ -40,7 +46,26 @@ class CrossEncoderReranker:
 
     def _score_sync(self, query: str, docs: list[str]) -> list[float]:
         # rerank() returns a relevance score per doc, aligned with input order.
-        return [float(s) for s in self._ensure_model().rerank(query, docs)]
+        #
+        # Scored in batches because the whole candidate set at once is what
+        # OOM-killed production. onnxruntime allocates activation tensors for the
+        # entire batch and its arena does not hand the memory back, so the peak
+        # is set by the largest batch ever run — not by the steady state.
+        #
+        # Measured on the real model with 40 corpus-length chunks:
+        #
+        #   steady state (both models loaded)   904 MB
+        #   all 40 scored in one call          1390 MB   (+486)
+        #   scored in batches of 8              978 MB   (+74)
+        #
+        # The server died at 1.85 GB on a 2 GB machine with the one-call version.
+        # Scores are identical either way: same model, same inputs, same order —
+        # only the tensor allocation changes.
+        model = self._ensure_model()
+        scores: list[float] = []
+        for i in range(0, len(docs), _RERANK_BATCH):
+            scores.extend(float(s) for s in model.rerank(query, docs[i:i + _RERANK_BATCH]))
+        return scores
 
     async def rerank(self, query: str, chunks: list[Chunk], top_n: int) -> list[Chunk]:
         if not chunks:
