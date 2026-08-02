@@ -81,9 +81,15 @@ export function Screen({
     padBottom ?? (tabBarClearance ? clearance.scroll : spacing.xxxl);
   // A pinned footer must never sit under the floating tab bar (tab screens) or
   // the home indicator (modal/pushed screens outside the tabs).
+  //
+  // `lg` rather than `md` as the floor: on a device with no home indicator the
+  // inset is 0, and 12pt put the last row of a footer close enough to the
+  // bottom edge to compete with the system's own gesture area. The floor only
+  // applies where the inset doesn't already exceed it, so nothing moves on the
+  // devices that were already fine.
   const footerPad = tabBarClearance
     ? clearance.pinned
-    : Math.max(insets.bottom, spacing.md);
+    : Math.max(insets.bottom, spacing.lg);
 
   const inner = scroll ? (
     <ScrollView

@@ -8,12 +8,8 @@ import { APP_NAME } from '@/lib/appInfo';
 import type { LegalBlock, LegalListItem } from '@/content/legal/types';
 import { PRIVACY_POLICY_BLOCKS, PRIVACY_POLICY_EFFECTIVE_DATE } from '@/content/legal/privacyPolicy';
 import { TERMS_OF_SERVICE_BLOCKS, TERMS_OF_SERVICE_EFFECTIVE_DATE } from '@/content/legal/termsOfService';
+import { LEGAL_URL } from '@/content/legal/urls';
 import { SettingsGroup, SettingsPage, SettingsRow } from './SettingsKit';
-
-const HOSTED_URL = {
-  privacy: 'https://gymsyncapp.me/privacy-policy',
-  terms: 'https://gymsyncapp.me/terms-of-service',
-} as const;
 
 type Rt = RouteProp<SettingsStackParamList, 'Legal'>;
 
@@ -153,7 +149,7 @@ export function LegalScreen() {
           sublabel={isPrivacy ? 'gymsyncapp.me/privacy-policy' : 'gymsyncapp.me/terms-of-service'}
           right={<Ionicons name="open-outline" size={18} color={colors.textTertiary} />}
           onPress={() =>
-            void Linking.openURL(isPrivacy ? HOSTED_URL.privacy : HOSTED_URL.terms)
+            void Linking.openURL(isPrivacy ? LEGAL_URL.privacy : LEGAL_URL.terms)
           }
         />
       </View>

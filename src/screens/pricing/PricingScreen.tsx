@@ -26,7 +26,7 @@
  * hand-off in the other. See PricingRoutes.tsx.
  */
 import { useState } from 'react';
-import { Pressable, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
@@ -36,6 +36,7 @@ import { AppText, Entering, Screen } from '@/components/ui';
 import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { useBilling } from '@/billing/BillingProvider';
 import { BillingError, type Entitlement } from '@/api/billing';
+import { LEGAL_URL } from '@/content/legal/urls';
 import {
   autoRenewNote,
   ctaLabel as continueLabel,
@@ -330,7 +331,14 @@ export function PricingScreen({
             void run('purchase');
           }}
           onRestore={() => void run('restore')}
-          onLegal={(kind) => onLegal?.(kind)}
+          // Never a dead tap. `onLegal?.(kind)` silently swallowed the press on
+          // any mount that didn't pass the prop — and "the Terms link does
+          // nothing" is both a bad look and an App Review finding. Without a
+          // handler there is no `Legal` route to push, so the hosted mirror is
+          // the honest destination.
+          onLegal={(kind) =>
+            onLegal ? onLegal(kind) : void Linking.openURL(LEGAL_URL[kind])
+          }
           purchasing={busy && work.action === 'purchase'}
           restoring={busy && work.action === 'restore'}
           error={work.kind === 'error' ? work.message : null}

@@ -135,9 +135,15 @@ function Dot() {
 }
 
 /**
- * A Pressable rather than a tappable AppText: the row sits tight under the
- * renewal line, so the padding that would carry a text hit area to 44pt isn't
- * available. `hitSlop` buys it back — and AppText forwards no hitSlop.
+ * A Pressable rather than a tappable AppText: AppText forwards no hitSlop.
+ *
+ * The target is built mostly from real padding rather than mostly from
+ * `hitSlop`. It used to be the other way round — a 19pt caption row carrying a
+ * 44pt target entirely on slop — and that is a fragile way to own a tap: slop
+ * extends the touch area beyond the view's own bounds, where an ancestor's
+ * clipping, or a system gesture area at the bottom of the screen, can eat it.
+ * Padding is inside the bounds and nothing can take it away. Slop stays, but
+ * only as the last few points.
  */
 function FooterLink({
   label,
@@ -153,7 +159,7 @@ function FooterLink({
     <Pressable
       onPress={disabled ? undefined : onPress}
       disabled={disabled}
-      hitSlop={{ top: 12, bottom: 12, left: 4, right: 4 }}
+      hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
       accessibilityRole="link"
       accessibilityLabel={label}
       style={({ pressed }) => [
@@ -182,7 +188,10 @@ const useStyles = makeStyles(() => ({
   },
   // One caption line (19pt), reserved whether or not it's rendered.
   trial: { minHeight: 19, justifyContent: 'center' },
-  legal: { gap: spacing.xxs },
+  // No gap: the links now carry their own vertical padding, and stacking a gap
+  // on top of it would read as a break between the renewal line and the escape
+  // hatches it belongs with.
+  legal: { gap: 0 },
   // One caption line (19pt), reserved whether or not it's rendered.
   terms: { minHeight: 19, justifyContent: 'center' },
   links: {
@@ -191,9 +200,10 @@ const useStyles = makeStyles(() => ({
     alignItems: 'center',
     gap: spacing.md,
   },
-  // No vertical padding — the hitSlop above carries the target past 44pt, so
-  // the row can sit right under the renewal line.
-  link: { paddingHorizontal: spacing.xs },
+  // 19pt of caption + 16 of padding = a 35pt target before the 6pt of slop
+  // either side takes it past 44. The row grows the footer by ~14pt, which is
+  // slack the page had going spare above the button.
+  link: { paddingVertical: spacing.sm, paddingHorizontal: spacing.xs },
   linkPressed: { opacity: 0.6 },
   linkDisabled: { opacity: 0.4 },
 }));

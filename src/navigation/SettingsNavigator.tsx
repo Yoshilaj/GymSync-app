@@ -82,7 +82,15 @@ export function SettingsNavigator() {
       <Stack.Screen name="Inquiry" component={InquiryScreen} />
       <Stack.Screen name="Faq" component={FaqScreen} />
       <Stack.Screen name="AboutUs" component={AboutUsScreen} />
-      <Stack.Screen name="Legal" component={LegalScreen} />
+      {/* From the paywall (a fullScreenModal), a plain push lands in the nav
+          controller *behind* the presented modal — the page mounts invisibly
+          and the tap looks dead. Presenting it modally joins the presented
+          chain instead, a sheet over the paywall. About Us keeps the push. */}
+      <Stack.Screen
+        name="Legal"
+        component={LegalScreen}
+        options={({ route }) => (route.params.fromModal ? { presentation: 'modal' } : {})}
+      />
       {__DEV__ && (
         <Stack.Screen
           name="OnboardingPreview"
