@@ -3,7 +3,7 @@
  * exercise's trend series, and the body-weight log. Refreshes whenever the
  * tab regains focus so freshly-logged sets show up immediately.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '@/auth/AuthContext';
 import { getExerciseById } from '@/data/mockExercises';
@@ -45,6 +45,19 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
   // toggle should feel like a filter flipping, not a page loading.
   const [seriesLoadedFor, setSeriesLoadedFor] = useState<string | null>(null);
 
+  /**
+   * Bumped to force all three fetches to re-run — the hook's fetches key on
+   * focus, so without this the only way to retry a failed load was to leave the
+   * tab and come back. Pull-to-refresh drives it.
+   */
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const refresh = useCallback(async () => {
+    setReloadNonce((n) => n + 1);
+    // The fetches are fire-and-forget effects, so there's nothing to await. Give
+    // the spinner a beat rather than snapping it away before anything lands.
+    await new Promise((r) => setTimeout(r, 600));
+  }, []);
+
   useEffect(() => {
     if (!session || !focused) return;
     let cancelled = false;
@@ -65,7 +78,7 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     return () => {
       cancelled = true;
     };
-  }, [session, focused, getToken]);
+  }, [session, focused, getToken, reloadNonce]);
 
   useEffect(() => {
     if (!session || !focused) return;
@@ -84,7 +97,7 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     return () => {
       cancelled = true;
     };
-  }, [session, focused, getToken]);
+  }, [session, focused, getToken, reloadNonce]);
 
   useEffect(() => {
     if (!session || !focused) return;
@@ -117,12 +130,13 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     return () => {
       cancelled = true;
     };
-  }, [session, focused, summaryLoaded, exerciseId, metric, getToken]);
+  }, [session, focused, summaryLoaded, exerciseId, metric, getToken, reloadNonce]);
 
   return {
     summary,
     bodyWeight,
     series,
+    refresh,
     summaryLoading: !summaryLoaded,
     bodyWeightLoading: !bodyWeightLoaded,
     seriesLoading: seriesLoadedFor !== exerciseId,

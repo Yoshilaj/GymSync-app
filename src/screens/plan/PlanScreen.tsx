@@ -35,7 +35,7 @@ export function PlanScreen() {
   const { colors } = useTheme();
   const styles = useStyles();
   const { user } = useUser();
-  const { plan, status: planStatus, addExercise, removeExercise } = usePlan();
+  const { plan, status: planStatus, refresh: refreshPlan, addExercise, removeExercise } = usePlan();
 
   const today = useMemo(() => new Date(), []);
   const todayIso = today.toDateString();
@@ -118,7 +118,7 @@ export function PlanScreen() {
   };
 
   return (
-    <Screen scroll padded={false}>
+    <Screen scroll padded={false} onRefresh={refreshPlan}>
       <View style={styles.headerGap} />
       <DayStrip
         selectedIso={selectedIso}
@@ -134,6 +134,20 @@ export function PlanScreen() {
             different sentences, and only the second one is an empty state. */}
         {planStatus === 'loading' ? (
           <PlanDaySkeleton />
+        ) : planStatus === 'error' && !plan ? (
+          /* "We couldn't load it" and "there isn't one" are different facts, and
+             this branch used to fall through to the second. A first launch with
+             no network landed on "Nothing scheduled — ask Sync to add one" on
+             the default tab: a cheerful lie, pointing at an action that also
+             needs the network. Note the `!plan` guard — PlanContext serves the
+             cached plan and reports 'ready' when it has one, so this only fires
+             when there is genuinely nothing to show. */
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn't load your plan"
+            message="Check your connection and try again — nothing has been lost."
+            action={{ label: 'Try again', onPress: () => void refreshPlan() }}
+          />
         ) : workoutForDay ? (
           <WorkoutDay
             workout={workoutForDay}

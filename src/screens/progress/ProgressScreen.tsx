@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dimensions,
   FlatList,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -73,7 +74,16 @@ export function ProgressScreen() {
     summaryLoading,
     bodyWeightLoading,
     seriesLoading,
+    refresh,
   } = useProgress(exerciseId, metric);
+
+  // This screen refetches on focus, which covers most of it — but a fetch that
+  // failed while you were already here had no retry short of leaving the tab.
+  const [refreshing, setRefreshing] = useState(false);
+  const onPullToRefresh = useCallback(() => {
+    setRefreshing(true);
+    void refresh().finally(() => setRefreshing(false));
+  }, [refresh]);
 
   // Until the user picks an exercise themselves, follow what they actually
   // trained last — a fresh squat session should open on squats, not an empty
@@ -105,6 +115,15 @@ export function ProgressScreen() {
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: clearance.scroll }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullToRefresh}
+            // White: the header gradient owns the top of this screen, and the
+            // default dark spinner disappears against it.
+            tintColor="#fff"
+          />
+        }
       >
         <ProfileHeader
           onOpenSettings={() => nav.navigate('Settings')}

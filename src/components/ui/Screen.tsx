@@ -1,7 +1,8 @@
-import { ReactNode } from 'react';
+import { ReactNode, useCallback, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   View,
 } from 'react-native';
@@ -17,6 +18,15 @@ interface Props {
   edges?: ('top' | 'bottom' | 'left' | 'right')[];
   /** Wrap content in a KeyboardAvoidingView (chat-style screens). */
   keyboard?: boolean;
+  /**
+   * Pull-to-refresh. Only meaningful with `scroll`.
+   *
+   * Lives here rather than in each screen so there is one implementation and one
+   * set of theme colours: the app previously had no RefreshControl anywhere, so
+   * a fetch that failed left the user with no way to retry short of killing the
+   * app. Return a promise and the spinner clears when it settles.
+   */
+  onRefresh?: () => Promise<unknown> | void;
   /** Pinned below the (scrolling) content — input bars, end buttons. */
   footer?: ReactNode;
   /** Soft blue gradient wash instead of the flat background. */
@@ -49,12 +59,21 @@ export function Screen({
   edges = ['top', 'left', 'right'],
   keyboard = false,
   footer,
+  onRefresh,
   wash = false,
   fill,
   tabBarClearance = true,
   padBottom,
 }: Props) {
-  const { gradients } = useTheme();
+  const { gradients, colors } = useTheme();
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    if (!onRefresh) return;
+    setRefreshing(true);
+    // Settled either way: a refresh that throws must still clear the spinner,
+    // or the control sticks and the screen looks permanently busy.
+    void Promise.resolve(onRefresh()).finally(() => setRefreshing(false));
+  }, [onRefresh]);
   const styles = useStyles();
   const clearance = useTabBarClearance();
   const insets = useSafeAreaInsets();
@@ -74,6 +93,16 @@ export function Screen({
         padded && styles.padded,
       ]}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.textTertiary}
+            colors={[colors.accent]}
+          />
+        ) : undefined
+      }
     >
       {children}
     </ScrollView>

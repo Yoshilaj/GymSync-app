@@ -73,6 +73,16 @@ async function readError(
 const DEBUG_LATENCY_MS = 0;
 
 /**
+ * How long any single authed request may take before it's abandoned.
+ *
+ * 20s is generous for this API — the slowest normal call is a plan read — but
+ * it has to clear a cold Fly machine plus a Supabase round trip without firing
+ * on a request that would have succeeded. Plan GENERATION is the exception and
+ * sets its own 120s in api/plan.ts: it waits on the model.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
+
+/**
  * `token` is the caller's current access token. On a 401 we refresh and retry with
  * a new one, so callers don't need to thread refresh logic through their own code —
  * they pass what they have and get an answer.
@@ -88,15 +98,33 @@ export async function authedFetch<T>(
 
   const url = `${voiceConfig.apiBaseUrl}${path.startsWith('/') ? path : `/${path}`}`;
 
-  const send = (bearer: string) =>
-    fetch(url, {
-      ...init,
-      headers: {
-        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : null),
-        ...init.headers,
-        Authorization: `Bearer ${bearer}`,
-      },
-    });
+  const send = async (bearer: string) => {
+    // Without this a hung connection never settles and the caller's skeleton
+    // spins forever. fetch has no timeout of its own, and the case that matters
+    // isn't a refused connection (which fails fast) but a captive-portal wifi or
+    // a dead network that accepts the socket and then says nothing at all.
+    //
+    // AbortError is surfaced as OFFLINE, not as a distinct failure: from the
+    // user's side "the request never came back" and "there's no network" are the
+    // same situation and want the same message.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : null),
+          ...init.headers,
+          Authorization: `Bearer ${bearer}`,
+        },
+      });
+    } finally {
+      // Always — a resolved request must not leave a timer that later aborts
+      // nothing, and on a retry the second attempt needs its own full budget.
+      clearTimeout(timer);
+    }
+  };
 
   let res: Response;
   try {
