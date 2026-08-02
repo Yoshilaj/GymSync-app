@@ -24,8 +24,9 @@ ActivityLevel = Literal["sedentary", "light", "moderate", "very_active", "athlet
 Experience = Literal["beginner", "intermediate", "advanced"]
 Units = Literal["lbs", "kg"]
 
-# Fields that must be non-null (plus non-empty goals/equipment) before
-# onboarded_at stamps. Everything plan generation + Mifflin-St Jeor needs —
+# Fields that must be non-null (plus non-empty goals/equipment) before a
+# complete_onboarding=true save is accepted. Everything plan generation +
+# Mifflin-St Jeor needs —
 # except `sex`, which stays optional ("prefer not to say"); the nutrition
 # calculator asks for it later only if the user wants calorie targets.
 REQUIRED_FOR_ONBOARDING = (
@@ -114,15 +115,18 @@ async def update_profile(
     current = res.data[0] if res.data else {"user_id": user_id, **_DEFAULT_PROFILE}
     merged = {**current, **patch}
 
-    # Auto-stamp onboarded_at the moment the required set is complete.
-    missing = _missing_onboarding_fields(merged)
-    if merged.get("onboarded_at") is None and not missing:
-        merged["onboarded_at"] = datetime.now(timezone.utc).isoformat()
-    elif body.complete_onboarding and missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Onboarding incomplete — missing: {', '.join(missing)}",
-        )
+    # onboarded_at stamps only when the client explicitly completes onboarding —
+    # draft saves during the flow must leave the gate closed while BuildingPlan
+    # generates and the user accepts their first plan.
+    if body.complete_onboarding:
+        missing = _missing_onboarding_fields(merged)
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Onboarding incomplete — missing: {', '.join(missing)}",
+            )
+        if merged.get("onboarded_at") is None:
+            merged["onboarded_at"] = datetime.now(timezone.utc).isoformat()
 
     merged["user_id"] = user_id
     merged["updated_at"] = datetime.now(timezone.utc).isoformat()
