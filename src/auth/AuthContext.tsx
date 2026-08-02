@@ -70,11 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [twoFactorPending, setTwoFactorPending] = useState(false);
   const lastForegroundSync = useRef(0);
+  // Whether a session exists, readable from the AppState listener below — which
+  // is registered once with [] deps and would otherwise capture the value from
+  // first render forever.
+  const hasSession = useRef(false);
 
   useEffect(() => {
     // Load any persisted session, then subscribe to changes.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
+      hasSession.current = !!data.session;
       setLoading(false);
       // The stored session can be days old and carries a snapshot of the account
       // from whenever its token was minted. Re-read it once on launch so a change
@@ -88,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
+      hasSession.current = !!next;
       // Belt and braces: supabase-js raises this itself when it recognises a
       // recovery session. On native we normally get there first, via the deep
       // link below, but a duplicate signal is harmless — the flag is idempotent.
@@ -112,12 +118,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       supabase.auth.startAutoRefresh();
 
+      // Nothing to refresh when nobody is signed in. Calling anyway is a wasted
+      // round trip that returns "Auth session missing!", which then has to be
+      // told apart from a real failure — so the one warning that survives here
+      // can't be trusted to mean anything.
+      if (!hasSession.current) return;
+
       const now = Date.now();
       if (now - lastForegroundSync.current < FOREGROUND_SYNC_MS) return;
       lastForegroundSync.current = now;
       void supabase.auth.refreshSession().then(({ error }) => {
-        // A failure here is not a signed-out user — it's usually just no network
-        // on wake. The existing session stays exactly as it was.
+        // Now that the signed-out case is filtered above, a failure here really
+        // is what the old comment claimed: usually just no network on wake. The
+        // existing session stays exactly as it was.
         if (error && __DEV__) console.warn('[auth] foreground refresh failed:', error.message);
       });
     });
