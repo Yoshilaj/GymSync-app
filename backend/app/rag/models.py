@@ -58,5 +58,22 @@ class RetrievalParams:
 
     @classmethod
     def for_text(cls) -> "RetrievalParams":
-        # Accuracy path: defaults.
-        return cls()
+        # Accuracy path: defaults, with room for more than one source.
+        #
+        # The 1500 default is sized for voice, where every token delays speech.
+        # A typed question has no such clock, and 1500 is almost exactly one
+        # parent document — measured across 400 of them, median 956 tokens — so
+        # 70% of searches came back with a single citation and nothing to
+        # cross-reference.
+        #
+        # Simulated over the real corpus:
+        #
+        #   budget   avg sources   context tokens   >=2 sources
+        #     1500          1.41             1566           30%
+        #     3000          2.34             2381           67%
+        #     4000          3.08             3303           83%
+        #
+        # 3000 is where two sources becomes the norm rather than the exception,
+        # for ~1.5x the context. Above ~6000 nothing changes: top_n_rerank caps
+        # the candidates at 6.
+        return cls(token_budget=3000)
