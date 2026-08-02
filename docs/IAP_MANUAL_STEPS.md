@@ -93,9 +93,9 @@ In App Store Connect:
 
    | Product ID | Service level | Price |
    |---|---:|---:|
-   | `com.yoshinishikawahara.gymsync.premium.yearly` | 1 | $299.90 |
+   | `com.yoshinishikawahara.gymsync.premium.yearly` | 1 | $299.00 |
    | `com.yoshinishikawahara.gymsync.premium.monthly` | 2 | $29.99 |
-   | `com.yoshinishikawahara.gymsync.pro.yearly` | 3 | $149.90 |
+   | `com.yoshinishikawahara.gymsync.pro.yearly` | 3 | $149.00 |
    | `com.yoshinishikawahara.gymsync.pro.monthly` | 4 | $14.99 |
 
    **Product IDs are permanent.** They cannot be renamed or reused, ever. Check them twice.
