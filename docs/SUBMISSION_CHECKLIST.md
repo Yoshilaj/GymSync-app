@@ -114,6 +114,28 @@ Screenshots, description, keywords, support URL, category. Design tokens for
 your screenshots are in `src/theme/` — brand blue is `#2E90EA`, the typeface is
 Inter.
 
+**Before submitting, re-read the description against Guideline 3.1.2.** It must
+contain a functional **Terms of Use (EULA)** link, a functional Privacy Policy
+link, and each subscription's **name, length and price** plus the auto-renewal
+terms. Paste the description from `docs/APP_STORE_LISTING.md` whole — the
+`SUBSCRIPTION DETAILS` block and the two link lines at the end are the compliance
+part, not decoration.
+
+Build 2 was rejected on **2026-08-06** for omitting the Terms of Use link. That
+rejection never reached functional review — Apple blocks on metadata first — so
+it cost a full round trip for one missing line. Verify the links resolve before
+you submit:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -L \
+  https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+curl -s -o /dev/null -w '%{http_code}\n' -L https://gymsyncapp.me/privacy-policy
+```
+
+Leave ASC's **License Agreement** field on Apple's standard agreement. Do not
+register `terms-of-service` as a custom EULA — reasons in
+`docs/APP_STORE_LISTING.md`.
+
 ---
 
 ## 4. Build and submit

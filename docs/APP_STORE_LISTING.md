@@ -47,7 +47,10 @@ Your coach talks you through every set, hands-free. Say your reps out loud and t
 
 ---
 
-## Description — ~2,400 / 4,000
+## Description — 2,537 / 4,000
+
+The `SUBSCRIPTION DETAILS` block and the two link lines at the end are not
+optional copy — Guideline 3.1.2 requires them. See "Rules this copy follows".
 
 ```
 Most fitness apps hand you a plan and walk away. GymSync stays with you through
@@ -91,7 +94,17 @@ Add live voice coaching when you want a coach in your ear for every set, and
 unlimited voice, evidence-based answers, injury-aware programming and lifetime
 memory when you want the whole coaching brain.
 
-Subscriptions start with a 7-day trial. Cancel any time from Settings.
+SUBSCRIPTION DETAILS
+GymSync Pro — $14.99 per month or $149.00 per year.
+GymSync Premium — $29.99 per month or $299.00 per year.
+Each subscription starts with a 7-day free trial and renews automatically at the
+price above unless cancelled at least 24 hours before the period ends. Payment is
+charged to your Apple ID account on confirmation. Manage or cancel any time in
+your Apple ID settings, or from Settings inside the app. Prices are in USD and
+may vary by storefront.
+
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://gymsyncapp.me/privacy-policy
 
 Questions? Reach us from Settings → Contact support, and a real person replies.
 ```
@@ -106,9 +119,10 @@ Questions? Reach us from Settings → Contact support, and a real person replies
 | Secondary category | *(optional — leave blank)* |
 | Copyright | `2026 Yoshiharu Nishikawahara` |
 | Privacy Policy URL | `https://gymsyncapp.me/privacy-policy` |
+| Terms of Use (EULA) | Apple standard, linked in the Description — leave ASC's License Agreement field alone |
 | Support URL | **see note below** |
 | Marketing URL | optional |
-| Screenshots | the five `1320x2868` files in `assets/app_preview/` |
+| Screenshots | the five `1320x2868` files in `marketing/app_preview/` |
 
 ### Support URL
 
@@ -126,9 +140,39 @@ not deliver, all three are promises the app cannot keep.
 
 ## Rules this copy follows
 
-- No prices in the description — they change per storefront and per currency
 - No "best", "#1", or unprovable superlatives
 - No competitor names (a rejection risk in the keyword field especially)
-- No URLs in the description body — they do not render as links
 - The free tier and the trial are both stated, which Apple expects when an app
   gates features behind a subscription
+- **Guideline 3.1.2 metadata block is mandatory** — see below
+
+### The 3.1.2 block — learned the hard way, 2026-08-06
+
+1.0.0 build 2 was **rejected** on 2026-08-06 with:
+
+> The submission offers auto-renewable subscriptions but does not include a
+> functional link to the Terms of Use (EULA) in the app's metadata.
+
+This version of the doc previously carried two rules that caused it:
+
+- ~~No URLs in the description body — they do not render as links~~ — **wrong on
+  both counts.** URLs in App Store descriptions *do* render as tappable links,
+  and Apple *requires* a functional Terms of Use link there for any app with
+  auto-renewable subscriptions.
+- ~~No prices in the description — they change per storefront and per currency~~
+  — a fair ASO instinct, but Guideline 3.1.2 outranks it. The storefront problem
+  is solved by naming USD and saying prices may vary, not by omitting price.
+
+Guideline 3.1.2 requires the description to state, for every auto-renewable
+subscription: **title, length, price**, the auto-renewal terms, and **functional
+links to both the Terms of Use (EULA) and the Privacy Policy**. Do not trim the
+`SUBSCRIPTION DETAILS` block or the two link lines out of the description.
+
+We link **Apple's standard EULA**, not `gymsyncapp.me/terms-of-service`. Our own
+ToS ships in-app as a supplementary agreement, but it satisfies only about half
+of Apple's *Minimum Terms of Developer's EULA* (Schedule 1 of the Paid Apps
+Agreement) — it is missing the "Apple is not a party" acknowledgement, the
+warranty clause where Apple refunds the purchase price, product-claims and
+IP-infringement responsibility, and the embargoed-country representation.
+Registering it as a custom EULA in App Store Connect would invite a second
+rejection. If we ever want a custom EULA, those five clauses go in first.
