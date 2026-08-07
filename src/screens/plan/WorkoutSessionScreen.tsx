@@ -32,7 +32,6 @@ import {
   useSessionActions,
   formatClock,
   makeShimmerSource,
-  micPermissionStatus,
   voicePlayer,
   type AppActionMessage,
   type PlanChange,
@@ -46,7 +45,6 @@ import { useBilling } from '@/billing/BillingProvider';
 import { isUpgradeError, type UpgradeRequired } from '@/billing/upgrade';
 import { addSessionNote, type SessionNote } from '@/api/session';
 import { SessionNoteSheet } from './SessionNoteSheet';
-import { MicPrimingDialog } from '@/components/MicPrimingDialog';
 import { kgToLbs } from '@/lib/units';
 import { maybeAskForReview, recordWorkoutCompleted } from '@/lib/reviewPrompt';
 
@@ -748,44 +746,16 @@ function WorkoutSessionActive() {
   // Waits for the entitlement: on Free this never fires, and the dock offers
   // the upgrade instead of listening to a session that was refused.
   //
-  // What it does NOT do any more is walk straight into the OS microphone
-  // prompt. Auto-start means that prompt would arrive cold, seconds after the
-  // screen opens, with nothing on screen explaining it — and an iOS mic denial
-  // is permanent until the user finds it in Settings. So an undetermined
-  // permission gets the priming card first, and only a granted one auto-starts.
+  // The OS permission prompt rides along on the first run, explained by
+  // NSMicrophoneUsageDescription rather than by a dialog of our own — one
+  // prompt to answer, not two.
   const autoStartedRef = useRef(false);
-  const [micPrimingVisible, setMicPrimingVisible] = useState(false);
   useEffect(() => {
     if (!authUser?.id || autoStartedRef.current) return;
     if (!voiceEntitled) return;
     autoStartedRef.current = true;
-    let cancelled = false;
-    void (async () => {
-      const status = await micPermissionStatus();
-      if (cancelled) return;
-      if (status === 'granted') {
-        void enableVoice();
-      } else if (status === 'undetermined') {
-        setMicPrimingVisible(true);
-      }
-      // 'denied' falls through deliberately: starting would only re-run a
-      // request iOS answers instantly and silently. The dock's error row
-      // already offers Retry, which routes to Settings.
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [authUser?.id, enableVoice, voiceEntitled]);
-
-  // Accepting the card is what spends the one OS prompt we get.
-  const acceptMicPriming = useCallback(() => {
-    setMicPrimingVisible(false);
     void enableVoice();
-  }, [enableVoice]);
-
-  // Declining costs nothing: the prompt is unspent, the dock's mic button still
-  // works, and opening the next workout asks again.
-  const declineMicPriming = useCallback(() => setMicPrimingVisible(false), []);
+  }, [authUser?.id, enableVoice, voiceEntitled]);
 
   // Full-row waveform: the user's voice rides the mic feed (live orange), the
   // coach's rides playback samples (accent), thinking gets a synthetic shimmer.
@@ -1333,12 +1303,6 @@ function WorkoutSessionActive() {
         visible={noteOpen}
         onClose={() => setNoteOpen(false)}
         onSubmit={submitNote}
-      />
-
-      <MicPrimingDialog
-        visible={micPrimingVisible}
-        onEnable={acceptMicPriming}
-        onDismiss={declineMicPriming}
       />
 
       <SessionToasts

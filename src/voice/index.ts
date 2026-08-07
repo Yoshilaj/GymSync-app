@@ -36,7 +36,7 @@ export type {
 } from './protocol';
 export { LevelEmitter, makeShimmerSource } from './levels';
 export type { WaveformSource } from './levels';
-export { voiceMic, ensureMicAccess, micPermissionStatus } from './VoiceMic';
-export type { PcmFrameHandler, MicPermission } from './VoiceMic';
+export { voiceMic, ensureMicAccess } from './VoiceMic';
+export type { PcmFrameHandler } from './VoiceMic';
 export { voicePlayer } from './VoicePlayer';
 export { voiceConfig } from './config';
