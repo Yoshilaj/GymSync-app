@@ -10,6 +10,7 @@
  * in Expo Go (where the native module is absent). Real audio needs a dev build — see §2.
  */
 import {
+  getRecordingPermissionsAsync,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   setIsAudioActiveAsync,
@@ -104,6 +105,30 @@ export async function releaseAudioSession(): Promise<void> {
     await setIsAudioActiveAsync(false);
   } catch {
     /* other audio may still be running — releasing is best effort */
+  }
+}
+
+export type MicPermission = 'granted' | 'denied' | 'undetermined';
+
+/**
+ * What the OS currently thinks, WITHOUT asking.
+ *
+ * Every other permission path in the app goes straight to a request, which on
+ * iOS is a one-shot: the system prompt appears once, and every later request
+ * resolves not-granted without showing anything. That makes the first request an
+ * expensive move, and callers need to know whether they are about to spend it —
+ * `undetermined` is the only state where explaining ourselves first is still
+ * possible.
+ */
+export async function micPermissionStatus(): Promise<MicPermission> {
+  try {
+    const { granted, canAskAgain } = await getRecordingPermissionsAsync();
+    if (granted) return 'granted';
+    return canAskAgain ? 'undetermined' : 'denied';
+  } catch {
+    // Treat an unreadable status as undetermined: the worst case is that we
+    // explain ourselves to someone who had already said yes.
+    return 'undetermined';
   }
 }
 

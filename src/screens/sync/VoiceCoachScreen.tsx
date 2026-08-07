@@ -8,6 +8,7 @@ import { layout, makeStyles, radius, spacing, useTheme } from '@/theme';
 import { AppText, Button, Card, TimerDisplay } from '@/components/ui';
 import { VoiceButton } from '@/components/VoiceButton';
 import { VoiceWaveform } from '@/components/VoiceWaveform';
+import { MicPrimingDialog } from '@/components/MicPrimingDialog';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
@@ -17,6 +18,7 @@ import {
   useVoiceSession,
   useWorkoutSession,
   useSessionActions,
+  micPermissionStatus,
   voicePlayer,
   makeShimmerSource,
   type VoicePhase,
@@ -158,16 +160,36 @@ export function VoiceCoachScreen() {
   }, [getToken]);
 
   // Auto-connect once the guard clears; tear everything down on close.
+  //
+  // A first-time user reaches this screen without ever having been asked for the
+  // microphone, and auto-connect would spend that one-shot OS prompt cold. Ask
+  // in our own words first — see MicPrimingDialog. Granted skips the card
+  // entirely; denied doesn't connect, because the session would come up mute.
+  const [micPrimingVisible, setMicPrimingVisible] = useState(false);
   useEffect(() => {
     if (!canStart || blockedByActive !== false) return;
-    void connect();
+    let cancelled = false;
+    void (async () => {
+      const status = await micPermissionStatus();
+      if (cancelled) return;
+      if (status === 'granted') void connect();
+      else if (status === 'undetermined') setMicPrimingVisible(true);
+    })();
     return () => {
+      cancelled = true;
       void stop();
       void workout.end();
       reset();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canStart, blockedByActive]);
+
+  const acceptMicPriming = useCallback(() => {
+    setMicPrimingVisible(false);
+    void connect();
+  }, [connect]);
+
+  const declineMicPriming = useCallback(() => setMicPrimingVisible(false), []);
 
   const live = phase !== 'idle' && phase !== 'error';
 
@@ -360,6 +382,12 @@ export function VoiceCoachScreen() {
           </View>
         </>
       )}
+
+      <MicPrimingDialog
+        visible={micPrimingVisible}
+        onEnable={acceptMicPriming}
+        onDismiss={declineMicPriming}
+      />
     </SafeAreaView>
   );
 }
