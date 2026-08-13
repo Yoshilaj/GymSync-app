@@ -21,6 +21,7 @@ import {
 } from '@/data/mockExercises';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
+import { useOutboxPending } from '@/lib/useOutboxSync';
 import { PlanApiError } from '@/api/plan';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { PlannedWorkout, Units } from '@/types';
@@ -36,6 +37,7 @@ export function PlanScreen() {
   const styles = useStyles();
   const { user } = useUser();
   const { plan, status: planStatus, refresh: refreshPlan, addExercise, removeExercise } = usePlan();
+  const pendingSync = useOutboxPending();
 
   const today = useMemo(() => new Date(), []);
   const todayIso = today.toDateString();
@@ -130,6 +132,24 @@ export function PlanScreen() {
       />
 
       <View style={styles.content}>
+        {/* Queued offline writes (sets, body weight) — visible only while the
+            outbox actually holds something, which online is a blink. Answers
+            "did my workout save?" after training in a dead zone: yes, and it
+            syncs itself. */}
+        {pendingSync > 0 ? (
+          <View style={styles.syncRow}>
+            <Ionicons
+              name="cloud-offline-outline"
+              size={14}
+              color={colors.textTertiary}
+            />
+            <AppText variant="caption" color="textTertiary">
+              {pendingSync === 1
+                ? '1 entry saved offline — syncs when you’re back online'
+                : `${pendingSync} entries saved offline — sync when you’re back online`}
+            </AppText>
+          </View>
+        ) : null}
         {/* Order matters: "the plan hasn't arrived" and "there is no plan" are
             different sentences, and only the second one is an empty state. */}
         {planStatus === 'loading' ? (
@@ -319,6 +339,13 @@ const useStyles = makeStyles((t) => ({
   content: {
     paddingHorizontal: layout.SCREEN_H_PADDING,
     marginTop: spacing.lg,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
   },
   listHeading: { marginLeft: spacing.xs, marginBottom: spacing.sm },
   sectionRule: {

@@ -360,7 +360,7 @@ export function SyncChatScreen() {
     }
     return (
       <Pressable
-        onPress={item.failed ? () => chat.retry(item.id) : undefined}
+        onPress={item.failed && !item.blocked ? () => chat.retry(item.id) : undefined}
         onLongPress={() => void handleCopy(item)}
         delayLongPress={350}
       >
@@ -373,9 +373,15 @@ export function SyncChatScreen() {
           }}
           streaming={item.streaming}
         />
+        {/* Two different truths: a transport failure retries; a quota refusal
+            doesn't (retry deliberately no-ops on blocked). The old copy said
+            "tap to retry" for both — a Free user out of daily messages tapped
+            a red label wired to nothing. */}
         {item.failed && (
           <AppText variant="caption" color="dangerText" style={styles.failedHint}>
-            Message failed — tap to retry
+            {item.blocked
+              ? 'Daily limit reached — upgrade for unlimited chat'
+              : 'Message failed — tap to retry'}
           </AppText>
         )}
         {copiedId === item.id && (
@@ -444,7 +450,11 @@ export function SyncChatScreen() {
             exiting={FadeOut.duration(180)}
           >
             <SyncEmptyState
-              greeting={`${timeGreeting()}, ${user.displayName}`}
+              greeting={
+                user.displayName
+                  ? `${timeGreeting()}, ${user.displayName}`
+                  : timeGreeting()
+              }
               onStarter={handleStarter}
             />
           </Animated.View>

@@ -283,6 +283,16 @@ async def accept_proposal(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
+    # The third of the three generation paths (see generate_plan's comment) —
+    # the chat coach's proposals materialize here, so the allowance is checked
+    # here too, or the cap is decorative for exactly the chat path. Checked
+    # BEFORE the status flip so a refused accept leaves the proposal pending
+    # and retryable after an upgrade.
+    try:
+        await check_quota(PLAN_GENERATION, user_id, db)
+    except QuotaExceeded as exc:
+        raise exc.as_http() from exc
+
     # Guarded status flip: only a pending proposal owned by this user flips.
     # A repeat POST finds status != pending → 409, so double-taps are safe.
     flipped = (
@@ -309,7 +319,9 @@ async def accept_proposal(
         )
 
     try:
-        tree = await plan_store.materialize_proposal(user_id, flipped.data[0]["payload"], db)
+        tree = await plan_store.materialize_proposal(
+            user_id, flipped.data[0]["payload"], db, await resolve_tier(user_id, db)
+        )
     except Exception:
         # Materialization failed — put the proposal back so Accept can retry.
         await db.table("plan_proposals").update(
@@ -320,6 +332,10 @@ async def accept_proposal(
     await db.table("plan_proposals").update(
         {"accepted_plan_id": tree["plan_id"], "updated_at": _utcnow()}
     ).eq("id", proposal_id).execute()
+
+    # After the plan exists — a materialization that failed shouldn't spend the
+    # only generation a free user gets (same rule as generate_plan above).
+    await consume_quota(PLAN_GENERATION, user_id, db)
 
     # Why this plan looks the way it does, kept for the long term. Months later the
     # reasoning is the part no table holds: the plan rows say "Upper A, 3x8 bench", only

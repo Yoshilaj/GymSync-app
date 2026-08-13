@@ -12,7 +12,7 @@
  * any crash in here resumes on relaunch instead of re-asking 18 questions.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeOut, useReducedMotion } from 'react-native-reanimated';
@@ -247,11 +247,26 @@ export function BuildingPlanScreen() {
         // A refusal is not a failure: the request was understood and declined
         // because the free plan generation is spent. Say that, instead of
         // showing an offline icon and inviting a retry that can't succeed.
-        setBlockedMsg(isUpgradeError(e) ? e.upgrade.message : null);
-        setPhase('error');
+        //
+        // And if a plan is ALREADY on screen (a Free user tapped Regenerate),
+        // keep it: dropping to the error phase here used to replace a
+        // perfectly good, still-pending proposal with a dead end whose only
+        // exits were the paywall and "Skip". Losing your plan is a worse
+        // outcome than being told no.
+        const blocked = isUpgradeError(e) ? e.upgrade.message : null;
+        setBlockedMsg(blocked);
+        if (plan) {
+          // Restored to 'ready' below, so tell them why nothing changed — the
+          // phases render full-screen and there's no toast rail here.
+          Alert.alert(
+            blocked ? 'Plan generation used' : "Couldn't regenerate",
+            blocked ?? 'Check your connection and try again — your current plan is untouched.',
+          );
+        }
+        setPhase((prev) => (prev === 'generating' && plan ? 'ready' : 'error'));
       }
     },
-    [getToken, preview, needsSubmit, saveProfileDraft, draft.coachAnswers, stashedPlan],
+    [getToken, preview, needsSubmit, saveProfileDraft, draft.coachAnswers, stashedPlan, plan],
   );
 
   useEffect(() => {

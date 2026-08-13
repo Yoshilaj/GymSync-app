@@ -5,14 +5,13 @@
  * attaches to an existing session id.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import * as Crypto from 'expo-crypto';
 import {
-  createSession,
-  endSession,
   fetchActiveSession,
   patchCurrentExercise,
   SessionSetRow,
-  WorkoutSessionRow,
 } from '@/api/session';
+import { outbox } from '@/lib/outbox';
 
 export type WorkoutSessionStatus = 'idle' | 'starting' | 'active' | 'error';
 
@@ -51,6 +50,8 @@ export interface SessionResume {
 }
 
 export interface UseWorkoutSessionArgs {
+  /** The signed-in account — outbox ops are stamped with it. */
+  userId: string | null;
   /** Returns a fresh Supabase JWT. */
   getToken: () => Promise<string>;
   /** Optional plan to snapshot into the session at start. */
@@ -76,11 +77,15 @@ export interface WorkoutSessionApi {
   start: () => Promise<string | null>;
   /** End the backend session (Finish/End workout — NOT mic-off). */
   end: () => Promise<void>;
+  /** Reattach to a locally-persisted session id without any network — the
+   * offline counterpart of the resume in start(). */
+  adopt: (sessionId: string) => void;
   /** Best-effort PATCH of the exercise the user is on. */
   setCurrentExercise: (name: string) => void;
 }
 
 export function useWorkoutSession({
+  userId,
   getToken,
   planId = null,
   workoutId = null,
@@ -92,6 +97,10 @@ export function useWorkoutSession({
   const [error, setError] = useState<string | null>(null);
 
   const sessionIdRef = useRef<string | null>(null);
+  /** In-flight start(), so concurrent callers (boot effect + a fast first
+   * set-tap + enableVoice) share ONE session instead of minting several —
+   * a second create would end the first server-side. */
+  const startingRef = useRef<Promise<string | null> | null>(null);
   const mountedRef = useRef(true);
   // Latest callbacks without making start() identity-unstable.
   const onResumeRef = useRef(onResume);
@@ -107,13 +116,13 @@ export function useWorkoutSession({
 
   const start = useCallback(async (): Promise<string | null> => {
     if (sessionIdRef.current) return sessionIdRef.current;
+    if (startingRef.current) return startingRef.current;
+    const inFlight = (async (): Promise<string | null> => {
     if (mountedRef.current) {
       setStatus('starting');
       setError(null);
     }
     try {
-      const token = await getToken();
-
       // Resume: a recent active session survives screen closes and app kills —
       // reattach instead of starting over (the logged sets and the coach's
       // context live server-side). Same workout → always resume. DIFFERENT
@@ -121,8 +130,17 @@ export function useWorkoutSession({
       // must never be destroyed as collateral of opening another day's screen
       // (creating a new session ends all other actives server-side). Empty
       // shells are replaced normally.
+      //
+      // The token fetch lives INSIDE this best-effort block, raced with the
+      // read against a short timeout: resume is a nicety, and an offline
+      // token refresh must not hold the session hostage — the fresh-session
+      // path below needs no network at all, and the screen's local restore
+      // covers offline resume.
       try {
-        const existing = await fetchActiveSession(token);
+        const existing = await Promise.race([
+          getToken().then(fetchActiveSession),
+          new Promise<null>((resolve) => setTimeout(resolve, 6000, null)),
+        ]);
         if (existing) {
           const snapshot = existing.plan_snapshot as {
             today_workout_id?: string;
@@ -165,13 +183,36 @@ export function useWorkoutSession({
         /* resume is best-effort — fall through to a fresh session */
       }
 
-      const session: WorkoutSessionRow = await createSession(token, planId, workoutId);
-      sessionIdRef.current = session.id;
+      // Fresh session, minted HERE: the id is a client UUID, created before
+      // any network is attempted, and the create rides the outbox. Offline,
+      // the id is live immediately — sets log against it and the create
+      // replays when connectivity returns (idempotent server-side). Online,
+      // the drain below lands it within the same second.
+      const id = Crypto.randomUUID();
+      sessionIdRef.current = id;
       if (mountedRef.current) {
-        setSessionId(session.id);
+        setSessionId(id);
         setStatus('active');
       }
-      return session.id;
+      if (userId) {
+        await outbox.enqueue(userId, {
+          kind: 'create_session',
+          sessionId: id,
+          planId,
+          workoutId,
+        });
+        // Await the drain (briefly): callers attach things to this id the
+        // moment start() resolves — the voice socket's session_start is
+        // ownership-checked server-side, so online, the create must land
+        // before we hand the id out. Raced with a timeout so a dead or
+        // captive-portal network can't hold the workout hostage; the drain
+        // then simply retries on the next trigger.
+        await Promise.race([
+          outbox.drain(userId, getToken),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
+      }
+      return id;
     } catch (e) {
       if (mountedRef.current) {
         setError(e instanceof Error ? e.message : String(e));
@@ -179,7 +220,14 @@ export function useWorkoutSession({
       }
       return null;
     }
-  }, [getToken, planId, workoutId]);
+    })();
+    startingRef.current = inFlight;
+    try {
+      return await inFlight;
+    } finally {
+      startingRef.current = null;
+    }
+  }, [getToken, planId, workoutId, userId]);
 
   const end = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -189,13 +237,41 @@ export function useWorkoutSession({
       setStatus('idle');
     }
     if (!sid) return;
-    try {
-      const token = await getToken();
-      await endSession(token, sid);
-    } catch {
-      /* best-effort teardown */
+    // Through the outbox, like the create: "end" used to be fire-and-forget
+    // with a swallowed catch, so an offline finish left the session active
+    // server-side forever. Queued, it lands on the next drain.
+    if (userId) {
+      await outbox.enqueue(userId, { kind: 'end_session', sessionId: sid });
+      void outbox.drain(userId, getToken);
     }
-  }, [getToken]);
+  }, [getToken, userId]);
+
+  const adopt = useCallback(
+    (sid: string) => {
+      if (sessionIdRef.current === sid) return;
+      sessionIdRef.current = sid;
+      if (mountedRef.current) {
+        setSessionId(sid);
+        setStatus('active');
+      }
+      // Re-assert the create: if the original create op was lost (or never
+      // drained), the restored session would be a black hole — every set
+      // 404s forever. The create is idempotent server-side, so re-enqueuing
+      // costs one no-op round trip in the happy case; the drain's look-ahead
+      // handles it landing behind older queued sets.
+      if (userId) {
+        void outbox
+          .enqueue(userId, {
+            kind: 'create_session',
+            sessionId: sid,
+            planId,
+            workoutId,
+          })
+          .then(() => outbox.drain(userId, getToken));
+      }
+    },
+    [userId, planId, workoutId, getToken],
+  );
 
   const setCurrentExercise = useCallback(
     (name: string) => {
@@ -213,5 +289,5 @@ export function useWorkoutSession({
     [getToken],
   );
 
-  return { status, sessionId, error, start, end, setCurrentExercise };
+  return { status, sessionId, error, start, end, adopt, setCurrentExercise };
 }

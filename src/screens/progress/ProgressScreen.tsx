@@ -269,9 +269,15 @@ function ProfileHeader({
           <ProfileAvatar name={user.displayName} size={AVATAR_SIZE} uri={profile?.avatar_url} />
         </View>
 
-        <AppText variant="display" color="textInverse" align="center">
-          {user.displayName}
-        </AppText>
+        {/* Fixed line box (display = 41pt line height): an empty name during
+            hydration must hold the slot, not collapse the header and jump
+            everything below when the profile lands — same rule as
+            statValueSlot. */}
+        <View style={styles.nameSlot}>
+          <AppText variant="display" color="textInverse" align="center">
+            {user.displayName}
+          </AppText>
+        </View>
         {joined ? (
           <AppText
             variant="caption"
@@ -750,6 +756,9 @@ const useStyles = makeStyles((t) => ({
   // Matches textVariants.statLg's lineHeight so the skeleton and the real
   // number occupy identical space.
   statValueSlot: { height: 44, justifyContent: 'center' },
+  // display variant's line height — holds the header steady while the name
+  // hydrates (or offline-with-no-cache, where it stays empty).
+  nameSlot: { minHeight: 41, justifyContent: 'center' },
   chartSkeleton: { justifyContent: 'flex-end', gap: spacing.sm },
   chartSkeletonBars: {
     flexDirection: 'row',

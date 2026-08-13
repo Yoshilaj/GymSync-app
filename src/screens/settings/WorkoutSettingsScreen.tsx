@@ -10,6 +10,8 @@ import {
 import { useUser } from '@/context/UserContext';
 import { useAuth } from '@/auth/AuthContext';
 import { updatePersonality } from '@/api/personality';
+import { isUpgradeError } from '@/billing/upgrade';
+import { useUpgradePrompt } from '@/billing/useUpgradePrompt';
 import type { CoachPersonality } from '@/types';
 import type { ExperienceLevel } from '@/api/profile';
 import {
@@ -66,6 +68,7 @@ export function WorkoutSettingsScreen() {
 function WorkoutSettingsForm() {
   const { user, profile, setPersonality, saveProfile } = useUser();
   const { getToken } = useAuth();
+  const promptUpgrade = useUpgradePrompt();
 
   const goals = profile?.goals ?? [];
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -90,12 +93,20 @@ function WorkoutSettingsForm() {
       setPersonality(next);
       try {
         await updatePersonality(await getToken(), next);
-      } catch {
+      } catch (e) {
         setPersonality(previous);
+        // Changing personality after the first pick is Pro — the server says
+        // so with a structured 403 that api/personality.ts converts. Telling
+        // a Free user "check your connection" for a paywall is a lie that
+        // makes the feature look broken; route them to the actual answer.
+        if (isUpgradeError(e)) {
+          promptUpgrade(e.upgrade);
+          return;
+        }
         Alert.alert("Couldn't update your coach", 'Check your connection and try again.');
       }
     },
-    [user.coachPersonality, setPersonality, getToken],
+    [user.coachPersonality, setPersonality, getToken, promptUpgrade],
   );
 
   return (

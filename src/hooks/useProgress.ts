@@ -4,9 +4,14 @@
  * tab regains focus so freshly-logged sets show up immediately.
  */
 import { useCallback, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '@/auth/AuthContext';
 import { getExerciseById } from '@/data/mockExercises';
+import {
+  PROGRESS_BODYWEIGHT_KEY,
+  PROGRESS_SUMMARY_KEY,
+} from '@/lib/storageKeys';
 import {
   fetchBodyWeightSeries,
   fetchExerciseSeries,
@@ -21,6 +26,24 @@ import {
 // year (it resets with plan changes).
 const BODY_WEIGHT_DAYS = 1095;
 const EXERCISE_DAYS = 365;
+
+/** Owner-stamped read cache (same rule as profile/plan — see storageKeys.ts).
+ * Without it, an offline cold start rendered an established user's Progress
+ * tab as a fresh account: zero streak, "No history yet". */
+async function readCache<T>(key: string, owner: string): Promise<T | null> {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { owner?: string; data?: T };
+    return parsed.owner === owner && parsed.data !== undefined ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key: string, owner: string, data: unknown): void {
+  AsyncStorage.setItem(key, JSON.stringify({ owner, data })).catch(() => {});
+}
 
 export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
   const { session, getToken } = useAuth();
@@ -60,14 +83,21 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
 
   useEffect(() => {
     if (!session || !focused) return;
+    const owner = session.user.id;
     let cancelled = false;
     (async () => {
       try {
         const token = await getToken();
         const s = await fetchProgressSummary(token);
-        if (!cancelled) setSummary(s);
+        if (!cancelled) {
+          setSummary(s);
+          writeCache(PROGRESS_SUMMARY_KEY, owner, s);
+        }
       } catch {
-        /* offline — keep last known values */
+        // Offline: fall back to the last summary this account saw, so the tab
+        // shows real (if stale) numbers instead of a fresh-account zero state.
+        const cached = await readCache<ProgressSummary>(PROGRESS_SUMMARY_KEY, owner);
+        if (!cancelled && cached) setSummary((prev) => prev ?? cached);
       } finally {
         // Latch in `finally`, not on success: an offline failure has to end the
         // skeleton too, or the screen shimmers forever instead of falling
@@ -82,14 +112,24 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
 
   useEffect(() => {
     if (!session || !focused) return;
+    const owner = session.user.id;
     let cancelled = false;
     (async () => {
       try {
         const token = await getToken();
         const bw = await fetchBodyWeightSeries(token, BODY_WEIGHT_DAYS);
-        if (!cancelled) setBodyWeight(bw);
+        if (!cancelled) {
+          setBodyWeight(bw);
+          writeCache(PROGRESS_BODYWEIGHT_KEY, owner, bw);
+        }
       } catch {
-        /* offline — keep last known values */
+        const cached = await readCache<BodyWeightPoint[]>(
+          PROGRESS_BODYWEIGHT_KEY,
+          owner,
+        );
+        if (!cancelled && cached) {
+          setBodyWeight((prev) => (prev.length > 0 ? prev : cached));
+        }
       } finally {
         if (!cancelled) setBodyWeightLoaded(true);
       }

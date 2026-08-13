@@ -22,7 +22,12 @@ import { ExerciseImage } from '@/components/ExerciseImage';
 import { RestRing } from '@/components/RestRing';
 import { SessionToasts, SessionToast } from '@/components/SessionToasts';
 import { getExerciseById, getExerciseByName } from '@/data/mockExercises';
-import { logCompletedSet } from '@/api/progress';
+import { outbox } from '@/lib/outbox';
+import {
+  clearActiveWorkout,
+  loadActiveWorkout,
+  saveActiveWorkout,
+} from '@/lib/activeWorkout';
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
 import { useAuth } from '@/auth/AuthContext';
@@ -46,6 +51,7 @@ import { isUpgradeError, type UpgradeRequired } from '@/billing/upgrade';
 import { addSessionNote, type SessionNote } from '@/api/session';
 import { SessionNoteSheet } from './SessionNoteSheet';
 import { kgToLbs } from '@/lib/units';
+import { localDayIso } from '@/lib/dates';
 import { maybeAskForReview, recordWorkoutCompleted } from '@/lib/reviewPrompt';
 
 type Nav = NativeStackNavigationProp<PlanStackParamList, 'WorkoutSession'>;
@@ -111,13 +117,21 @@ export function WorkoutSessionScreen() {
 /** The session's shape while the plan resolves: header chrome, hero, set rows. */
 function WorkoutSessionSkeleton() {
   const styles = useStyles();
+  const { colors } = useTheme();
+  const nav = useNavigation<Nav>();
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
       <View style={styles.header}>
         <View style={styles.headerTitleWrap} pointerEvents="none">
           <Skeleton width={140} height={19} />
         </View>
-        <View style={styles.closeBtn} />
+        {/* A REAL close button, deliberately: this screen is a fullScreenModal
+            with gestures off, and this skeleton is also the fallback when
+            there's no current exercise — without an exit, any state that
+            parks here permanently would trap the user until a force-quit. */}
+        <Pressable onPress={() => nav.goBack()} hitSlop={8} style={styles.closeBtn}>
+          <Ionicons name="chevron-down" size={22} color={colors.textPrimary} />
+        </Pressable>
         <View style={styles.headerSpacer} />
         <Skeleton width={64} height={28} round />
       </View>
@@ -616,6 +630,7 @@ function WorkoutSessionActive() {
   // workoutId → records which DAY is being trained, so the coach's session
   // context leads with today's exercises instead of guessing.
   const workoutSession = useWorkoutSession({
+    userId: authUser?.id ?? null,
     getToken,
     planId: plan?.planId ?? null,
     workoutId: workout.id === 'freeform' ? null : workout.id,
@@ -671,20 +686,29 @@ function WorkoutSessionActive() {
   // meets the paywall on the tap rather than after filling the form in. The submit
   // path still handles a refusal, because the server is the authority on tier and this
   // check is only here to save the wasted typing.
-  const isPremium = entitlement.tier === 'premium';
+  //
+  // Two rules learned the hard way, both borrowed from the voice gate above:
+  // - Only a CONFIRMED lower tier pre-empts. 'loading'/'error' billing must
+  //   not deny a paying Premium customer their note sheet — let them in and
+  //   let the server arbitrate.
+  // - This screen is a fullScreenModal: promptUpgrade navigates the tab tree
+  //   UNDERNEATH it. Without goBack() first the paywall opens behind the
+  //   workout and the tap looks dead (same trap openVoicePaywall documents).
+  const noteDenied = billingStatus === 'ready' && entitlement.tier !== 'premium';
   const openNote = useCallback(() => {
-    if (!isPremium) {
+    if (noteDenied) {
+      nav.goBack();
       promptUpgrade('premium');
       return;
     }
     setNoteOpen(true);
-  }, [isPremium, promptUpgrade]);
+  }, [noteDenied, nav, promptUpgrade]);
 
   const submitNote = useCallback(
     async (note: SessionNote) => {
-      // A note needs a session to hang off, and one may not exist yet: nothing starts
-      // a session until voice is enabled. start() returns the existing id when there
-      // is one, so this is safe to call on every note.
+      // A note needs a session to hang off. One normally exists by now (the
+      // boot effect starts it at mount, any tier), but start() is idempotent
+      // and returns the existing id, so this is safe to call on every note.
       const sessionId = await workoutSession.start();
       if (!sessionId) throw new Error('Could not start a session for this note.');
       try {
@@ -692,6 +716,9 @@ function WorkoutSessionActive() {
       } catch (e) {
         if (isUpgradeError(e)) {
           setNoteOpen(false);
+          // Same fullScreenModal trap as openNote: leave first or the paywall
+          // opens invisibly underneath this screen.
+          nav.goBack();
           promptUpgrade(e.upgrade);
           return;
         }
@@ -705,7 +732,7 @@ function WorkoutSessionActive() {
         note.kind === 'injury' ? 'medkit' : 'create',
       );
     },
-    [workoutSession.start, getToken, promptUpgrade, pushToast],
+    [workoutSession.start, getToken, nav, promptUpgrade, pushToast],
   );
 
   // A gentle nudge when the rest countdown runs out on its own (not on skip) —
@@ -741,10 +768,78 @@ function WorkoutSessionActive() {
     voice.start,
   ]);
 
+  // The session starts when the SCREEN opens — voice or not, any tier. It
+  // used to start only as a side effect of the voice coach coming up, which
+  // quietly meant Free users (and anyone offline) had no session id, and the
+  // set-completion handler skipped its POST for the entire workout: logging
+  // looked like it worked and saved nothing. The id is client-minted inside
+  // start(), so this succeeds with no network at all.
+  //
+  // A locally-persisted in-progress workout takes priority: restore its
+  // checkmarks and position and reattach to its session id — the offline
+  // counterpart of the server resume inside start().
+  const sessionBootRef = useRef(false);
+  const [sessionBooted, setSessionBooted] = useState(false);
+  useEffect(() => {
+    if (!authUser?.id || sessionBootRef.current) return;
+    sessionBootRef.current = true;
+    const uid = authUser.id;
+    void (async () => {
+      const snap = await loadActiveWorkout(
+        uid,
+        workout.id === 'freeform' ? null : workout.id,
+      );
+      if (snap) {
+        workoutSession.adopt(snap.sessionId);
+        setExercises(
+          snap.exercises.map((p) => ({
+            key: p.key,
+            name: p.name,
+            meta:
+              (p.metaId ? getExerciseById(p.metaId) : undefined) ??
+              getExerciseByName(p.name),
+            sets: p.sets,
+            note: p.note,
+            addedBySync: p.addedBySync,
+          })),
+        );
+        setExerciseIdx(Math.min(snap.exerciseIdx, Math.max(0, snap.exercises.length - 1)));
+        pushToast('Resumed where you left off', 'play');
+      } else {
+        await workoutSession.start();
+      }
+      setSessionBooted(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.id]);
+
+  // Mirror the live session to disk on every change — the offline life-raft
+  // (see lib/activeWorkout.ts). Cheap: a few KB per write.
+  useEffect(() => {
+    const sid = workoutSession.sessionId;
+    if (!authUser?.id || !sid) return;
+    void saveActiveWorkout({
+      owner: authUser.id,
+      sessionId: sid,
+      workoutId: workout.id === 'freeform' ? null : workout.id,
+      exerciseIdx,
+      exercises: exercises.map((e) => ({
+        key: e.key,
+        name: e.name,
+        metaId: e.meta?.id ?? null,
+        sets: e.sets,
+        note: e.note,
+        addedBySync: e.addedBySync,
+      })),
+    });
+  }, [exercises, exerciseIdx, workoutSession.sessionId, authUser?.id, workout.id]);
+
   // Hands-free: the coach comes up with the workout — no mic tap needed. One
   // shot per screen visit; failures land in the dock's error row (Retry).
   // Waits for the entitlement: on Free this never fires, and the dock offers
-  // the upgrade instead of listening to a session that was refused.
+  // the upgrade instead of listening to a session that was refused. Waits for
+  // the session bootstrap too, so voice attaches to the restored/minted id
+  // instead of racing it.
   //
   // The OS permission prompt rides along on the first run, explained by
   // NSMicrophoneUsageDescription rather than by a dialog of our own — one
@@ -752,10 +847,10 @@ function WorkoutSessionActive() {
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (!authUser?.id || autoStartedRef.current) return;
-    if (!voiceEntitled) return;
+    if (!voiceEntitled || !sessionBooted) return;
     autoStartedRef.current = true;
     void enableVoice();
-  }, [authUser?.id, enableVoice, voiceEntitled]);
+  }, [authUser?.id, enableVoice, voiceEntitled, sessionBooted]);
 
   // Full-row waveform: the user's voice rides the mic feed (live orange), the
   // coach's rides playback samples (accent), thinking gets a synthetic shimmer.
@@ -837,28 +932,37 @@ function WorkoutSessionActive() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       actions.startRest(DEFAULT_REST_SECONDS);
 
-      // Persist the set so it counts toward real progress stats (fire-and-
-      // forget; un-toggling doesn't delete — last write stands in v1).
+      // Persist the set so it counts toward real progress stats. Through the
+      // outbox: online it lands in the same second, offline it waits and
+      // replays — either way the tap is durable the moment it happens. The
+      // session id comes from start(), which is idempotent and needs no
+      // network (client-minted UUID), so there is no window where a completed
+      // set has nowhere to go. performed_at is captured HERE, at tap time,
+      // so a delayed sync still lands on the right day server-side.
+      // (Un-toggling doesn't delete — last write stands in v1.)
       const ex = exercises[exerciseIdx];
       const set = ex?.sets[setIdx];
-      const sessionId = workoutSession.sessionId;
-      if (ex && set && sessionId) {
-        void (async () => {
-          try {
-            const token = await getToken();
-            await logCompletedSet(token, {
-              session_id: sessionId,
-              exercise_id: ex.meta?.id ?? null,
-              exercise_name: ex.name,
-              set_index: setIdx,
+      const uid = authUser?.id;
+      if (ex && set && uid) {
+        const performedAt = new Date().toISOString();
+        const localDay = localDayIso();
+        void workoutSession.start().then((sid) => {
+          if (!sid) return;
+          void outbox
+            .enqueue(uid, {
+              kind: 'log_set',
+              sessionId: sid,
+              exerciseId: ex.meta?.id ?? null,
+              exerciseName: ex.name,
+              setIndex: setIdx,
               reps: set.achievedReps ?? set.targetReps,
               weight: set.weight > 0 ? set.weight : null,
-              weight_unit: user.units,
-            });
-          } catch {
-            /* offline — the local session state still has it */
-          }
-        })();
+              weightUnit: user.units,
+              performedAt,
+              localDay,
+            })
+            .then(() => outbox.drain(uid, getToken));
+        });
       }
     }
   };
@@ -905,8 +1009,14 @@ function WorkoutSessionActive() {
           text: 'End',
           style: 'destructive',
           onPress: async () => {
-            await voice.stop();
+            // End + clear BEFORE the voice teardown: voice.stop() takes
+            // hundreds of ms, and a kill inside that window used to leave the
+            // snapshot behind — the next open resumed a workout the user had
+            // finished. (The outbox still owns any queued writes; those
+            // survive independently.)
             await workoutSession.end();
+            void clearActiveWorkout();
+            await voice.stop();
             nav.goBack();
             // The one place a workout actually finishes, so the one place worth
             // counting. Deliberately after goBack(): the rating sheet waits for

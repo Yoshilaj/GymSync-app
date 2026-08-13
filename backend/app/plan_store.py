@@ -368,7 +368,9 @@ async def delete_plan_exercise(
     return bool(res.data)
 
 
-async def materialize_proposal(user_id: str, payload: dict, db: AsyncClient) -> dict:
+async def materialize_proposal(
+    user_id: str, payload: dict, db: AsyncClient, tier: str = "free"
+) -> dict:
     """
     Persist an accepted proposal as the user's new ACTIVE plan and return its
     tree. Supabase REST has no transactions: on a child-insert failure the
@@ -421,6 +423,9 @@ async def materialize_proposal(user_id: str, payload: dict, db: AsyncClient) -> 
         await db.table("workout_plans").delete().eq("id", plan_id).execute()
         raise
 
-    tree = await build_plan_tree(plan_id, user_id, db)
+    # Tier threaded through so a premium accept returns progression targets on
+    # the FIRST render, not only after the follow-up GET refetches at the
+    # resolved tier.
+    tree = await build_plan_tree(plan_id, user_id, db, tier)
     assert tree is not None  # we just created it
     return tree

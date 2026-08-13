@@ -1,5 +1,6 @@
 import logging
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 class SessionStart(BaseModel):
     plan_id: str | None = None  # if provided, snapshot is copied from workout_plans
     workout_id: str | None = None  # which day of the plan the user opened
+    # Client-generated session id (UUID). Lets a workout START offline: the app
+    # mints the id locally, logs sets against it, and this create replays from
+    # the outbox whenever connectivity returns. Replays are idempotent — an id
+    # we already own comes back unchanged instead of stomping newer sessions.
+    id: UUID | None = None
 
 
 class SessionPatch(BaseModel):
@@ -42,10 +48,21 @@ class SessionNote(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-async def _end_existing_active_sessions(user_id: str, db: AsyncClient) -> None:
-    await db.table("workout_sessions").update(
+async def _end_existing_active_sessions(
+    user_id: str, db: AsyncClient, background: BackgroundTasks | None = None
+) -> None:
+    res = await db.table("workout_sessions").update(
         {"is_active": False, "updated_at": utcnow()}
     ).eq("user_id", user_id).eq("is_active", True).execute()
+    # Sessions ended THIS way used to vanish without a summary — the summarize
+    # only ran on the explicit DELETE. Rare when only voice users had sessions;
+    # now every screen-open mints one, so "left via the chevron, opened another
+    # day later" is a completely ordinary premium workout that deserves its
+    # memory. summarize_session no-ops on sessions with no sets.
+    if background is not None and res.data:
+        if await resolve_tier(user_id, db) == "premium":
+            for row in res.data:
+                background.add_task(summarize_session, row["id"], user_id, db)
 
 
 async def _build_plan_snapshot(
@@ -87,11 +104,28 @@ async def get_active_session(
 @router.post("/session", status_code=201)
 async def start_session(
     body: SessionStart,
+    background: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
+    # Idempotent replay FIRST, before the deactivate below. An offline outbox
+    # retries "create session X" until it lands; if X already exists, the user
+    # may have since started (or even finished) session Y, and running the
+    # blind deactivate again would end Y. An id that exists and is ours is
+    # returned as-is; someone else's id gets the same 404 shape as everywhere
+    # else (never a 409 — that would confirm the id exists, see session_store).
+    if body.id is not None:
+        existing = await db.table("workout_sessions").select("*").eq(
+            "id", str(body.id)
+        ).execute()
+        if existing.data:
+            row = existing.data[0]
+            if row["user_id"] != user_id:
+                raise HTTPException(status_code=404, detail="Session not found")
+            return {"session": row}
+
     # Close any existing active session first (one active session per user).
-    await _end_existing_active_sessions(user_id, db)
+    await _end_existing_active_sessions(user_id, db, background)
 
     # No explicit plan_id → fall back to the user's active plan, so the coach
     # always sees the real program even for clients that don't pass one.
@@ -108,14 +142,18 @@ async def start_session(
         ):
             plan_snapshot["today_workout_id"] = body.workout_id
 
-    res = await db.table("workout_sessions").insert(
-        {
-            "user_id": user_id,
-            "is_active": True,
-            "plan_snapshot": plan_snapshot,
-            "chat_history": [],
-        }
-    ).execute()
+    row: dict = {
+        "user_id": user_id,
+        "is_active": True,
+        "plan_snapshot": plan_snapshot,
+        "chat_history": [],
+    }
+    # The id column is a plain UUID with no ordering assumptions, so the
+    # client's UUID serves as the primary key directly — every read path
+    # already guards ownership, so a client-minted id changes nothing there.
+    if body.id is not None:
+        row["id"] = str(body.id)
+    res = await db.table("workout_sessions").insert(row).execute()
 
     return {"session": res.data[0]}
 
@@ -206,12 +244,23 @@ async def end_session(
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
+    # The is_active filter makes this tell us whether WE ended it: rows come
+    # back only when the session was still active. Ending is idempotent — the
+    # offline outbox replays it — so "already ended" is a success, not a 404.
     res = await db.table("workout_sessions").update(
         {"is_active": False, "updated_at": utcnow()}
-    ).eq("id", session_id).eq("user_id", user_id).execute()
+    ).eq("id", session_id).eq("user_id", user_id).eq("is_active", True).execute()
 
     if not res.data:
-        raise HTTPException(status_code=404, detail="Session not found")
+        existing = await db.table("workout_sessions").select("id").eq(
+            "id", session_id
+        ).eq("user_id", user_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        # Already ended (a replay) — succeed without re-queuing the summary
+        # below: it costs a model call per replay for a memory the dedup layer
+        # would discard anyway.
+        return {"status": "ended", "session_id": session_id}
 
     # Premium's "Lifetime Personal Memory": distil the session into something the coach
     # can recall months from now. Backgrounded because it costs a model call — ending a

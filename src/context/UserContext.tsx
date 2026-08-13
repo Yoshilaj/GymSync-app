@@ -9,7 +9,13 @@ import React, {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile, CoachPersonality, Units } from '@/types';
-import { mockUser } from '@/data/mockUser';
+import { defaultUser } from '@/data/defaultUser';
+import {
+  PLAN_KEY,
+  PROGRESS_BODYWEIGHT_KEY,
+  PROGRESS_SUMMARY_KEY,
+} from '@/lib/storageKeys';
+import { clearActiveWorkout } from '@/lib/activeWorkout';
 import { useAuth } from '@/auth/AuthContext';
 import {
   fetchProfile,
@@ -45,11 +51,16 @@ interface UserContextValue {
 const UserContext = createContext<UserContextValue | undefined>(undefined);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserProfile>(mockUser);
+  const [user, setUser] = useState<UserProfile>(defaultUser);
   const hydratedRef = useRef(false);
   const hadSessionRef = useRef(false);
   const { session, getToken, loading: authLoading } = useAuth();
   const accountId = session?.user?.id ?? null;
+  // absorbProfile needs the account id to owner-stamp the cache, but taking it
+  // as a dependency would re-create the callback (and re-fire the refresh
+  // effect) on every token refresh. A ref sidesteps that.
+  const accountIdRef = useRef(accountId);
+  accountIdRef.current = accountId;
 
   const [profile, setProfile] = useState<ServerProfile | null>(null);
   const [profileStatus, setProfileStatus] = useState<ProfileStatus>('loading');
@@ -68,7 +79,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
           const saved = JSON.parse(raw) as Partial<UserProfile> & { owner?: string };
           if (saved.owner && saved.owner !== accountId) {
             // Different account — drop the stale caches entirely.
-            void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY, DRAFT_STASH_KEY]);
+            void AsyncStorage.multiRemove([
+          PREFS_KEY,
+          PROFILE_KEY,
+          PLAN_KEY,
+          PROGRESS_SUMMARY_KEY,
+          PROGRESS_BODYWEIGHT_KEY,
+          DRAFT_STASH_KEY,
+        ]);
             return;
           }
           setUser((prev) => ({
@@ -79,6 +97,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
             ...(saved.notificationsWorkout != null
               ? { notificationsWorkout: saved.notificationsWorkout }
               : null),
+            // Units are server-owned, but this cache is the SAME account's
+            // last-known value and the profile fetch/cache overwrite it the
+            // moment they land. Without it, an offline launch with no profile
+            // cache fell back to the 'lbs' default — and offline writes are
+            // durable now, so a kg user's queued body weight would convert
+            // through the wrong unit and land wrong permanently.
+            ...(saved.units ? { units: saved.units } : null),
           }));
         }
       })
@@ -100,11 +125,22 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
   }, [user, accountId]);
 
-  // Server wins for the fields it owns, once it has them.
+  // Server wins for the fields it owns, once it has them. Also the ONE road
+  // into `user` for server-owned fields — the offline cache restore goes
+  // through here too, so a cached profile and a fetched one hydrate the display
+  // name identically. (The old cache path set only `profile` and left `user`
+  // at its seed, which is how airplane-mode cold starts greeted everyone with
+  // the demo profile's name.)
   const absorbProfile = useCallback((p: ServerProfile) => {
     setProfile(p);
     setProfileStatus('ready');
-    AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(p)).catch(() => {});
+    // Owner-stamped envelope: the read side refuses a cache written by a
+    // different account, so a missed wipe can't leak one user's profile into
+    // another's session.
+    AsyncStorage.setItem(
+      PROFILE_KEY,
+      JSON.stringify({ owner: accountIdRef.current, profile: p }),
+    ).catch(() => {});
     // The ONE place the pre-auth onboarding stash is retired: onboarded_at
     // arriving means the answers are on the server (or the account never
     // needed them). Clearing any earlier — e.g. right after the draft PUT —
@@ -126,10 +162,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
       // Offline / server down: serve the cached profile if we have one;
       // otherwise surface error so the gate can fail-open.
       const cached = await AsyncStorage.getItem(PROFILE_KEY).catch(() => null);
+      let restored: ServerProfile | null = null;
       if (cached) {
-        setProfile(JSON.parse(cached) as ServerProfile);
-        setProfileStatus('ready');
+        try {
+          const parsed = JSON.parse(cached) as {
+            owner?: string;
+            profile?: ServerProfile;
+          };
+          // Envelope only, owner must match. A legacy bare-profile cache (no
+          // envelope) carries no owner and can't be trusted across accounts —
+          // drop it and let the next online fetch rewrite it stamped.
+          if (parsed.owner && parsed.profile && parsed.owner === accountIdRef.current) {
+            restored = parsed.profile;
+          }
+        } catch {
+          /* corrupt cache — treated as absent */
+        }
+      }
+      if (restored) {
+        absorbProfile(restored);
       } else {
+        if (cached) void AsyncStorage.removeItem(PROFILE_KEY);
         setProfileStatus('error');
       }
     }
@@ -144,8 +197,20 @@ export function UserProvider({ children }: { children: ReactNode }) {
       setProfileStatus('loading');
       if (hadSessionRef.current && !authLoading) {
         hadSessionRef.current = false;
-        setUser(mockUser);
-        void AsyncStorage.multiRemove([PREFS_KEY, PROFILE_KEY, DRAFT_STASH_KEY]);
+        setUser(defaultUser);
+        void AsyncStorage.multiRemove([
+          PREFS_KEY,
+          PROFILE_KEY,
+          PLAN_KEY,
+          PROGRESS_SUMMARY_KEY,
+          PROGRESS_BODYWEIGHT_KEY,
+          DRAFT_STASH_KEY,
+        ]);
+        // The in-progress workout snapshot too — its owner check would reject
+        // it anyway, but leaving one account's exercise list on a shared
+        // device's disk is data hygiene, not just correctness. The OUTBOX is
+        // deliberately NOT wiped: queued sets sync when their owner returns.
+        void clearActiveWorkout();
       }
       return;
     }

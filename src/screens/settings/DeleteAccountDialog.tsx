@@ -64,7 +64,14 @@ interface Props {
 }
 
 export function DeleteAccountDialog({ visible, onClose }: Props) {
-  const { entitlement, manage } = useBilling();
+  const { entitlement, status: billingStatus, manage } = useBilling();
+  // Fail SAFE, not silent: Apple's account-deletion guidance requires warning
+  // a subscriber that deletion doesn't cancel billing. While the entitlement
+  // is unknown ('loading'/'error' both fall back to a Free-shaped object), a
+  // real subscriber would otherwise delete WITHOUT that warning. Showing the
+  // warning to an actual Free user in that window is merely over-cautious.
+  const maybeSubscribed =
+    entitlement.tier !== 'free' || billingStatus !== 'ready';
   // Apple's guidance asks for the date, not just the warning — "you'll keep
   // being charged" lands very differently with "next on 30 Aug 2026" beside it.
   const renewsOn = entitlement.renewsAt
@@ -238,12 +245,21 @@ export function DeleteAccountDialog({ visible, onClose }: Props) {
               account-deletion guidance requires we say so, name the date, and
               hand them the way out. So it becomes an actionable block rather
               than fine print — everyone else still gets the one-liner. */}
-          {entitlement.tier !== 'free' ? (
+          {maybeSubscribed ? (
             <View style={styles.billing}>
               <AppText variant="caption" color="warningText">
-                {renewsOn
-                  ? `Deleting your account does NOT cancel your ${TIERS[entitlement.tier].name} subscription. Apple will keep charging you, next on ${renewsOn}.`
-                  : `Deleting your account does NOT cancel your ${TIERS[entitlement.tier].name} subscription. Apple will keep charging you.`}
+                {(() => {
+                  // Unknown tier (billing still loading / unreachable) gets
+                  // the generic phrasing — "your Free subscription" would be
+                  // nonsense, and a subscriber must still see the warning.
+                  const plan =
+                    entitlement.tier !== 'free'
+                      ? `${TIERS[entitlement.tier].name} subscription`
+                      : 'App Store subscription (if you have one)';
+                  return renewsOn
+                    ? `Deleting your account does NOT cancel your ${plan}. Apple will keep charging you, next on ${renewsOn}.`
+                    : `Deleting your account does NOT cancel your ${plan}. Apple will keep charging you.`;
+                })()}
               </AppText>
               <Pressable
                 onPress={() => void manage()}

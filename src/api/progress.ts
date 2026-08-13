@@ -4,6 +4,7 @@
  * accounts.
  */
 import { api } from './client';
+import { localDayIso } from '@/lib/dates';
 
 export interface ProgressSummary {
   current_streak: number;
@@ -36,7 +37,13 @@ async function request<T>(
 }
 
 export function fetchProgressSummary(token: string): Promise<ProgressSummary> {
-  return request<ProgressSummary>(token, 'GET', '/progress/summary');
+  // The user's calendar day rides along so streak/week math runs against
+  // THEIR today, not the server's UTC day (which flips at 5pm in California).
+  return request<ProgressSummary>(
+    token,
+    'GET',
+    `/progress/summary?today_local=${localDayIso()}`,
+  );
 }
 
 export async function fetchExerciseSeries(
@@ -71,6 +78,12 @@ export interface SetLogBody {
   reps: number;
   weight?: number | null;
   weight_unit?: string;
+  /** ISO timestamp of when the set was performed — sent by the outbox so a
+   * delayed sync lands on the right day (server clamps it). */
+  performed_at?: string;
+  /** The user's local YYYY-MM-DD at tap time — what day-based stats bucket
+   * on (a UTC bucket splits evening workouts west of Greenwich). */
+  local_day?: string;
 }
 
 /** Persist a manually-completed set (fire-and-forget from the session UI). */

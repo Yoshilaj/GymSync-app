@@ -25,8 +25,8 @@ import {
 } from '@/api/plan';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
+import { PLAN_KEY } from '@/lib/storageKeys';
 
-const PLAN_KEY = '@gymsync/plan';
 const WEEK_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export type PlanStatus = 'loading' | 'ready' | 'empty' | 'error';
@@ -52,6 +52,8 @@ const PlanContext = createContext<PlanContextValue | undefined>(undefined);
 export function PlanProvider({ children }: { children: ReactNode }) {
   const { session, getToken } = useAuth();
   const { profile } = useUser();
+  const accountIdRef = useRef<string | null>(null);
+  accountIdRef.current = session?.user?.id ?? null;
   // Plan target weights arrive as kilograms and are converted at the API
   // boundary (see toWeeklyPlan) — this is the only place that knows which unit
   // to convert into, so it's threaded from here rather than read per screen.
@@ -63,10 +65,15 @@ export function PlanProvider({ children }: { children: ReactNode }) {
   const planRef = useRef<WeeklyPlan | null>(plan);
   planRef.current = plan;
 
-  /** The one place that touches the cache, so all three writers stay coherent. */
+  /** The one place that touches the cache, so all three writers stay coherent.
+   *  Owner-stamped like the profile cache: the read side refuses an envelope
+   *  written by a different account (see storageKeys.ts). */
   const persist = useCallback((next: WeeklyPlan | null) => {
     if (next) {
-      AsyncStorage.setItem(PLAN_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(
+        PLAN_KEY,
+        JSON.stringify({ owner: accountIdRef.current, plan: next }),
+      ).catch(() => {});
     } else {
       AsyncStorage.removeItem(PLAN_KEY).catch(() => {});
     }
@@ -93,12 +100,25 @@ export function PlanProvider({ children }: { children: ReactNode }) {
       persist(fetched);
     } catch {
       const cached = await AsyncStorage.getItem(PLAN_KEY).catch(() => null);
+      let restored: WeeklyPlan | null = null;
       if (cached) {
-        const parsed = JSON.parse(cached) as WeeklyPlan;
-        planRef.current = parsed;
-        setPlan(parsed);
+        try {
+          const parsed = JSON.parse(cached) as { owner?: string; plan?: WeeklyPlan };
+          // Envelope + matching owner only. A legacy bare-plan cache has no
+          // owner to check, so it can't be trusted across accounts — drop it.
+          if (parsed.owner && parsed.plan && parsed.owner === accountIdRef.current) {
+            restored = parsed.plan;
+          }
+        } catch {
+          /* corrupt cache — treated as absent */
+        }
+      }
+      if (restored) {
+        planRef.current = restored;
+        setPlan(restored);
         setStatus('ready');
       } else {
+        if (cached) void AsyncStorage.removeItem(PLAN_KEY);
         setStatus('error');
       }
     }

@@ -29,7 +29,8 @@ import {
 } from '@/components/ui';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
-import { fetchBodyWeightSeries, logBodyWeight } from '@/api/progress';
+import { fetchBodyWeightSeries } from '@/api/progress';
+import { outbox } from '@/lib/outbox';
 import { kgToLbs, lbsToKg } from '@/lib/units';
 import { localDayIso } from '@/lib/dates';
 
@@ -144,14 +145,21 @@ export function BodyWeightCard({ date }: { date: Date }) {
       const kg = Math.min(350, Math.max(25, metric ? shown : lbsToKg(shown)));
       const saved = entriesRef.current[day];
       if (saved != null && Math.abs(kg - saved) < 0.05) return;
+      const uid = session?.user?.id;
+      if (!uid) return;
+      // Through the outbox: the entry is durable the moment the wheel settles.
+      // The old direct POST showed "will retry" on failure and then retried
+      // nothing — the value was gone the moment the user navigated away. The
+      // day is captured here, so a later sync still upserts the right date.
+      // The only way this fails now is the disk write itself.
       try {
-        const token = await getToken();
-        await logBodyWeight(token, kg, day);
+        await outbox.enqueue(uid, { kind: 'log_bodyweight', weightKg: kg, day });
         setEntries((prev) => ({ ...prev, [day]: kg }));
         setSaveError(false);
+        void outbox.drain(uid, getToken);
       } catch (e) {
         if (__DEV__) console.warn('Body weight save failed:', e);
-        setSaveError(true); // retries on the next settle
+        setSaveError(true); // re-arms on the next settle
       }
     }, 800);
   };
@@ -256,7 +264,7 @@ export function BodyWeightCard({ date }: { date: Date }) {
           </WheelRow>
           {saveError ? (
             <AppText variant="caption" color="dangerText" align="center">
-              Couldn't save — will retry
+              Couldn't save — adjust the wheel to try again
             </AppText>
           ) : null}
         </View>

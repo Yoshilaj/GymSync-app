@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { makeStyles, spacing, useTheme } from '@/theme';
@@ -88,6 +88,17 @@ function ProfileEditForm() {
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedName = useRef(user.displayName);
 
+  // The field seeds at mount, which can beat profile hydration (cold start,
+  // slow network) — without this, the real name arriving a beat later never
+  // reached an already-open screen and the account looked nameless. Only
+  // while untouched: a keystroke makes the draft the user's, not the server's.
+  const nameTouched = useRef(false);
+  useEffect(() => {
+    if (nameTouched.current || user.displayName === lastSavedName.current) return;
+    setName(user.displayName);
+    lastSavedName.current = user.displayName;
+  }, [user.displayName]);
+
   const saveName = async () => {
     const next = name.trim();
     if (!next || next === lastSavedName.current) return;
@@ -153,7 +164,7 @@ function ProfileEditForm() {
     <SettingsPage title="Profile">
       <View style={styles.avatarBlock}>
         <Pressable onPress={changePhoto} disabled={uploadingPhoto}>
-          <ProfileAvatar name={name || 'Y'} size={84} uri={avatarUri} />
+          <ProfileAvatar name={name} size={84} uri={avatarUri} />
           <View style={styles.avatarBadge}>
             <Ionicons name="camera" size={14} color={colors.textInverse} />
           </View>
@@ -178,7 +189,10 @@ function ProfileEditForm() {
         </View>
         <Input
           value={name}
-          onChangeText={setName}
+          onChangeText={(t) => {
+            nameTouched.current = true;
+            setName(t);
+          }}
           onBlur={() => void saveName()}
           placeholder="Your name"
           returnKeyType="done"

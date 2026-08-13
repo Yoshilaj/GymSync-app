@@ -41,6 +41,15 @@ class SetLog(BaseModel):
     reps: int = Field(ge=1, le=200)
     weight: float | None = Field(None, ge=0)
     weight_unit: str = "lbs"
+    # When the set was actually performed. An offline outbox can flush Sunday's
+    # workout on Monday; without this, logged_at defaults to sync time and the
+    # streak, week count, day buckets and PR ordering all move to the wrong
+    # day — silently, and permanently. Optional: online clients may omit it.
+    performed_at: datetime | None = None
+    # The user's calendar day at tap time (YYYY-MM-DD). Day-based aggregates
+    # bucket on THIS, not on logged_at's UTC date — see migration 018: a UTC
+    # bucket splits a normal evening workout in two for anyone west of UTC.
+    local_day: date | None = None
 
 
 @router.post("/sets", status_code=201)
@@ -69,12 +78,34 @@ async def log_set(
         "set_index": body.set_index,
         "reps": body.reps,
     }
+    # Weight is ALWAYS present in the payload, null included: the upsert's
+    # ON CONFLICT only touches supplied columns, so omitting it made "re-log
+    # this set at bodyweight" silently keep the old 100 lb — screen said BW,
+    # charts and PRs kept the phantom.
     if body.weight is not None:
         # Kilograms on the way in — see 017 and app/units.py. The client sends
         # whatever unit it displays; storing that verbatim is what made PR
         # detection compare 75kg against 165lbs as though they were comparable.
         row["weight"] = to_kg(body.weight, body.weight_unit)
         row["weight_unit"] = "kg"
+    else:
+        row["weight"] = None
+    if body.performed_at is not None:
+        # Clamped, not trusted: a wrong phone clock must not plant sets in the
+        # future (breaks streak math) or the deep past (rewrites history). A
+        # 14-day window comfortably covers any realistic offline stretch.
+        now = datetime.now(timezone.utc)
+        performed = body.performed_at
+        if performed.tzinfo is None:
+            performed = performed.replace(tzinfo=timezone.utc)
+        clamped = min(max(performed, now - timedelta(days=14)), now)
+        row["logged_at"] = clamped.isoformat()
+    if body.local_day is not None:
+        # Same trust window as performed_at, in whole days (a timezone can
+        # legitimately put the user's day one ahead of UTC's).
+        today_utc = date.today()
+        lo, hi = today_utc - timedelta(days=15), today_utc + timedelta(days=1)
+        row["local_day"] = min(max(body.local_day, lo), hi).isoformat()
     # Upsert on the slot key (migration 012): re-toggling a set updates the
     # existing row instead of stacking duplicates.
     res = await db.table("completed_sets").upsert(
@@ -91,12 +122,18 @@ def _epley(weight: float, reps: int) -> float:
 
 @router.get("/progress/summary")
 async def progress_summary(
+    today_local: date | None = Query(
+        None,
+        description="The client's local calendar day. Streak/week math runs "
+        "against the USER'S today, not the server's UTC day — without it a "
+        "streak can look broken at 5pm in California.",
+    ),
     user_id: str = Depends(get_current_user_id),
     db: AsyncClient = Depends(get_db),
 ) -> dict:
     res = (
         await db.table("completed_sets")
-        .select("exercise_name, weight, logged_at")
+        .select("exercise_name, weight, logged_at, local_day")
         .eq("user_id", user_id)
         .order("logged_at", desc=True)
         .limit(2000)
@@ -104,8 +141,23 @@ async def progress_summary(
     )
     rows = res.data or []
 
-    today = date.today()
-    days_trained = {datetime.fromisoformat(r["logged_at"]).date() for r in rows}
+    # Clamp the client's claimed day to ±1 of the server's — timezone spread,
+    # not time travel.
+    server_today = date.today()
+    today = server_today
+    if today_local is not None:
+        today = min(
+            max(today_local, server_today - timedelta(days=1)),
+            server_today + timedelta(days=1),
+        )
+
+    def _day(r: dict) -> date:
+        # local_day when the row has one (migration 018); UTC day for legacy.
+        if r.get("local_day"):
+            return date.fromisoformat(r["local_day"])
+        return datetime.fromisoformat(r["logged_at"]).date()
+
+    days_trained = {_day(r) for r in rows}
 
     # Streak: consecutive training days ending today or yesterday.
     streak = 0
@@ -189,7 +241,7 @@ async def exercise_series(
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     q = (
         db.table("completed_sets")
-        .select("reps, weight, logged_at")
+        .select("reps, weight, logged_at, local_day")
         .eq("user_id", user_id)
         .gte("logged_at", since)
         .order("logged_at")
@@ -202,7 +254,9 @@ async def exercise_series(
         w = r.get("weight")
         if w is None:
             continue
-        day = datetime.fromisoformat(r["logged_at"]).date().isoformat()
+        # local_day when present (migration 018) so one evening workout is one
+        # chart point everywhere on the planet; UTC day for legacy rows.
+        day = r.get("local_day") or datetime.fromisoformat(r["logged_at"]).date().isoformat()
         if metric == "strength":
             by_day[day] = max(by_day[day], _epley(float(w), int(r["reps"])))
         else:

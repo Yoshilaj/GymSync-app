@@ -84,7 +84,7 @@ export function SettingsHomeScreen() {
       <AnimatedPressable onPress={() => nav.navigate('Profile')}>
         <Card style={styles.profileCard}>
           <ProfileAvatar
-            name={user.displayName || 'Y'}
+            name={user.displayName}
             size={44}
             uri={profile?.avatar_url ?? null}
           />
@@ -113,7 +113,15 @@ export function SettingsHomeScreen() {
         <SettingsRow
           label="Plan"
           icon="card-outline"
-          value={entitlementStatus === 'loading' ? undefined : TIERS[entitlement.tier].name}
+          // 'error' must not assert "Free" to a paying customer whose
+          // entitlement read merely failed — an em dash is an honest unknown.
+          value={
+            entitlementStatus === 'loading'
+              ? undefined
+              : entitlementStatus === 'error'
+                ? '—'
+                : TIERS[entitlement.tier].name
+          }
           right={
             entitlementStatus === 'loading' ? <Skeleton width={52} height={14} /> : undefined
           }
@@ -122,8 +130,11 @@ export function SettingsHomeScreen() {
         />
         {/* Only for someone who actually has a subscription to manage — on
             Free this row would open Apple's sheet to an empty list. The Terms
-            promise this link exists in Settings, and App Review looks for it. */}
-        {entitlement.tier !== 'free' ? (
+            promise this link exists in Settings, and App Review looks for it —
+            which is why an UNKNOWN entitlement ('error') keeps the row: hiding
+            an Apple-mandated link from a real subscriber over a network blip
+            is the worse mistake (a Free user just sees Apple's empty sheet). */}
+        {entitlement.tier !== 'free' || entitlementStatus === 'error' ? (
           <SettingsRow
             label="Manage subscription"
             icon="open-outline"

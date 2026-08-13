@@ -26,15 +26,20 @@ export interface WorkoutSessionRow {
   [key: string]: unknown;
 }
 
-/** POST /api/session — ends any existing active session and starts a new one. */
+/** POST /api/session — ends any existing active session and starts a new one.
+ * With `sessionId` (a client-minted UUID) the create is idempotent: an id the
+ * caller already owns comes back unchanged, which is what lets the offline
+ * outbox replay it safely. */
 export async function createSession(
   token: string,
   planId: string | null = null,
   workoutId: string | null = null,
+  sessionId: string | null = null,
 ): Promise<WorkoutSessionRow> {
   const data = await api.post<{ session: WorkoutSessionRow }>('/api/session', token, {
     plan_id: planId,
     workout_id: workoutId,
+    ...(sessionId ? { id: sessionId } : null),
   });
   return data.session;
 }

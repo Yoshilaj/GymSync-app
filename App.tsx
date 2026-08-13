@@ -29,6 +29,7 @@ import { readPendingStash, type PendingStash } from '@/screens/onboarding/draftS
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ConfigErrorScreen } from '@/components/ConfigErrorScreen';
 import { missingConfig } from '@/config/preflight';
+import { useOutboxSync } from '@/lib/useOutboxSync';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
 
 /**
@@ -118,6 +119,9 @@ function RootGate() {
   const { colors, scheme } = useTheme();
   const draftGate = usePendingOnboardingDraft(session?.user?.id ?? null);
   useAdoptServerTheme();
+  // Flush queued offline writes (sets, session ends, body weight) whenever
+  // the app foregrounds or connectivity returns — see lib/outbox.ts.
+  useOutboxSync();
 
   const navTheme = {
     ...DefaultTheme,

@@ -183,7 +183,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    void getMfaStatus()
+    // Raced like the session bootstrap above: this folds into `loading`, and
+    // an offline launch with an expired token can leave the underlying
+    // refresh hanging — a promise that neither resolves nor rejects would pin
+    // the splash forever. Timing out fails open, same as the catch below.
+    const timeout = new Promise<{ challengeRequired: boolean }>((resolve) => {
+      setTimeout(() => resolve({ challengeRequired: false }), 8000);
+    });
+    void Promise.race([getMfaStatus(), timeout])
       .then(({ challengeRequired }) => {
         if (cancelled) return;
         setTwoFactorPending(challengeRequired);

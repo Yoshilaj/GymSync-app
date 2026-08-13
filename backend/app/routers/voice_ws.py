@@ -242,16 +242,42 @@ async def voice_ws(
                     # not be charged against a voice allowance.
                     #
                     # The allowance is consumed here, at the point Deepgram and
-                    # TTS actually start costing money, rather than per turn.
-                    try:
-                        await check_quota(VOICE_SESSION, user_id, db)
-                    except QuotaExceeded as exc:
-                        await _refuse(websocket, exc)
-                        voice_enabled = False
-                    else:
+                    # TTS actually start costing money — but only ONCE per
+                    # workout session. The client reconnects the socket freely
+                    # (gym wifi drops, foreground/background, the auto-retry),
+                    # and each reconnect replays session_start; metering per
+                    # frame let two flaky workouts burn a Pro user's whole
+                    # month. The session row remembers it already paid.
+                    already_consumed = False
+                    if session_id:
+                        paid = await db.table("workout_sessions").select(
+                            "session_data"
+                        ).eq("id", session_id).execute()
+                        if paid.data:
+                            already_consumed = bool(
+                                (paid.data[0].get("session_data") or {}).get("voice_consumed")
+                            )
+                    if already_consumed:
                         voice_session = VoiceSession(websocket, user_id, session_id, db)
                         await voice_session.start()
-                        await consume_quota(VOICE_SESSION, user_id, db)
+                    else:
+                        try:
+                            await check_quota(VOICE_SESSION, user_id, db)
+                        except QuotaExceeded as exc:
+                            await _refuse(websocket, exc)
+                            voice_enabled = False
+                        else:
+                            voice_session = VoiceSession(websocket, user_id, session_id, db)
+                            await voice_session.start()
+                            await consume_quota(VOICE_SESSION, user_id, db)
+                            if session_id:
+                                # Read-modify-write is fine here: one socket per
+                                # session in practice, and a lost race merely
+                                # meters one extra start — the pre-fix behavior.
+                                current = (paid.data[0].get("session_data") or {}) if paid.data else {}
+                                await db.table("workout_sessions").update(
+                                    {"session_data": {**current, "voice_consumed": True}}
+                                ).eq("id", session_id).eq("user_id", user_id).execute()
 
                 await websocket.send_json({
                     "type": "ack",

@@ -1433,6 +1433,29 @@ async def _propose_workout_plan(args: dict, ctx: ToolContext) -> tuple[dict, lis
     if not days:
         return {"error": "A plan needs at least one day."}, []
 
+    # Same allowance as POST /plans/generate and /proposals/adopt — the
+    # routers' comment promises all three generation paths consume it, and
+    # until this check the chat coach was the free side door: a Free user out
+    # of generations could just ask the coach for unlimited plans. Checked
+    # here so the coach refuses BEFORE burning a proposal; the allowance is
+    # consumed at accept (the materialization), matching the adopt path.
+    # Anonymous (pre-signup) proposals stay ungated — no account to meter yet;
+    # the adopt-after-signup step meters them.
+    if ctx.anonymous_profile is None:
+        from app.entitlements import PLAN_GENERATION, QuotaExceeded, check_quota
+
+        try:
+            await check_quota(PLAN_GENERATION, ctx.user_id, ctx.db, tier=ctx.tier)
+        except QuotaExceeded as exc:
+            return {
+                "error": (
+                    "This account has used its included plan generation — "
+                    f"another custom plan requires the {exc.required_tier} tier. "
+                    "Tell the user warmly, and point them to the Plans page to upgrade."
+                ),
+                "upgrade_required": exc.detail(),
+            }, []
+
     if ctx.anonymous_profile is not None:
         # Pre-signup: the answers ARE the profile. No injuries rows exist yet
         # (areas ride the payload as plain strings), so movement checks skip.
