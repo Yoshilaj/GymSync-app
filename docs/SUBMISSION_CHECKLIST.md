@@ -143,6 +143,29 @@ register `terms-of-service` as a custom EULA — reasons in
 ```bash
 cd /Users/yoshi/Documents/Programming/Projects/GymSync/GymSync/gymsync-app
 eas build --platform ios --profile production
+```
+
+**Before submitting — MANDATORY, this is what the build-3 rejection was:**
+
+1. In the build logs, confirm the `[check-env] ok — all 6 vars present` line
+   from the pre-install hook. If the build failed there, the EAS environment
+   variables are missing — see `docs/DEPLOY.md` §4.
+2. Download the IPA from the build page and prove the configuration is inside
+   the binary:
+
+   ```bash
+   tools/verify-ipa-bundle.sh ~/Downloads/build-XX.ipa   # must print PASS
+   ```
+
+3. Install THAT build via TestFlight on a physical device, **deleting any
+   previous install first** (App Review installs fresh), and cold-launch it:
+   blue splash → sign-in screen, with both Apple and Google buttons visible.
+   Also cold-launch once in airplane mode — it must reach the sign-in screen,
+   not sit on the splash.
+
+Only then:
+
+```bash
 eas submit --platform ios
 ```
 

@@ -7,18 +7,21 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "environment": "development",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "preview": {
       "distribution": "internal",
+      "environment": "preview",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
     "production": {
       "autoIncrement": true,
+      "environment": "production",
       "env": {
         "SENTRY_DISABLE_AUTO_UPLOAD": "false"
       }

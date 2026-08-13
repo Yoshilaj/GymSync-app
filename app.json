@@ -7,9 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "gymsync",
     "userInterfaceStyle": "automatic",
-    "splash": {
-      "backgroundColor": "#2E90EA"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -117,6 +114,17 @@
       "tsconfigPaths": true
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#2E90EA",
+          "image": "./assets/logo-mark.png",
+          "imageWidth": 200,
+          "dark": {
+            "backgroundColor": "#2E90EA"
+          }
+        }
+      ],
       "expo-font",
       [
         "expo-audio",

@@ -3,8 +3,11 @@
  *
  * The native launch screen is a flat fill of the same brand blue, so this
  * mounting on top is invisible — the colour never changes, the mark just
- * arrives. That's the whole trick, and it's why this doesn't need
- * expo-splash-screen to coordinate a handoff.
+ * arrives. That blue comes from the expo-splash-screen plugin config in
+ * app.json (don't remove the plugin thinking it's unused: without it, prebuild
+ * generates a WHITE storyboard and every cold start flashes white → blue.
+ * Build 3 shipped that way, which is why Apple's 2.1a rejection screenshot was
+ * a white screen rather than a blue one).
  *
  * Uses `gradients.brand` rather than a theme surface on purpose: a launch
  * screen is brand, not chrome, so it stays blue in dark mode too.

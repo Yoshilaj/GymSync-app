@@ -37,17 +37,29 @@ const SWEEP_SCALE = 1.6;
  * apart in both phase and speed — a list of seven rows ends up shimmering like
  * TV static. Sharing the 0→1 driver locks them into a single wave; only the
  * pixel distance is per-block.
+ *
+ * Created lazily, on first use, NOT at module scope: `makeMutable` is a JSI
+ * call, and this file rides in the `@/components/ui` barrel that nearly every
+ * screen imports — so a module-scope call runs during bundle evaluation,
+ * before React mounts, where a failure is an unreportable blank screen rather
+ * than a caught render error.
  */
-const sweepClock = makeMutable(0);
+let sweepClock: ReturnType<typeof makeMutable<number>> | null = null;
 let sweepSubscribers = 0;
+
+function getSweepClock() {
+  if (sweepClock === null) sweepClock = makeMutable(0);
+  return sweepClock;
+}
 
 function useSweepClock(active: boolean) {
   useEffect(() => {
     if (!active) return;
+    const clock = getSweepClock();
     sweepSubscribers += 1;
     if (sweepSubscribers === 1) {
-      sweepClock.value = 0;
-      sweepClock.value = withRepeat(
+      clock.value = 0;
+      clock.value = withRepeat(
         withTiming(1, { duration: SWEEP_MS, easing: Easing.inOut(Easing.quad) }),
         -1,
         false,
@@ -57,7 +69,7 @@ function useSweepClock(active: boolean) {
       sweepSubscribers -= 1;
       // Nothing left to shimmer — don't leave a timing loop running on the UI
       // thread behind a closed drawer or an unmounted screen.
-      if (sweepSubscribers === 0) cancelAnimation(sweepClock);
+      if (sweepSubscribers === 0) cancelAnimation(clock);
     };
   }, [active]);
 }
@@ -83,11 +95,12 @@ export function Skeleton({
   const animate = !reduceMotion && blockWidth > 0;
   useSweepClock(animate);
 
+  const clock = getSweepClock();
   const sweepStyle = useAnimatedStyle(() => {
     const travel = blockWidth * SWEEP_SCALE;
     return {
       transform: [
-        { translateX: -travel + sweepClock.value * (travel + blockWidth) },
+        { translateX: -travel + clock.value * (travel + blockWidth) },
       ],
     };
   });

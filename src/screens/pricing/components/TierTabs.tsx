@@ -32,9 +32,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { GlassView } from 'expo-glass-effect';
 import * as Haptics from 'expo-haptics';
 import { AppText } from '@/components/ui';
+import { glassAvailable } from '@/lib/glass';
 import { makeStyles, radius, spacing, useTheme } from '@/theme';
 import { ALL_TIERS, TIERS, type TierId } from '../catalog';
 
@@ -42,9 +43,6 @@ import { ALL_TIERS, TIERS, type TierId } from '../catalog';
 const PAD = spacing.xs;
 /** Exported so PricingScreen can overlap the hero by exactly half of it. */
 export const TRACK_HEIGHT = 44 + PAD * 2;
-
-// Evaluated once — cheap, and it can't change at runtime.
-const glassAvailable = isLiquidGlassAvailable();
 
 interface Props {
   value: TierId;
@@ -146,7 +144,7 @@ function TrackSurface({ children }: { children: ReactNode }) {
   const { scheme } = useTheme();
   const styles = useStyles();
 
-  if (Platform.OS === 'ios' && glassAvailable) {
+  if (Platform.OS === 'ios' && glassAvailable()) {
     return (
       <GlassView glassEffectStyle="clear" style={styles.surface}>
         {children}

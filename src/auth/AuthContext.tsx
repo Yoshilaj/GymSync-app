@@ -77,20 +77,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Load any persisted session, then subscribe to changes.
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      hasSession.current = !!data.session;
-      setLoading(false);
-      // The stored session can be days old and carries a snapshot of the account
-      // from whenever its token was minted. Re-read it once on launch so a change
-      // made elsewhere (or on another device) doesn't wait for a token to expire.
-      // Not awaited: the gate shouldn't sit on the network to show a screen it can
-      // already draw from the persisted session.
-      if (data.session) {
-        lastForegroundSync.current = Date.now();
-        void supabase.auth.refreshSession();
-      }
+    //
+    // Raced against a timeout and with `loading` cleared in `finally`, because
+    // this promise is the app's front door: if it neither resolves nor rejects
+    // (a wedged keychain read), or rejects (a corrupt stored session), the old
+    // code left `loading` true forever — a splash screen nobody can get past.
+    // Timing out or failing into the signed-out state is recoverable: worst
+    // case, someone with a valid session sees the sign-in screen once. supabase-js
+    // resolves in milliseconds off local storage, so 8s is generous.
+    const timeout = new Promise<{ data: { session: null } }>((resolve) => {
+      setTimeout(() => resolve({ data: { session: null } }), 8000);
     });
+    Promise.race([supabase.auth.getSession(), timeout])
+      .then(({ data }) => {
+        setSession(data.session);
+        hasSession.current = !!data.session;
+        // The stored session can be days old and carries a snapshot of the account
+        // from whenever its token was minted. Re-read it once on launch so a change
+        // made elsewhere (or on another device) doesn't wait for a token to expire.
+        // Not awaited: the gate shouldn't sit on the network to show a screen it can
+        // already draw from the persisted session.
+        if (data.session) {
+          lastForegroundSync.current = Date.now();
+          void supabase.auth.refreshSession();
+        }
+      })
+      .catch((error) => {
+        // Unreadable stored session — treat as signed out rather than hang.
+        Sentry.captureException(error, { tags: { phase: 'auth-bootstrap' } });
+      })
+      .finally(() => {
+        setLoading(false);
+      });
     const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next);
       hasSession.current = !!next;
@@ -165,11 +183,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     let cancelled = false;
-    void getMfaStatus().then(({ challengeRequired }) => {
-      if (cancelled) return;
-      setTwoFactorPending(challengeRequired);
-      setMfaChecked(true);
-    });
+    void getMfaStatus()
+      .then(({ challengeRequired }) => {
+        if (cancelled) return;
+        setTwoFactorPending(challengeRequired);
+        setMfaChecked(true);
+      })
+      .catch((error) => {
+        // Fail OPEN, not shut: `mfaChecked` folds into `loading`, so a rejection
+        // here used to pin the splash forever. Letting an aal1 session through
+        // the *client* gate is acceptable only because the backend keeps
+        // enforcing aal2 on sensitive routes — this gate is UX, not security.
+        if (cancelled) return;
+        Sentry.captureException(error, { tags: { phase: 'mfa-check' } });
+        setTwoFactorPending(false);
+        setMfaChecked(true);
+      });
     return () => {
       cancelled = true;
     };

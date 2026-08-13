@@ -94,9 +94,16 @@ export const secureSessionStorage = {
   },
 
   async setItem(key: string, value: string): Promise<void> {
-    await AsyncStorage.setItem(cipherKey(key), await encrypt(key, value));
-    // Belt and braces: make sure a pre-migration plaintext copy can't linger.
-    await AsyncStorage.removeItem(key);
+    try {
+      await AsyncStorage.setItem(cipherKey(key), await encrypt(key, value));
+      // Belt and braces: make sure a pre-migration plaintext copy can't linger.
+      await AsyncStorage.removeItem(key);
+    } catch {
+      // A failed persist (keychain unavailable, disk full) must not reject into
+      // supabase-js's storage pipeline — that turns "couldn't save the session"
+      // into an unhandled rejection inside the auth bootstrap. The in-memory
+      // session keeps working; worst case the user signs in again next launch.
+    }
   },
 
   async removeItem(key: string): Promise<void> {

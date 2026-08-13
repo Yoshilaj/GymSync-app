@@ -6,16 +6,20 @@
  */
 const configuredUrl = process.env.EXPO_PUBLIC_API_URL;
 
+/** False means this build points at the localhost fallback — fine on a dev
+ * machine, useless on a customer's phone. Checked by src/config/preflight.ts. */
+export const isApiConfigured = Boolean(configuredUrl);
+
 if (!configuredUrl && !__DEV__) {
   // Same reasoning as auth/supabase.ts: in development the localhost fallback is
-  // a convenience, but a release build has no .env to fix and no console to read
-  // a warning in. Without this, a missing or misspelled EAS secret ships an app
-  // that points at localhost:8000 on the phone itself — every request fails with
-  // "Can't reach the server", which reads as an outage rather than a bad build.
-  // Fail at launch, where it's unmissable, instead of on every screen.
-  throw new Error(
-    '[config] Missing EXPO_PUBLIC_API_URL. Set it as an EAS secret (or in .env) ' +
-      'and rebuild — this build cannot reach the backend.',
+  // a convenience, but on a customer's phone it points every request at the
+  // phone itself. This used to `throw` here so a bad build failed loudly — but a
+  // module-scope throw fires before Sentry and before React, which is how App
+  // Review met a blank white screen (rejection 2.1a, build 3). The build-time
+  // check (tools/check-env.js) now refuses to produce such a build, and
+  // src/config/preflight.ts surfaces the failure on screen if one ever escapes.
+  console.error(
+    '[config] Missing EXPO_PUBLIC_API_URL — this build cannot reach the backend.',
   );
 }
 

@@ -36,6 +36,23 @@ export const TRIAL_DAYS = 7;
  */
 export const SUBSCRIPTION_GROUP_ID = 'gymsync.membership';
 
+/**
+ * The same group as App Store Connect knows it: the numeric "Group ID" on the
+ * subscription-group page (also visible in its URL). Two constants because they
+ * are two different namespaces that happen to describe one group:
+ * - `SUBSCRIPTION_GROUP_ID` above is the group's *name*, which the local
+ *   .storekit file uses (tools/generate-storekit.mjs reads it) — so local
+ *   StoreKit-config testing resolves it fine.
+ * - Production StoreKit resolves groups by this numeric id ONLY. Passing the
+ *   name to `isEligibleForIntroOfferIOS` works against the local .storekit and
+ *   silently fails in production — trial eligibility always comes back false,
+ *   so the paywall stops advertising a trial the customer would actually get.
+ *
+ * Empty until filled from ASC; BillingProvider falls back to the name so local
+ * testing keeps working either way.
+ */
+export const ASC_SUBSCRIPTION_GROUP_ID = '';
+
 const MONTHS_PER_YEAR = 12;
 
 export interface Feature {

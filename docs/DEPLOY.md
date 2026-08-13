@@ -144,16 +144,37 @@ from the app.
 EXPO_PUBLIC_API_URL=https://<your-app>.fly.dev
 ```
 
-And as an EAS secret, for real builds:
+### EAS environment variables — ALL of them, not just the API URL
+
+The local `.env` never reaches an EAS build (`.env` is gitignored, and EAS
+builds from the git archive). Build 3 shipped with **none** of these set on
+EAS, which is exactly the blank-screen App Review rejection of 2026-08-12.
+Every `EXPO_PUBLIC_*` value the app reads must exist as an EAS environment
+variable in the **production** AND **preview** environments:
 
 ```bash
-eas secret:create --name EXPO_PUBLIC_API_URL --value https://<your-app>.fly.dev
+# once per environment (production, preview):
+eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_URL       --value https://<ref>.supabase.co --visibility plaintext --scope project
+eas env:create --environment production --name EXPO_PUBLIC_SUPABASE_ANON_KEY  --value <anon-key>                --visibility sensitive --scope project
+eas env:create --environment production --name EXPO_PUBLIC_API_URL            --value https://<your-app>.fly.dev --visibility plaintext --scope project
+eas env:create --environment production --name EXPO_PUBLIC_SENTRY_DSN         --value <dsn>                     --visibility sensitive --scope project
+eas env:create --environment production --name EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID --value <id>                    --visibility sensitive --scope project
+eas env:create --environment production --name EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID --value <id>                    --visibility sensitive --scope project
+
+# verify:
+eas env:list --environment production --include-sensitive
 ```
 
-It must be **https**. `src/voice/config.ts` derives the WebSocket URL by
+The build profiles in `eas.json` declare which environment they load via their
+`"environment"` key — keep that in place. Three safety nets exist if this is
+ever wrong again: `tools/check-env.js` fails the build (pre-install hook),
+`tools/verify-ipa-bundle.sh` fails the IPA before submission, and
+`src/config/preflight.ts` + `ConfigErrorScreen` turn a bad escaped build into a
+readable error screen instead of a blank one.
+
+The URLs must be **https**. `src/voice/config.ts` derives the WebSocket URL by
 swapping the scheme, so `https` gives `wss` and an `http` base would send voice
-audio unencrypted. A release build with this unset now throws at launch rather
-than silently pointing at localhost.
+audio unencrypted (check-env.js enforces this too).
 
 Rebuild the dev client so it picks the value up:
 

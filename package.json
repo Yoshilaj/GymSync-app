@@ -7,7 +7,8 @@
     "ios": "expo run:ios",
     "android": "expo run:android",
     "web": "expo start --web",
-    "fetch-images": "node tools/fetch-exercise-images.mjs"
+    "fetch-images": "node tools/fetch-exercise-images.mjs",
+    "eas-build-pre-install": "node tools/check-env.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -37,6 +38,7 @@
     "expo-linear-gradient": "~15.0.8",
     "expo-secure-store": "~15.0.8",
     "expo-speech-recognition": "^3.1.3",
+    "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "expo-store-review": "~9.0.9",
     "onnxruntime-react-native": "^1.24.3",

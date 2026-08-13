@@ -13,24 +13,28 @@ const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
-if (!isSupabaseConfigured) {
+if (!isSupabaseConfigured && __DEV__) {
   // In development, warn and carry on: booting to the sign-in screen is more
   // useful than a crash while someone is still setting up their .env.
   //
-  // In a release build there is no .env to fix and no console to read it in — the
-  // app would ship silently unable to authenticate anyone, every auth call failing
-  // against a placeholder host. Refuse to start instead. A build that can't sign
-  // anyone in is not a build worth shipping quietly.
-  const message =
+  // This used to `throw` in release builds instead — "a build that can't sign
+  // anyone in is not a build worth shipping quietly." Right instinct, fatal
+  // mechanics: the throw fired at module evaluation, before Sentry.init and
+  // before React mounted, so App Review saw a dead white screen and we saw
+  // nothing at all (rejection 2.1a, build 3). The enforcement lives earlier in
+  // the pipeline now — tools/check-env.js fails the EAS build outright — and at
+  // runtime src/config/preflight.ts routes a misconfigured release build to a
+  // visible ConfigErrorScreen instead of a corpse.
+  console.warn(
     '[auth] Missing Supabase env — set EXPO_PUBLIC_SUPABASE_URL and ' +
-    'EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env, then restart Expo.';
-  if (__DEV__) console.warn(message);
-  else throw new Error(message);
+      'EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env, then restart Expo.',
+  );
 }
 
 export const supabase = createClient(
-  // Placeholders keep createClient from throwing on an empty URL in dev; the
-  // release path above has already bailed by now.
+  // Placeholders keep createClient from throwing on an empty URL. In a release
+  // build this client is unreachable anyway: preflight.ts diverts a
+  // misconfigured build to ConfigErrorScreen before any provider mounts.
   url ?? 'https://placeholder.supabase.co',
   anonKey ?? 'placeholder-anon-key',
   {

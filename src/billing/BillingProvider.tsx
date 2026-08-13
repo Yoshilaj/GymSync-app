@@ -49,7 +49,11 @@ import {
   verifyPurchase,
   type Entitlement,
 } from '@/api/billing';
-import { SKUS, SUBSCRIPTION_GROUP_ID } from '@/screens/pricing/catalog';
+import {
+  ASC_SUBSCRIPTION_GROUP_ID,
+  SKUS,
+  SUBSCRIPTION_GROUP_ID,
+} from '@/screens/pricing/catalog';
 
 const PRODUCT_IDS = SKUS.map((s) => s.productId);
 
@@ -290,7 +294,10 @@ export function BillingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!connected) return;
     let cancelled = false;
-    void isEligibleForIntroOfferIOS(SUBSCRIPTION_GROUP_ID)
+    // Production StoreKit resolves groups by the numeric ASC id; the local
+    // .storekit file resolves by name. Prefer the id, fall back to the name so
+    // simulator/StoreKit-config testing keeps working — see catalog.ts.
+    void isEligibleForIntroOfferIOS(ASC_SUBSCRIPTION_GROUP_ID || SUBSCRIPTION_GROUP_ID)
       .then((eligible) => {
         if (!cancelled) setIntroEligible(Boolean(eligible));
       })

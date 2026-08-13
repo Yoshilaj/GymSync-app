@@ -1,15 +1,14 @@
 import { ReactNode } from 'react';
 import { Platform, StyleSheet, View, ViewStyle, StyleProp } from 'react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { GlassView } from 'expo-glass-effect';
 import { BlurView } from 'expo-blur';
+import { glassAvailable } from '@/lib/glass';
 import { layout, makeStyles, useTheme } from '@/theme';
 
 interface Props {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
 }
-
-const glassAvailable = isLiquidGlassAvailable();
 
 /**
  * The floating tab bar's surface, best-available per platform:
@@ -23,7 +22,7 @@ const glassAvailable = isLiquidGlassAvailable();
 export function TabBarSurface({ children, style }: Props) {
   const { scheme } = useTheme();
   const styles = useStyles();
-  if (Platform.OS === 'ios' && glassAvailable) {
+  if (Platform.OS === 'ios' && glassAvailable()) {
     return (
       <View style={[styles.glassShadow, style]}>
         <GlassView glassEffectStyle="clear" isInteractive style={styles.surface}>
@@ -63,7 +62,7 @@ export function TabBarSurface({ children, style }: Props) {
 export function GlassLozenge({ style }: { style?: StyleProp<ViewStyle> }) {
   const { colors } = useTheme();
   const lozengeStyles = useLozengeStyles();
-  if (Platform.OS === 'ios' && glassAvailable) {
+  if (Platform.OS === 'ios' && glassAvailable()) {
     return (
       <GlassView
         glassEffectStyle="regular"

@@ -27,6 +27,8 @@ import { BillingProvider } from '@/billing/BillingProvider';
 import { LaunchScreen } from '@/components/LaunchScreen';
 import { readPendingStash, type PendingStash } from '@/screens/onboarding/draftStash';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ConfigErrorScreen } from '@/components/ConfigErrorScreen';
+import { missingConfig } from '@/config/preflight';
 import { ThemeProvider, useTheme, useThemePref, type ThemePreference } from '@/theme';
 
 /**
@@ -185,13 +187,21 @@ function RootGate() {
 }
 
 function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
     Inter_800ExtraBold,
   });
+
+  // A release build missing its baked-in env can't do anything useful — but it
+  // CAN say so. Checked before the provider tree because the providers are
+  // exactly what a missing config breaks. Dev keeps the sign-in screen +
+  // console warning; see src/config/preflight.ts for the full story.
+  if (!__DEV__ && missingConfig.length > 0) {
+    return <ConfigErrorScreen missing={missingConfig} />;
+  }
 
   return (
     // Outermost, and outside every provider on purpose: PlanContext,
@@ -210,7 +220,15 @@ function App() {
                         connection and registers transaction listeners, so a
                         second instance would deliver every purchase twice. */}
                     <BillingProvider>
-                      {fontsLoaded ? <RootGate /> : <LaunchScreen showWordmark={false} />}
+                      {/* A font failure falls through to the system face —
+                          degraded typography beats an eternal splash. The
+                          error slot used to be discarded, which made any
+                          font-load failure an unrecoverable blue screen. */}
+                      {fontsLoaded || fontError ? (
+                        <RootGate />
+                      ) : (
+                        <LaunchScreen showWordmark={false} />
+                      )}
                     </BillingProvider>
                   </PlanProvider>
                 </ThemeProvider>
