@@ -48,10 +48,10 @@ export const SUBSCRIPTION_GROUP_ID = 'gymsync.membership';
  *   silently fails in production — trial eligibility always comes back false,
  *   so the paywall stops advertising a trial the customer would actually get.
  *
- * Empty until filled from ASC; BillingProvider falls back to the name so local
- * testing keeps working either way.
+ * BillingProvider prefers this and falls back to the name, so local
+ * StoreKit-config testing keeps working either way.
  */
-export const ASC_SUBSCRIPTION_GROUP_ID = '';
+export const ASC_SUBSCRIPTION_GROUP_ID = '22275760';
 
 const MONTHS_PER_YEAR = 12;
 
