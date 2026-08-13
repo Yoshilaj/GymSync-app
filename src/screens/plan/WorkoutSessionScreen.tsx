@@ -188,6 +188,21 @@ function WorkoutSessionActive() {
     [route.params?.workoutId, getWorkoutById, todaysWorkout],
   );
 
+  // Retroactive logging: a PAST calendar day selected on the Plan tab means
+  // "I'm recording the workout I did then" — sets stamp that day, exactly the
+  // way the body-weight card already does. Today and future days stamp now
+  // (you can't pre-train Friday), and anything older than the server's
+  // 14-day trust window falls back to now too: the server would clamp it to
+  // the window's edge, and logging to today is honest where mislabelling
+  // isn't. String compares are safe — the days are YYYY-MM-DD.
+  const backdatedDay = useMemo(() => {
+    const day = route.params?.day ?? null;
+    if (!day) return null;
+    const today = localDayIso();
+    const floor = localDayIso(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000));
+    return day < today && day >= floor ? day : null;
+  }, [route.params?.day]);
+
   // Lazy initializer: the plan is read ONCE, at mount. Editing the plan mid
   // session (Plan tab add/delete) deliberately doesn't reach in here — the
   // list must not shift under someone who's between sets.
@@ -834,6 +849,20 @@ function WorkoutSessionActive() {
     });
   }, [exercises, exerciseIdx, workoutSession.sessionId, authUser?.id, workout.id]);
 
+  // Retroactive mode must be visible, not silent — the one thing worse than
+  // not supporting backdated logging is doing it without saying so.
+  useEffect(() => {
+    if (!backdatedDay) return;
+    pushToast(
+      `Logging for ${new Date(`${backdatedDay}T12:00:00`).toLocaleDateString(undefined, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })}`,
+      'calendar',
+    );
+  }, [backdatedDay, pushToast]);
+
   // Hands-free: the coach comes up with the workout — no mic tap needed. One
   // shot per screen visit; failures land in the dock's error row (Retry).
   // Waits for the entitlement: on Free this never fires, and the dock offers
@@ -876,6 +905,14 @@ function WorkoutSessionActive() {
 
   const current = exercises[exerciseIdx];
   const currentSets = current?.sets ?? [];
+  // "Bodyweight" is an exercise property, not a weight value: pull-ups at 0
+  // are bodyweight reps, a barbell press at 0 is an empty bar. Two ways an
+  // exercise is bodyweight here: its catalog equipment says so, or the plan
+  // swapped in the catalog entry's bodyweight VARIANT by name (home plans do
+  // this — the meta then still carries the loaded exercise's equipment).
+  const currentIsBodyweight =
+    current?.meta?.equipment === 'Bodyweight' ||
+    (!!current?.meta?.bodyweightName && current?.name === current.meta.bodyweightName);
   const currentSetIdx = currentSets.findIndex((s) => !s.completed);
   const nextExercise = exercises[exerciseIdx + 1];
 
@@ -944,8 +981,13 @@ function WorkoutSessionActive() {
       const set = ex?.sets[setIdx];
       const uid = authUser?.id;
       if (ex && set && uid) {
-        const performedAt = new Date().toISOString();
-        const localDay = localDayIso();
+        // Backdated session → noon LOCAL of the selected day (a date-only
+        // string parses as local midnight; noon keeps it inside the same day
+        // in every timezone). Otherwise: the tap's real moment.
+        const performedAt = backdatedDay
+          ? new Date(`${backdatedDay}T12:00:00`).toISOString()
+          : new Date().toISOString();
+        const localDay = backdatedDay ?? localDayIso();
         void workoutSession.start().then((sid) => {
           if (!sid) return;
           void outbox
@@ -1219,6 +1261,7 @@ function WorkoutSessionActive() {
               completed={s.completed}
               isCurrent={i === currentSetIdx}
               units={user.units}
+              bodyweight={currentIsBodyweight}
               weightExpanded={weightEditIdx === i && !s.completed}
               onPressWeight={
                 s.completed

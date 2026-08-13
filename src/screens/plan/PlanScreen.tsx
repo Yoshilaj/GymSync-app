@@ -22,6 +22,7 @@ import {
 import { useUser } from '@/context/UserContext';
 import { usePlan } from '@/context/PlanContext';
 import { useOutboxPending } from '@/lib/useOutboxSync';
+import { localDayIso } from '@/lib/dates';
 import { PlanApiError } from '@/api/plan';
 import { PlanStackParamList } from '@/navigation/PlanStack';
 import { PlannedWorkout, Units } from '@/types';
@@ -174,7 +175,15 @@ export function PlanScreen() {
             isToday={selectedIso === todayIso}
             selectedDay={selectedDay}
             units={user.units}
-            onStart={(id) => nav.navigate('LiveWorkoutStart', { workoutId: id })}
+            onStart={(id) =>
+              nav.navigate('LiveWorkoutStart', {
+                workoutId: id,
+                // The selected calendar day rides along: a past day means
+                // "I'm logging the workout I did then", and sets stamp it —
+                // the BodyWeightCard beside this already behaves that way.
+                day: localDayIso(new Date(selectedIso)),
+              })
+            }
             onOpenExercise={(exerciseId) =>
               nav.navigate('ExerciseDetail', { exerciseId })
             }

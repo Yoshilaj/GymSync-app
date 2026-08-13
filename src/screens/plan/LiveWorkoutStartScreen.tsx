@@ -72,7 +72,12 @@ export function LiveWorkoutStartScreen() {
         // there permanently — the real id is gone by the time the plan lands.
         // Passing it through (undefined included) lets WorkoutSession resolve
         // once it actually has a plan.
-        nav.replace('WorkoutSession', { workoutId: route.params?.workoutId });
+        nav.replace('WorkoutSession', {
+          workoutId: route.params?.workoutId,
+          // The calendar day the user picked rides through — a past day means
+          // the session logs retroactively to it (see PlanStack's param doc).
+          day: route.params?.day,
+        });
       }
     });
 

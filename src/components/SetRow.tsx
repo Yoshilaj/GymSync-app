@@ -21,6 +21,13 @@ interface Props {
   /** The set the lifter is on — gets the highlight treatment. */
   isCurrent?: boolean;
   units: Units;
+  /**
+   * Whether zero load means "your body is the load". "Bodyweight" is a
+   * property of the EXERCISE, not a weight value: a pull-up at 0 is a
+   * bodyweight rep, an incline barbell press at 0 is an empty bar — labelling
+   * the latter "Bodyweight" read as nonsense mid-workout.
+   */
+  bodyweight?: boolean;
   /** Open state of the weight wheel — controlled by the screen (one at a time). */
   weightExpanded?: boolean;
   onPressWeight?: () => void;
@@ -30,7 +37,6 @@ interface Props {
 }
 
 const WEIGHT_STEP = 2.5; // the real-world plate/dumbbell increment, kg or lbs
-const formatWeight = (n: number) => (n === 0 ? 'BW' : String(n));
 
 /**
  * One set in the live session. Steppers instead of a keyboard — nobody wants
@@ -45,6 +51,7 @@ export function SetRow({
   completed,
   isCurrent = false,
   units,
+  bodyweight = false,
   weightExpanded = false,
   onPressWeight,
   onChangeWeight,
@@ -121,10 +128,20 @@ export function SetRow({
           style={({ pressed }) => [styles.loadBlock, pressed && styles.loadPressed]}
           accessibilityRole="button"
           accessibilityState={{ expanded: weightExpanded }}
-          accessibilityLabel={`Weight, ${weight > 0 ? `${weight} ${units}` : 'bodyweight'}`}
+          accessibilityLabel={`Weight, ${
+            weight > 0
+              ? `${weight} ${units}`
+              : bodyweight
+                ? 'bodyweight'
+                : `0 ${units}`
+          }`}
         >
           <AppText variant="bodyMedium" style={styles.tabular}>
-            {weight > 0 ? `${weight} ${units}` : 'Bodyweight'}
+            {weight > 0
+              ? `${weight} ${units}`
+              : bodyweight
+                ? 'Bodyweight'
+                : `0 ${units}`}
           </AppText>
           <AppText variant="caption">Target {targetReps} reps</AppText>
         </Pressable>
@@ -183,7 +200,7 @@ export function SetRow({
                 step={WEIGHT_STEP}
                 value={snappedWeight}
                 onChange={(w) => onChangeWeight?.(w)}
-                format={formatWeight}
+                format={(n) => (n === 0 ? (bodyweight ? 'BW' : '0') : String(n))}
                 width={96}
                 showBand={false}
                 accessibilityLabel="Set weight"

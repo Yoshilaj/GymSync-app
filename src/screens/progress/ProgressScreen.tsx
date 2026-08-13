@@ -600,7 +600,7 @@ function ExerciseTrends({
               month: 'short',
               day: 'numeric',
             })}
-            {'\n'}One more session and your trend line appears.
+            {'\n'}Train again on another day and your trend line appears.
           </AppText>
         </View>
       ) : (
