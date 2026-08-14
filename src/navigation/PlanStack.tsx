@@ -8,7 +8,9 @@ import { useTheme } from '@/theme';
 
 export type PlanStackParamList = {
   /** Params arrive only as the picker's return channel (add exercise). */
-  PlanHome: { pickedExercise?: string; targetWorkoutId?: string } | undefined;
+  PlanHome:
+    | { pickedExercise?: string; targetWorkoutId?: string; targetDay?: string }
+    | undefined;
   /** `day` = the calendar day (YYYY-MM-DD, local) the user selected on the
    * Plan tab. A PAST day means retroactive logging — sets stamp that day, the
    * way the body-weight card already does. Omitted/today/future → now. */
@@ -21,6 +23,9 @@ export type PlanStackParamList = {
     title?: string;
     returnTo?: 'PlanHome';
     targetWorkoutId?: string;
+    /** The calendar day the picker was opened from — echoed back so the add
+     * lands on that DATE only (per-date override, migration 019). */
+    targetDay?: string;
     /** Catalog ids and lowercased names already in the target day. */
     existingKeys?: string[];
   };

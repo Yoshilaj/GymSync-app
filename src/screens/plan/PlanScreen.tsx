@@ -37,7 +37,14 @@ export function PlanScreen() {
   const { colors } = useTheme();
   const styles = useStyles();
   const { user } = useUser();
-  const { plan, status: planStatus, refresh: refreshPlan, addExercise, removeExercise } = usePlan();
+  const {
+    plan,
+    status: planStatus,
+    refresh: refreshPlan,
+    addExercise,
+    removeExercise,
+    getWorkoutForDay,
+  } = usePlan();
   const pendingSync = useOutboxPending();
 
   const today = useMemo(() => new Date(), []);
@@ -48,8 +55,14 @@ export function PlanScreen() {
   // Derived — the plan is weekly-recurring, so every downstream consumer
   // still keys off the weekday label; only selection became date-based.
   const selectedDay = WEEK_LONG[new Date(selectedIso).getDay()];
+  const selectedDayIso = localDayIso(new Date(selectedIso));
 
-  const workoutForDay = plan?.workouts.find((w) => w.dayLabel === selectedDay);
+  // Template by weekday, then the DATE's override on top (edit-one-day,
+  // migration 019): editing Aug 24's Upper A shows here on Aug 24 only.
+  const templateForDay = plan?.workouts.find((w) => w.dayLabel === selectedDay);
+  const workoutForDay = templateForDay
+    ? getWorkoutForDay(templateForDay.id, selectedDayIso) ?? templateForDay
+    : undefined;
   const isRest = plan ? plan.restDays.includes(selectedDay) : false;
   const markedDays = plan ? plan.workouts.map((w) => w.dayLabel) : [];
 
@@ -85,15 +98,24 @@ export function PlanScreen() {
   // a screen re-focus can't post the same exercise twice.
   const consumingRef = useRef(false);
   useEffect(() => {
-    const { pickedExercise, targetWorkoutId } = route.params ?? {};
+    const { pickedExercise, targetWorkoutId, targetDay } = route.params ?? {};
     if (!pickedExercise || !targetWorkoutId || consumingRef.current) return;
     consumingRef.current = true;
-    nav.setParams({ pickedExercise: undefined, targetWorkoutId: undefined });
+    nav.setParams({
+      pickedExercise: undefined,
+      targetWorkoutId: undefined,
+      targetDay: undefined,
+    });
     const meta = getExerciseById(pickedExercise);
-    void addExercise(targetWorkoutId, {
-      exerciseId: pickedExercise,
-      exerciseName: meta?.name ?? pickedExercise,
-    })
+    void addExercise(
+      targetWorkoutId,
+      {
+        exerciseId: pickedExercise,
+        exerciseName: meta?.name ?? pickedExercise,
+      },
+      // The date the picker was opened FROM — the add lands on that day only.
+      targetDay,
+    )
       .then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success))
       .catch((err: unknown) =>
         Alert.alert(
@@ -112,7 +134,9 @@ export function PlanScreen() {
   const onDeleteExercise = (workoutId: string, planExerciseId: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     // The row is already gone locally; the context restores it if this fails.
-    removeExercise(workoutId, planExerciseId).catch(() =>
+    // Scoped to the SELECTED DATE: swiping a row away on Aug 24 leaves every
+    // other week's Upper A alone.
+    removeExercise(workoutId, planExerciseId, selectedDayIso).catch(() =>
       Alert.alert(
         'Could not remove exercise',
         'Check your connection and try again.',
@@ -193,6 +217,7 @@ export function PlanScreen() {
                 title: 'Add exercise',
                 returnTo: 'PlanHome',
                 targetWorkoutId: workoutForDay.id,
+                targetDay: selectedDayIso,
                 // Both keys: a row saved ad-hoc has no catalog id to match on.
                 existingKeys: workoutForDay.exercises.flatMap((pe) => [
                   pe.exerciseId,

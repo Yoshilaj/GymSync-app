@@ -169,24 +169,29 @@ function WorkoutSessionActive() {
   );
   const { user: authUser, getToken } = useAuth();
 
-  const { plan, todaysWorkout, getWorkoutById } = usePlan();
+  const { plan, todaysWorkout, getWorkoutById, getWorkoutForDay } = usePlan();
 
   // Real plan lookup; a session opened with no plan gets an empty free-form
   // workout shell (the voice coach can still add exercises / log sets).
-  const workout = useMemo(
-    () =>
+  const workout = useMemo(() => {
+    const base =
       (route.params?.workoutId
         ? getWorkoutById(route.params.workoutId)
-        : undefined) ??
-      todaysWorkout ?? {
+        : undefined) ?? todaysWorkout;
+    if (!base) {
+      return {
         id: 'freeform',
         dayLabel: '',
         title: 'Open workout',
         estMinutes: 45,
         exercises: [],
-      },
-    [route.params?.workoutId, getWorkoutById, todaysWorkout],
-  );
+      };
+    }
+    // The DATE's version of this workout (per-date override, migration 019):
+    // training Aug 24's edited Upper A must show Aug 24's list, not the
+    // template. No day param (voice entry, today's fallback) → today.
+    return getWorkoutForDay(base.id, route.params?.day ?? localDayIso()) ?? base;
+  }, [route.params?.workoutId, route.params?.day, getWorkoutById, getWorkoutForDay, todaysWorkout]);
 
   // Retroactive logging: a PAST calendar day selected on the Plan tab means
   // "I'm recording the workout I did then" — sets stamp that day, exactly the

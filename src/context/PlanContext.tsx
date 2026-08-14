@@ -16,13 +16,16 @@ import React, {
   ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { PlannedWorkout, WeeklyPlan } from '@/types';
+import type { PlannedExercise, PlannedWorkout, WeeklyPlan } from '@/types';
 import {
   addPlanExercise,
   deletePlanExercise,
   fetchActivePlan,
+  overrideKey,
   PlanApiError,
+  putWorkoutOverride,
 } from '@/api/plan';
+import { getExerciseById } from '@/data/mockExercises';
 import { useAuth } from '@/auth/AuthContext';
 import { useUser } from '@/context/UserContext';
 import { PLAN_KEY } from '@/lib/storageKeys';
@@ -38,13 +41,24 @@ interface PlanContextValue {
   /** Today's scheduled workout, or null on rest days / no plan. */
   todaysWorkout: PlannedWorkout | null;
   getWorkoutById: (id: string) => PlannedWorkout | undefined;
-  /** Append an exercise to a plan day. Rejects if the write fails. */
+  /** Append an exercise to a plan day. Rejects if the write fails. With `day`
+   * (YYYY-MM-DD) the edit lands on THAT DATE ONLY via a per-date override —
+   * every other week keeps the template. */
   addExercise: (
     workoutId: string,
     ex: { exerciseId: string | null; exerciseName: string },
+    day?: string,
   ) => Promise<void>;
-  /** Remove an exercise. Applied locally at once, rolled back on failure. */
-  removeExercise: (workoutId: string, planExerciseId: string) => Promise<void>;
+  /** Remove an exercise. Applied locally at once, rolled back on failure.
+   * With `day`, removes from that date only (same override rule as add). */
+  removeExercise: (
+    workoutId: string,
+    planExerciseId: string,
+    day?: string,
+  ) => Promise<void>;
+  /** The workout as it stands on one calendar day: the date's override when
+   * one exists, the weekly template otherwise. */
+  getWorkoutForDay: (workoutId: string, day: string) => PlannedWorkout | undefined;
 }
 
 const PlanContext = createContext<PlanContextValue | undefined>(undefined);
@@ -124,8 +138,77 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     }
   }, [getToken, persist]);
 
+  /** The date's exercise list: override when present, template otherwise. */
+  const effectiveExercises = useCallback(
+    (workoutId: string, day: string): PlannedExercise[] | null => {
+      const cur = planRef.current;
+      if (!cur) return null;
+      const overridden = cur.overrides?.[overrideKey(workoutId, day)];
+      if (overridden) return overridden;
+      return cur.workouts.find((w) => w.id === workoutId)?.exercises ?? null;
+    },
+    [],
+  );
+
+  const getWorkoutForDay = useCallback<PlanContextValue['getWorkoutForDay']>(
+    (workoutId, day) => {
+      const base = plan?.workouts.find((w) => w.id === workoutId);
+      if (!base) return undefined;
+      const overridden = plan?.overrides?.[overrideKey(workoutId, day)];
+      return overridden ? { ...base, exercises: overridden } : base;
+    },
+    [plan],
+  );
+
+  /** Write one date's complete list: optimistic commit, PUT, rollback. The
+   * template rows are never touched — this is the "edit this occurrence"
+   * path (migration 019). */
+  const commitDayOverride = useCallback(
+    async (workoutId: string, day: string, next: PlannedExercise[]) => {
+      const before = planRef.current;
+      if (!before) return;
+      commit({
+        ...before,
+        overrides: { ...before.overrides, [overrideKey(workoutId, day)]: next },
+      });
+      try {
+        await putWorkoutOverride(await getToken(), workoutId, day, next, units);
+      } catch (err) {
+        commit(before);
+        if (err instanceof PlanApiError && err.status === 409) await refresh();
+        throw err;
+      }
+    },
+    [commit, getToken, units, refresh],
+  );
+
   const addExercise = useCallback<PlanContextValue['addExercise']>(
-    async (workoutId, ex) => {
+    async (workoutId, ex, day) => {
+      if (day) {
+        const current = effectiveExercises(workoutId, day);
+        if (!current) {
+          await refresh();
+          throw new PlanApiError(409, 'Plan changed — try again.');
+        }
+        // Mirrors the server's defaults for a template add (3 × 10, weight
+        // seeded later by the user), built client-side because the override
+        // owns its whole list.
+        const exerciseId = ex.exerciseId ?? `name:${ex.exerciseName}`;
+        const meta = ex.exerciseId ? getExerciseById(ex.exerciseId) : undefined;
+        const added: PlannedExercise = {
+          id: `ovr-${Date.now().toString(36)}`,
+          exerciseId,
+          name: meta?.name ?? ex.exerciseName,
+          sets: Array.from({ length: 3 }, (_, i) => ({
+            id: `s${i + 1}`,
+            exerciseId,
+            targetReps: 10,
+            weight: 0,
+          })),
+        };
+        await commitDayOverride(workoutId, day, [...current, added]);
+        return;
+      }
       const token = await getToken();
       let created;
       try {
@@ -150,11 +233,21 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         ),
       });
     },
-    [getToken, refresh, commit],
+    [getToken, refresh, commit, effectiveExercises, commitDayOverride],
   );
 
   const removeExercise = useCallback<PlanContextValue['removeExercise']>(
-    async (workoutId, planExerciseId) => {
+    async (workoutId, planExerciseId, day) => {
+      if (day) {
+        const current = effectiveExercises(workoutId, day);
+        if (!current) return;
+        await commitDayOverride(
+          workoutId,
+          day,
+          current.filter((e) => e.id !== planExerciseId),
+        );
+        return;
+      }
       const before = planRef.current;
       if (!before) return;
       // Optimistic: a swipe-to-delete that waits for a round trip reads broken.
@@ -173,7 +266,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [getToken, commit],
+    [getToken, commit, effectiveExercises, commitDayOverride],
   );
 
   useEffect(() => {
@@ -210,6 +303,7 @@ export function PlanProvider({ children }: { children: ReactNode }) {
     getWorkoutById,
     addExercise,
     removeExercise,
+    getWorkoutForDay,
   };
 
   return <PlanContext.Provider value={value}>{children}</PlanContext.Provider>;

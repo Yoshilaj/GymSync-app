@@ -10,7 +10,7 @@ fresh proposal which supersedes the old pending row.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -247,6 +247,49 @@ async def delete_plan_exercise(
     return {"status": "deleted", "plan_exercise_id": plan_exercise_id}
 
 
+class WorkoutOverrideRequest(BaseModel):
+    """The COMPLETE exercise list for one (workout, calendar day) — tree-shaped
+    dicts, same keys the plan tree emits. Whole-list on purpose: the write is
+    idempotent, so the offline outbox can replay it safely."""
+    exercises: list[dict] = Field(default_factory=list, max_length=30)
+
+
+@router.put("/plans/workouts/{workout_id}/override/{day}")
+async def put_workout_override(
+    workout_id: str,
+    day: date,
+    body: WorkoutOverrideRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncClient = Depends(get_db),
+) -> dict:
+    """Edit ONE date without rewriting every week (migration 019).
+
+    The weekly template stays untouched; this date renders the list stored
+    here. DELETE below reverts the date to the template.
+    """
+    override, error = await plan_store.set_workout_override(
+        user_id, workout_id, day.isoformat(), body.exercises, db
+    )
+    if error == "not_found":
+        raise HTTPException(status_code=404, detail="Workout not found")
+    if error == "stale":
+        raise HTTPException(status_code=409, detail="Plan was replaced — refresh")
+    return {"override": override}
+
+
+@router.delete("/plans/workouts/{workout_id}/override/{day}")
+async def delete_workout_override(
+    workout_id: str,
+    day: date,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncClient = Depends(get_db),
+) -> dict:
+    ok = await plan_store.clear_workout_override(user_id, workout_id, day.isoformat(), db)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No override for that day")
+    return {"status": "cleared", "workout_id": workout_id, "day": day.isoformat()}
+
+
 @router.get("/plans/active")
 async def get_active_plan(
     user_id: str = Depends(get_current_user_id),
@@ -255,6 +298,13 @@ async def get_active_plan(
     # Tier decides how the planned weights are seeded — recall for everyone, real
     # progression for Premium. See plan_store._seed_targets.
     plan = await plan_store.get_active_plan_tree(user_id, db, await resolve_tier(user_id, db))
+    if plan:
+        # Per-date edits ride alongside the template tree (NOT inside
+        # build_plan_tree — the tree doubles as the coach's session snapshot,
+        # which stays template-based for now).
+        plan["overrides"] = await plan_store.overrides_for_plan(
+            user_id, plan["plan_id"], db
+        )
     return {"plan": plan}
 
 

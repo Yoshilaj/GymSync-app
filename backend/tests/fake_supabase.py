@@ -30,6 +30,8 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     # fake that keyed on user_id too would hide the very thing the ownership tests
     # are here to prove.
     "completed_sets": ("session_id", "exercise_name", "set_index"),
+    # Migration 019's unique key — one override per (workout, calendar day).
+    "plan_workout_overrides": ("plan_workout_id", "day"),
 }
 
 # Tables whose primary key the DATABASE fills in, so an insert without one is normal
@@ -58,6 +60,7 @@ class _Query:
         self._db = db
         self._filters: list[tuple[str, Any]] = []
         self._ifilters: list[tuple[str, Any]] = []
+        self._in_filters: list[tuple[str, set[str]]] = []
         self._limit: int | None = None
         self._pending: dict | None = None
         self._mode = "select"
@@ -101,6 +104,15 @@ class _Query:
         self._pending = patch
         return self
 
+    def delete(self) -> "_Query":
+        self._mode = "delete"
+        return self
+
+    def in_(self, column: str, values: list) -> "_Query":
+        # Modeled as a filter with set semantics, same string-coercion rule as eq.
+        self._in_filters.append((column, {str(v) for v in values}))
+        return self
+
     def single(self) -> "_Query":
         self._single = "strict"
         return self
@@ -115,6 +127,8 @@ class _Query:
             str(row.get(c)) == str(v) for c, v in self._filters
         ) and all(
             str(row.get(c)).lower() == str(v).lower() for c, v in self._ifilters
+        ) and all(
+            str(row.get(c)) in allowed for c, allowed in self._in_filters
         )
 
     async def execute(self) -> _Result:
@@ -135,6 +149,13 @@ class _Query:
                     return _Result([self._rows[i]])
             self._rows.append(dict(self._pending))
             return _Result([self._pending])
+
+        if self._mode == "delete":
+            # PostgREST returns the deleted rows; deleting nothing is not an
+            # error — ownership filters fail safe the same way updates do.
+            gone = [r for r in self._rows if self._matches(r)]
+            self._rows[:] = [r for r in self._rows if not self._matches(r)]
+            return _Result(gone)
 
         if self._mode == "update":
             assert self._pending is not None

@@ -87,6 +87,10 @@ export interface WeeklyPlan {
   startDate: string;
   workouts: PlannedWorkout[];
   restDays: string[];
+  /** Per-date edits, keyed `${workoutId}|${YYYY-MM-DD}` — each value REPLACES
+   * that workout's exercises on exactly that calendar day. Dates without an
+   * entry render the weekly template. */
+  overrides?: Record<string, PlannedExercise[]>;
 }
 
 export interface ChatMessage {

@@ -349,6 +349,81 @@ async def add_plan_exercise(
     return res.data[0]
 
 
+async def set_workout_override(
+    user_id: str,
+    plan_workout_id: str,
+    day: str,
+    exercises: list[dict],
+    db: AsyncClient,
+) -> tuple[dict | None, str | None]:
+    """Upsert the COMPLETE exercise list for one (workout, calendar day).
+
+    (override_row, error) — error is 'not_found'/'stale', same contract as
+    add_plan_exercise. The template rows are untouched: this is the
+    calendar-app "edit this occurrence" layer (migration 019). The client
+    sends the whole effective list, which makes the write idempotent and
+    outbox-replay-safe by construction.
+    """
+    _, error = await _owned_active_workout(plan_workout_id, user_id, db)
+    if error:
+        return None, error
+    res = await db.table("plan_workout_overrides").upsert(
+        {
+            "user_id": user_id,
+            "plan_workout_id": plan_workout_id,
+            "day": day,
+            "exercises": exercises,
+            "updated_at": _utcnow(),
+        },
+        on_conflict="plan_workout_id,day",
+    ).execute()
+    return (res.data[0] if res.data else None), None
+
+
+async def clear_workout_override(
+    user_id: str, plan_workout_id: str, day: str, db: AsyncClient
+) -> bool:
+    """Revert one calendar day to the template. False when nothing was there."""
+    res = (
+        await db.table("plan_workout_overrides")
+        .delete()
+        .eq("plan_workout_id", plan_workout_id)
+        .eq("user_id", user_id)
+        .eq("day", day)
+        .execute()
+    )
+    return bool(res.data)
+
+
+async def overrides_for_plan(
+    user_id: str, plan_id: str, db: AsyncClient
+) -> list[dict]:
+    """Every per-date override belonging to this plan's workouts.
+
+    Fetched separately from build_plan_tree on purpose: the tree doubles as
+    the session plan_snapshot the voice coach reads, and the coach stays
+    template-based for now — overrides are a Plan-tab concept.
+    """
+    workouts = (
+        await db.table("plan_workouts")
+        .select("id")
+        .eq("plan_id", plan_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    ids = [w["id"] for w in (workouts.data or [])]
+    if not ids:
+        return []
+    res = (
+        await db.table("plan_workout_overrides")
+        .select("plan_workout_id, day, exercises")
+        .eq("user_id", user_id)
+        .in_("plan_workout_id", ids)
+        .execute()
+    )
+    return res.data or []
+
+
 async def delete_plan_exercise(
     user_id: str, plan_exercise_id: str, db: AsyncClient
 ) -> bool:

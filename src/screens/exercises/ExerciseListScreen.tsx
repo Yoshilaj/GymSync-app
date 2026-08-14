@@ -34,13 +34,16 @@ type ExerciseListParams = {
     /** Plan-tab add flow: who consumes the pick, and for which day. */
     returnTo?: 'PlanHome';
     targetWorkoutId?: string;
+    targetDay?: string;
     existingKeys?: string[];
   };
   ExerciseDetail: { exerciseId: string };
   ProgressHome:
     | { pickedExercise?: string; returnKey?: 'strength' | 'volume' }
     | undefined;
-  PlanHome: { pickedExercise?: string; targetWorkoutId?: string } | undefined;
+  PlanHome:
+    | { pickedExercise?: string; targetWorkoutId?: string; targetDay?: string }
+    | undefined;
 };
 
 type Nav = NativeStackNavigationProp<ExerciseListParams, 'ExerciseList'>;
@@ -95,7 +98,11 @@ export function ExerciseListScreen() {
         pickedRef.current = true;
         nav.navigate({
           name: 'PlanHome',
-          params: { pickedExercise: ex.id, targetWorkoutId },
+          params: {
+            pickedExercise: ex.id,
+            targetWorkoutId,
+            targetDay: route.params?.targetDay,
+          },
           merge: true,
         } as never);
         return;

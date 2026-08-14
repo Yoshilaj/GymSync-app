@@ -5,7 +5,7 @@
  * module maps it into the client's WeeklyPlan type so every screen keeps
  * consuming the shape it always has.
  */
-import { kgToLbs } from '@/lib/units';
+import { kgToLbs, lbsToKg } from '@/lib/units';
 
 type WeightUnit = 'kg' | 'lbs';
 
@@ -55,6 +55,22 @@ export interface ServerPlanTree {
   name: string;
   is_active: boolean;
   workouts: ServerPlanWorkout[];
+  /** Per-date edits (migration 019) — each replaces one workout's exercises
+   * on exactly one calendar day. */
+  overrides?: { plan_workout_id: string; day: string; exercises: ServerPlanExercise[] }[];
+}
+
+/** PUT the complete exercise list for one (workout, calendar day). */
+export async function putWorkoutOverride(
+  token: string,
+  workoutId: string,
+  day: string, // YYYY-MM-DD
+  exercises: PlannedExercise[],
+  units: WeightUnit,
+): Promise<void> {
+  await request(token, 'PUT', `/plans/workouts/${workoutId}/override/${day}`, {
+    exercises: exercises.map((e, i) => toServerExercise(e, units, i)),
+  });
 }
 
 /** Carries the status so callers can tell "plan moved on" (409) and "already
@@ -73,7 +89,7 @@ export class PlanApiError extends Error {
 
 async function request<T>(
   token: string,
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
@@ -165,6 +181,38 @@ function toPlannedExercise(ex: ServerPlanExercise, units: WeightUnit): PlannedEx
   };
 }
 
+/** The reverse of toPlannedExercise: display units → server kg, client shape →
+ * tree shape. Used only by the per-date override PUT, which sends the whole
+ * effective list (idempotent, replay-safe). */
+function toServerExercise(
+  ex: PlannedExercise,
+  units: WeightUnit,
+  sortOrder: number,
+): ServerPlanExercise {
+  return {
+    sort_order: sortOrder,
+    id: ex.id ?? `ovr-${ex.exerciseId}`,
+    exercise_id: ex.exerciseId.startsWith('name:') ? null : ex.exerciseId,
+    exercise_name: ex.name ?? ex.exerciseId,
+    note: ex.note ?? null,
+    target_sets: ex.sets.map((s) => ({
+      id: s.id,
+      exerciseId: s.exerciseId,
+      targetReps: s.targetReps,
+      ...(s.repsHigh != null ? { repsHigh: s.repsHigh } : null),
+      weight:
+        s.weight > 0
+          ? units === 'kg'
+            ? Math.round(s.weight * 10) / 10
+            : lbsToKg(s.weight)
+          : null,
+    })),
+  };
+}
+
+/** Key for the per-date override map: one workout on one calendar day. */
+export const overrideKey = (workoutId: string, day: string) => `${workoutId}|${day}`;
+
 export function toWeeklyPlan(tree: ServerPlanTree, units: WeightUnit): WeeklyPlan {
   const workouts: PlannedWorkout[] = tree.workouts.map((w) => ({
     id: w.id,
@@ -175,11 +223,22 @@ export function toWeeklyPlan(tree: ServerPlanTree, units: WeightUnit): WeeklyPla
   }));
 
   const trainingDays = new Set(workouts.map((w) => w.dayLabel));
+
+  // Per-date edits (migration 019): a map keyed workoutId|day whose values
+  // REPLACE that workout's exercises on exactly that calendar day.
+  const overrides: Record<string, PlannedExercise[]> = {};
+  for (const o of tree.overrides ?? []) {
+    overrides[overrideKey(o.plan_workout_id, o.day)] = o.exercises.map((e) =>
+      toPlannedExercise(e, units),
+    );
+  }
+
   return {
     planId: tree.plan_id,
     startDate: new Date().toISOString().slice(0, 10),
     workouts,
     restDays: WEEK_LABELS.filter((d) => !trainingDays.has(d)),
+    overrides,
   };
 }
 
