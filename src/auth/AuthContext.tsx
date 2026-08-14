@@ -322,8 +322,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const getToken = useCallback(async () => {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    // getSession refreshes an expired access token before returning — and
+    // OFFLINE that refresh retries with backoff inside supabase-js instead of
+    // failing. Every cached-data fallback in the app (profile, plan, progress,
+    // the outbox drain) sits behind this call in a try/catch, so a stall here
+    // doesn't read as "offline, show the cache" — it reads as a blank screen.
+    // Discovered the honest way: airplane-mode Progress showed nothing the
+    // morning AFTER sign-in (expired token) while working fine minutes after
+    // it (fresh token). Fail fast; the catch paths do the rest.
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Could not get a session token')), 6000),
+      ),
+    ]);
+    const token = result.data.session?.access_token;
     if (!token) throw new Error('Not authenticated');
     return token;
   }, []);

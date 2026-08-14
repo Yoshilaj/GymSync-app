@@ -81,6 +81,36 @@ export function useProgress(exerciseId: string, metric: 'strength' | 'volume') {
     await new Promise((r) => setTimeout(r, 600));
   }, []);
 
+  // Cache-FIRST, not cache-on-failure: last-known stats render immediately —
+  // offline included — and a successful fetch silently overwrites, exactly the
+  // "refresh without re-showing a skeleton" behavior the latches document.
+  // The failure-path reads below stay as a second net, but this hydration is
+  // what makes airplane-mode cold starts show data instead of waiting for the
+  // network stack to finish failing.
+  useEffect(() => {
+    if (!session) return;
+    const owner = session.user.id;
+    let cancelled = false;
+    void (async () => {
+      const [s, bw] = await Promise.all([
+        readCache<ProgressSummary>(PROGRESS_SUMMARY_KEY, owner),
+        readCache<BodyWeightPoint[]>(PROGRESS_BODYWEIGHT_KEY, owner),
+      ]);
+      if (cancelled) return;
+      if (s) {
+        setSummary((prev) => prev ?? s);
+        setSummaryLoaded(true);
+      }
+      if (bw) {
+        setBodyWeight((prev) => (prev.length > 0 ? prev : bw));
+        setBodyWeightLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id]); // id, not the session object — its identity churns
+
   useEffect(() => {
     if (!session || !focused) return;
     const owner = session.user.id;
