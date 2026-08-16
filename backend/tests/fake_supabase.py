@@ -24,6 +24,10 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "personal_chunks": ("id",),
     "injuries": ("id",),
     "workout_sessions": ("id",),
+    "plan_proposals": ("id",),
+    "workout_plans": ("id",),
+    "plan_workouts": ("id",),
+    "plan_exercises": ("id",),
     # Migration 012's unique slot key, reproduced EXACTLY — user_id is deliberately
     # not part of it. That omission is what lets an unchecked write against another
     # user's session_id overwrite their set instead of inserting a new row, so a
@@ -36,7 +40,15 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
 
 # Tables whose primary key the DATABASE fills in, so an insert without one is normal
 # rather than a collision on None.
-_GENERATED_IDS = {"personal_chunks", "injuries", "workout_sessions"}
+_GENERATED_IDS = {
+    "personal_chunks",
+    "injuries",
+    "workout_sessions",
+    "plan_proposals",
+    "workout_plans",
+    "plan_workouts",
+    "plan_exercises",
+}
 
 
 class _Result:
@@ -134,21 +146,35 @@ class _Query:
     async def execute(self) -> _Result:
         if self._mode in ("upsert", "insert"):
             assert self._pending is not None
-            if self._table in _GENERATED_IDS and self._pending.get("id") is None:
-                self._pending = {
-                    **self._pending,
-                    "id": f"{self._table}-{len(self._rows) + 1}",
-                }
-            key_cols = PRIMARY_KEYS[self._table]
-            key = tuple(str(self._pending.get(c)) for c in key_cols)
-            for i, existing in enumerate(self._rows):
-                if tuple(str(existing.get(c)) for c in key_cols) == key:
-                    if self._mode == "insert":
-                        raise RuntimeError(f"duplicate key in {self._table}: {key}")
-                    self._rows[i] = {**existing, **self._pending}
-                    return _Result([self._rows[i]])
-            self._rows.append(dict(self._pending))
-            return _Result([self._pending])
+            # PostgREST accepts one row or a list of rows; either way the
+            # response body is a list.
+            batch = (
+                self._pending if isinstance(self._pending, list) else [self._pending]
+            )
+            out = []
+            for pending in batch:
+                if self._table in _GENERATED_IDS and pending.get("id") is None:
+                    pending = {
+                        **pending,
+                        "id": f"{self._table}-{len(self._rows) + 1}",
+                    }
+                key_cols = PRIMARY_KEYS[self._table]
+                key = tuple(str(pending.get(c)) for c in key_cols)
+                replaced = False
+                for i, existing in enumerate(self._rows):
+                    if tuple(str(existing.get(c)) for c in key_cols) == key:
+                        if self._mode == "insert":
+                            raise RuntimeError(
+                                f"duplicate key in {self._table}: {key}"
+                            )
+                        self._rows[i] = {**existing, **pending}
+                        out.append(self._rows[i])
+                        replaced = True
+                        break
+                if not replaced:
+                    self._rows.append(dict(pending))
+                    out.append(pending)
+            return _Result(out)
 
         if self._mode == "delete":
             # PostgREST returns the deleted rows; deleting nothing is not an

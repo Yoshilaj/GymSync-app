@@ -174,6 +174,11 @@ async def adopt_proposal(
         "split_type": str(plan.get("split_type") or ""),
         "rationale": str(plan.get("rationale") or ""),
         "days": days,
+        # The allowance is spent HERE, at adoption. accept_proposal reads this
+        # marker to know the proposal is pre-paid — without it, accept meters
+        # the same generation a second time and a fresh free account (1 lifetime
+        # generation, already spent right below) can never activate its plan.
+        "origin": "pre_signup",
     }
     if len(json.dumps(payload)) > 100_000:
         raise HTTPException(status_code=422, detail="Plan payload too large")
@@ -334,14 +339,31 @@ async def accept_proposal(
     db: AsyncClient = Depends(get_db),
 ) -> dict:
     # The third of the three generation paths (see generate_plan's comment) —
-    # the chat coach's proposals materialize here, so the allowance is checked
-    # here too, or the cap is decorative for exactly the chat path. Checked
-    # BEFORE the status flip so a refused accept leaves the proposal pending
-    # and retryable after an upgrade.
-    try:
-        await check_quota(PLAN_GENERATION, user_id, db)
-    except QuotaExceeded as exc:
-        raise exc.as_http() from exc
+    # the chat coach's proposals materialize here and accept is their ONLY
+    # charge point, so the allowance is checked here too, or the cap is
+    # decorative for exactly the chat path. Checked BEFORE the status flip so a
+    # refused accept leaves the proposal pending and retryable after an upgrade.
+    #
+    # Adopt-path proposals are the exception: they already paid this allowance
+    # at /plans/proposals/adopt (payload carries origin="pre_signup"). Metering
+    # them again would refuse every fresh free account's first Start training —
+    # adopt spends the single lifetime generation, then this check finds 1/1.
+    pre = (
+        await db.table("plan_proposals")
+        .select("payload")
+        .eq("id", proposal_id)
+        .eq("user_id", user_id)
+        .eq("status", "pending")
+        .execute()
+    )
+    prepaid = bool(pre.data) and (
+        (pre.data[0].get("payload") or {}).get("origin") == "pre_signup"
+    )
+    if not prepaid:
+        try:
+            await check_quota(PLAN_GENERATION, user_id, db)
+        except QuotaExceeded as exc:
+            raise exc.as_http() from exc
 
     # Guarded status flip: only a pending proposal owned by this user flips.
     # A repeat POST finds status != pending → 409, so double-taps are safe.
@@ -385,7 +407,9 @@ async def accept_proposal(
 
     # After the plan exists — a materialization that failed shouldn't spend the
     # only generation a free user gets (same rule as generate_plan above).
-    await consume_quota(PLAN_GENERATION, user_id, db)
+    # Pre-paid adopt-path proposals were already counted at adoption.
+    if not prepaid:
+        await consume_quota(PLAN_GENERATION, user_id, db)
 
     # Why this plan looks the way it does, kept for the long term. Months later the
     # reasoning is the part no table holds: the plan rows say "Upper A, 3x8 bench", only
